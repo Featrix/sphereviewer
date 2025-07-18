@@ -11,17 +11,17 @@
     "LICENSE"
   ],
   "scripts": {
-    "dev": "env-cmd -f .env.dev next dev",
+    "dev": "next dev",
     "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
     "build:embed": "webpack --mode production",
-    "build:package": "npm run build:types && npm run build:esm && npm run build:cjs",
     "build:types": "tsc --project tsconfig.package.json --emitDeclarationOnly",
     "build:esm": "webpack --config webpack.package.js --env module=esm",
     "build:cjs": "webpack --config webpack.package.js --env module=cjs",
-    "build:all": "npm run build && npm run build:embed && npm run build:package",
-    "start": "next start",
-    "lint": "next lint",
-    "prepublishOnly": "npm run build:package"
+    "build:package": "npm run build:types && npm run build:esm && npm run build:cjs",
+    "deploy": "./deploy-to-bits.sh",
+    "deploy:full": "npm run build:embed && npm run deploy"
   },
   "keywords": [
     "react",
