@@ -68,6 +68,8 @@ print_status "Copying documentation..."
 scp README_USAGE.md $HOST:$REMOTE_PATH/
 scp FINAL_NAMING_SUMMARY.md $HOST:$REMOTE_PATH/
 scp NAMING_UPDATE_SUMMARY.md $HOST:$REMOTE_PATH/
+scp FEATRIX_DATA_FORMAT.md $HOST:$REMOTE_PATH/
+scp DEPLOYMENT_GUIDE.md $HOST:$REMOTE_PATH/
 print_success "Documentation deployed"
 
 # Create public-facing branded landing page
