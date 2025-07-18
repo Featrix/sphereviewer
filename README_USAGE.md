@@ -1,0 +1,317 @@
+# 🎯 Featrix Sphere Viewer - Data-Driven Usage Guide
+
+## Overview
+
+The Featrix Sphere Viewer now supports **direct data input** instead of API calls, making it faster, more secure, and easier to integrate. Users export data from Featrix and pass it directly to the viewer.
+
+## 🚀 Quick Start
+
+### 1. Get Your Data from Featrix
+
+Export your sphere data from Featrix as JSON. The export should include:
+- Session metadata
+- 3D coordinates 
+- Original data columns
+- Clustering results
+
+### 2. Choose Your Integration Method
+
+## 📋 Method 1: Window Data (Recommended)
+
+**Best for**: Maximum control and performance
+
+```html
+<script>
+// Set your Featrix data
+window.myFeatrixData = {
+  session: { session_id: "your-session", status: "done", done: true },
+  coords: [/* your 3D coordinates */],
+  entire_cluster_results: {/* clustering info */}
+};
+</script>
+
+<!-- Load React dependencies -->
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+<!-- Auto-initialize with window data -->
+<script src="https://unpkg.com/@featrix/sphere-viewer@latest/dist/sphere-viewer.js" 
+        data-use-window-data="myFeatrixData"></script>
+```
+
+## 📄 Method 2: JSON File (Best for Production)
+
+**Best for**: Clean separation of data and code
+
+```html
+<!-- Load React dependencies -->
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+<!-- Load from JSON file -->
+<script src="https://unpkg.com/@featrix/sphere-viewer@latest/dist/sphere-viewer.js" 
+        data-featrix-data="path/to/your/sphere-data.json"></script>
+```
+
+## 🔧 Method 3: Manual JavaScript API
+
+**Best for**: Dynamic applications and full control
+
+```html
+<script src="https://unpkg.com/@featrix/sphere-viewer@latest/dist/sphere-viewer.js"></script>
+<div id="my-sphere-container"></div>
+
+<script>
+// Load your data (from API, localStorage, etc.)
+const featrixData = await fetch('/api/my-sphere-data').then(r => r.json());
+
+// Initialize manually
+const viewer = new window.FeatrixSphereViewer();
+viewer.init({
+  data: featrixData,
+  containerId: 'my-sphere-container'
+});
+
+// Update with new data
+viewer.update({ data: newFeatrixData });
+
+// Cleanup
+viewer.destroy();
+</script>
+```
+
+## 📊 Required Data Format
+
+Your Featrix export must have this structure:
+
+```json
+{
+  "session": {
+    "session_id": "unique-session-id",
+    "status": "done",
+    "done": true,
+    "failed": false,
+    "created_at": "2024-07-18T12:00:00Z",
+    "metadata": {
+      "dataset_name": "Your Dataset",
+      "num_rows": 1000,
+      "num_columns": 15
+    }
+  },
+  "coords": [
+    {
+      "0": -2.5,              // X coordinate
+      "1": 1.3,               // Y coordinate
+      "2": 0.8,               // Z coordinate
+      "cluster_pre": 0,       // Cluster assignment
+      "__featrix_row_id": 1,
+      "__featrix_row_offset": 0,
+      "scalar_columns": {
+        "age": 25,
+        "income": 50000,
+        "score": 0.85
+      },
+      "set_columns": {
+        "category": "A",
+        "region": "North"
+      },
+      "string_columns": {
+        "name": "John Doe",
+        "description": "Sample record"
+      }
+    }
+    // ... more coordinate records
+  ],
+  "entire_cluster_results": {
+    "2": {
+      "cluster_labels": [0, 1, 0],
+      "silhouette_score": 0.75,
+      "n_clusters": 2
+    },
+    "3": {
+      "cluster_labels": [0, 1, 2],
+      "silhouette_score": 0.68,
+      "n_clusters": 3
+    }
+    // ... clustering results for different cluster counts
+  }
+}
+```
+
+## 🎯 Integration Examples
+
+### WordPress
+
+```html
+<!-- In your WordPress post/page (HTML mode) -->
+<script>
+window.wordpressSphereData = <?php echo json_encode($featrix_data); ?>;
+</script>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@featrix/sphere-viewer@latest/dist/sphere-viewer.js" 
+        data-use-window-data="wordpressSphereData"></script>
+```
+
+### React/Next.js Application
+
+```tsx
+import { FeatrixSphereViewer } from '@featrix/sphere-viewer';
+
+function MyPage({ featrixData }) {
+  return (
+    <div style={{ height: '600px' }}>
+      <FeatrixSphereViewer data={featrixData} />
+    </div>
+  );
+}
+```
+
+### Static HTML Site
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Data Visualization</title>
+</head>
+<body>
+    <h1>Customer Analysis Results</h1>
+    
+    <!-- Load the data and viewer -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@featrix/sphere-viewer@latest/dist/sphere-viewer.js" 
+            data-featrix-data="data/customer-analysis.json"></script>
+</body>
+</html>
+```
+
+### Documentation Site (GitBook, Notion, etc.)
+
+```html
+<div style="height: 500px; border: 1px solid #ddd; border-radius: 8px;">
+  <script>
+  window.docsSphereData = {
+    // Your Featrix data here
+  };
+  </script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@featrix/sphere-viewer@latest/dist/sphere-viewer.js" 
+          data-use-window-data="docsSphereData"></script>
+</div>
+```
+
+## ⚡ Performance Benefits
+
+### Old API-Based Approach
+❌ Requires API calls  
+❌ Needs authentication  
+❌ Network dependent  
+❌ Slower loading  
+❌ CORS issues  
+
+### New Data-Driven Approach  
+✅ No API calls needed  
+✅ No authentication required  
+✅ Works offline  
+✅ Instant loading  
+✅ No CORS issues  
+
+## 🔄 Migration from API-Based
+
+If you were using the old sessionId approach:
+
+```html
+<!-- OLD: API-based -->
+<script src="sphere-viewer.js" data-session-id="abc123"></script>
+
+<!-- NEW: Data-driven -->
+<script>
+window.myData = /* your Featrix export */;
+</script>
+<script src="sphere-viewer.js" data-use-window-data="myData"></script>
+```
+
+## 🛠️ API Reference
+
+### FeatrixSphereViewer Class
+
+```javascript
+const viewer = new window.FeatrixSphereViewer();
+
+// Initialize with data
+viewer.init({
+  data: featrixDataObject,           // Required: Your Featrix data
+  containerId: 'my-container',       // Optional: Target container ID
+  apiBaseUrl: 'https://api.com'      // Optional: For legacy sessionId mode
+});
+
+// Update with new data
+viewer.update({
+  data: newFeatrixDataObject
+});
+
+// Cleanup
+viewer.destroy();
+```
+
+### Data Attributes
+
+| Attribute | Description | Example |
+|-----------|-------------|---------|
+| `data-use-window-data` | Use data from window object | `data-use-window-data="myFeatrixData"` |
+| `data-featrix-data` | Load data from JSON file | `data-featrix-data="data/sphere.json"` |
+| `data-container-id` | Target container ID | `data-container-id="my-sphere"` |
+| `data-session-id` | Legacy API mode | `data-session-id="abc123"` (deprecated) |
+
+## 🔍 Troubleshooting
+
+### Common Issues
+
+1. **"No data provided" error**
+   - Ensure your data object has the correct structure
+   - Check that `window.yourDataName` exists
+   - Verify JSON file path is correct
+
+2. **"React is not defined" error**
+   - Load React dependencies before sphere-viewer.js
+   - Use the correct CDN URLs
+
+3. **Empty or broken visualization**
+   - Check browser console for errors
+   - Verify your data format matches the required structure
+   - Ensure coordinates are valid numbers
+
+### Debug Mode
+
+```javascript
+// Enable detailed logging
+window.FeatrixSphereViewerDebug = true;
+
+// Check if data loaded correctly
+console.log(window.myFeatrixData);
+
+// Test manual initialization
+const viewer = new window.FeatrixSphereViewer();
+viewer.init({ data: window.myFeatrixData, containerId: 'test' });
+```
+
+## 📈 Best Practices
+
+1. **Optimize Data Size**: Remove unnecessary fields from your Featrix export
+2. **Use Compression**: Serve JSON files with gzip compression
+3. **Cache Data**: Store frequently-used datasets in localStorage
+4. **Progressive Loading**: Load large datasets in chunks if needed
+5. **Error Handling**: Wrap initialization in try-catch blocks
+
+## 🎯 Next Steps
+
+1. Export your data from Featrix
+2. Choose your integration method
+3. Test with the provided examples
+4. Deploy to your website
+5. Monitor performance and user experience
+
+Your sphere viewer is now completely self-contained and ready for any website! 🚀 

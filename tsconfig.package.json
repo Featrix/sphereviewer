@@ -10,7 +10,7 @@
   "include": [
     "src/**/*",
     "components/**/*",
-    "sphere_*.tsx",
+    "featrix_sphere_*.tsx",
     "training_status.tsx",
     "copy_url.tsx"
   ],

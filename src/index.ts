@@ -1,12 +1,12 @@
 // Main package exports for NPM
-export { default as SphereViewer } from './SphereViewerApp';
-export { default as SphereEmbedded } from './SphereEmbedded';
+export { default as FeatrixSphereViewer } from './FeatrixSphereViewerApp';
+export { default as FeatrixSphereEmbedded } from './FeatrixSphereEmbedded';
 
 // Re-export utilities
 export * from './embed-data-access';
 
 // Types
-export interface SphereViewerProps {
+export interface FeatrixSphereViewerProps {
   sessionId: string;
   apiBaseUrl?: string;
 }

@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧪 Sphere Viewer - HTML Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: #1e40af;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .test-section {
+            margin: 20px;
+            padding: 20px;
+            border: 2px dashed #ddd;
+            border-radius: 8px;
+        }
+        .test-section h3 {
+            margin-top: 0;
+            color: #1e40af;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status.success { background: #d1fae5; color: #065f46; }
+        .status.pending { background: #fef3c7; color: #92400e; }
+    </style>
+</head>
+<body>
+    <!-- Load React dependencies -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+    <div class="container">
+        <div class="header">
+            <h1>🧪 Sphere Viewer - HTML Embeddable Test</h1>
+            <p>Testing the embeddable script functionality</p>
+        </div>
+
+        <div class="test-section">
+            <h3>Test 1: Auto-initialization with Data Attributes <span class="status pending">TESTING</span></h3>
+            <p>This should automatically create a sphere viewer container:</p>
+            
+            <!-- This will auto-initialize -->
+            <script src="../sphere-viewer/dist/sphere-viewer.js" 
+                    data-session-id="html-test-session-123"
+                    data-container-id="auto-test-container"></script>
+            
+            <div id="auto-test-container" style="height: 400px; border: 1px solid #ddd; border-radius: 4px; margin: 10px 0;"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>Test 2: Manual JavaScript API <span class="status pending">TESTING</span></h3>
+            <p>This uses the manual JavaScript API:</p>
+            
+            <div id="manual-test-container" style="height: 400px; border: 1px solid #ddd; border-radius: 4px; margin: 10px 0;"></div>
+            
+            <button onclick="initManualTest()" style="padding: 8px 16px; background: #1e40af; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                Initialize Manual Test
+            </button>
+            <button onclick="destroyManualTest()" style="padding: 8px 16px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer; margin-left: 10px;">
+                Destroy Test
+            </button>
+        </div>
+
+        <div class="test-section">
+            <h3>Test 3: Dynamic Session Update <span class="status pending">TESTING</span></h3>
+            <p>Test updating to a new session:</p>
+            
+            <div id="update-test-container" style="height: 400px; border: 1px solid #ddd; border-radius: 4px; margin: 10px 0;"></div>
+            
+            <input type="text" id="newSessionId" placeholder="Enter new session ID" value="updated-session-456" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px; width: 200px;">
+            <button onclick="updateSession()" style="padding: 8px 16px; background: #059669; color: white; border: none; border-radius: 4px; cursor: pointer; margin-left: 10px;">
+                Update Session
+            </button>
+        </div>
+
+        <div class="test-section">
+            <h3>Test Results</h3>
+            <div id="test-results">
+                <p>🔄 Running tests...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let manualViewer;
+        let updateViewer;
+
+        // Initialize manual test
+        function initManualTest() {
+            try {
+                if (window.SphereViewer) {
+                    manualViewer = new window.SphereViewer();
+                    manualViewer.init({
+                        sessionId: 'manual-test-session-789',
+                        containerId: 'manual-test-container',
+                        apiBaseUrl: 'https://sphere-api.featrix.com'
+                    });
+                    updateResults('✅ Manual API test initialized successfully');
+                } else {
+                    updateResults('❌ SphereViewer not found in window object');
+                }
+            } catch (error) {
+                updateResults('❌ Manual API test failed: ' + error.message);
+            }
+        }
+
+        // Destroy manual test
+        function destroyManualTest() {
+            try {
+                if (manualViewer) {
+                    manualViewer.destroy();
+                    manualViewer = null;
+                    updateResults('✅ Manual API test destroyed successfully');
+                }
+            } catch (error) {
+                updateResults('❌ Destroy failed: ' + error.message);
+            }
+        }
+
+        // Update session test
+        function updateSession() {
+            try {
+                const newSessionId = document.getElementById('newSessionId').value;
+                if (!updateViewer) {
+                    updateViewer = new window.SphereViewer();
+                    updateViewer.init({
+                        sessionId: 'initial-session',
+                        containerId: 'update-test-container'
+                    });
+                }
+                updateViewer.update({ sessionId: newSessionId });
+                updateResults(`✅ Session updated to: ${newSessionId}`);
+            } catch (error) {
+                updateResults('❌ Session update failed: ' + error.message);
+            }
+        }
+
+        // Update test results
+        function updateResults(message) {
+            const results = document.getElementById('test-results');
+            const timestamp = new Date().toLocaleTimeString();
+            results.innerHTML += `<p>[${timestamp}] ${message}</p>`;
+        }
+
+        // Check if everything loaded correctly
+        window.addEventListener('load', function() {
+            setTimeout(() => {
+                updateResults('✅ React dependencies loaded');
+                
+                if (window.SphereViewer) {
+                    updateResults('✅ SphereViewer class available');
+                    updateResults('✅ Auto-initialization should have triggered');
+                } else {
+                    updateResults('❌ SphereViewer class not found');
+                }
+                
+                // Check if auto-container was created
+                const autoContainer = document.getElementById('auto-test-container');
+                if (autoContainer && autoContainer.children.length > 0) {
+                    updateResults('✅ Auto-initialization created components');
+                } else {
+                    updateResults('⚠️ Auto-initialization may be pending or failed');
+                }
+            }, 2000);
+        });
+    </script>
+</body>
+</html> 

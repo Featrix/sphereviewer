@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple Sphere Viewer Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .container { border: 2px solid #ccc; height: 500px; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <h1>🌐 Simple Sphere Viewer Test</h1>
+    
+    <!-- Load React -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Auto-initialize sphere viewer -->
+    <script src="dist/sphere-viewer.js" data-session-id="test-session-123"></script>
+    
+    <div style="margin: 20px 0;">
+        <h2>Manual Test</h2>
+        <button onclick="testAPI()">Test Manual API</button>
+        <div id="manual-container" class="container"></div>
+    </div>
+    
+    <script>
+        function testAPI() {
+            console.log('Testing manual API...');
+            
+            if (window.SphereViewer) {
+                const viewer = new window.SphereViewer();
+                viewer.init({
+                    sessionId: 'manual-test-456',
+                    containerId: 'manual-container'
+                });
+                console.log('✅ Manual API test successful!');
+            } else {
+                console.log('❌ SphereViewer not found');
+            }
+        }
+        
+        // Check if auto-init worked
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                if (window.SphereViewer) {
+                    console.log('✅ SphereViewer loaded successfully');
+                } else {
+                    console.log('❌ SphereViewer failed to load');
+                }
+            }, 3000);
+        });
+    </script>
+</body>
+</html> 

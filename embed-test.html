@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧪 Sphere Viewer - Raw JS Embed Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #1e40af, #3b82f6);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0 0 10px 0;
+            font-size: 2.5em;
+        }
+        .test-section {
+            margin: 30px;
+            padding: 25px;
+            border: 3px dashed #e5e7eb;
+            border-radius: 12px;
+            background: #f9fafb;
+        }
+        .test-section.active {
+            border-color: #10b981;
+            background: #f0fdf4;
+        }
+        .test-section h3 {
+            margin-top: 0;
+            color: #1f2937;
+            font-size: 1.5em;
+        }
+        .sphere-container {
+            height: 500px;
+            border: 2px solid #d1d5db;
+            border-radius: 8px;
+            margin: 20px 0;
+            background: white;
+            position: relative;
+            overflow: hidden;
+        }
+        .sphere-container.loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f3f4f6;
+        }
+        .status {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .status.success { background: #d1fae5; color: #065f46; }
+        .status.pending { background: #fef3c7; color: #92400e; }
+        .status.error { background: #fee2e2; color: #991b1b; }
+        .controls {
+            margin: 20px 0;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .btn.primary { background: #3b82f6; color: white; }
+        .btn.primary:hover { background: #2563eb; }
+        .btn.success { background: #10b981; color: white; }
+        .btn.success:hover { background: #059669; }
+        .btn.danger { background: #ef4444; color: white; }
+        .btn.danger:hover { background: #dc2626; }
+        .input {
+            padding: 8px 12px;
+            border: 2px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+            width: 200px;
+        }
+        .input:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+        .results {
+            background: #1f2937;
+            color: #f9fafb;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 14px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 20px 0;
+        }
+        .loading-spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <!-- Load React dependencies first -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+    <div class="container">
+        <div class="header">
+            <h1>🌐 Sphere Viewer</h1>
+            <h2>Raw JavaScript Embed Test</h2>
+            <p>Testing the embeddable script functionality in a real-world scenario</p>
+        </div>
+
+        <!-- Test 1: Auto-initialization -->
+        <div class="test-section" id="test1">
+            <h3>
+                🚀 Test 1: Auto-initialization 
+                <span class="status pending" id="status1">TESTING</span>
+            </h3>
+            <p>This tests the simplest integration method - just add a script tag with data attributes.</p>
+            
+            <div class="sphere-container loading" id="auto-container">
+                <div class="loading-spinner"></div>
+                <p style="margin-top: 10px; color: #6b7280;">Initializing auto-embed...</p>
+            </div>
+            
+            <!-- Auto-initialization script -->
+            <script src="dist/sphere-viewer.js" 
+                    data-session-id="auto-test-session-123"
+                    data-container-id="auto-container"></script>
+        </div>
+
+        <!-- Test 2: Manual JavaScript API -->
+        <div class="test-section" id="test2">
+            <h3>
+                🎛️ Test 2: Manual JavaScript API 
+                <span class="status pending" id="status2">READY</span>
+            </h3>
+            <p>This tests programmatic control using the JavaScript API.</p>
+            
+            <div class="controls">
+                <button class="btn primary" onclick="initManualTest()">Initialize</button>
+                <button class="btn success" onclick="updateManualSession()">Update Session</button>
+                <button class="btn danger" onclick="destroyManualTest()">Destroy</button>
+                <input class="input" id="manualSessionId" placeholder="Session ID" value="manual-test-456">
+            </div>
+            
+            <div class="sphere-container loading" id="manual-container">
+                <div style="text-align: center; padding: 50px; color: #6b7280;">
+                    <p>Click "Initialize" to start manual test</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Test 3: Dynamic Multiple Instances -->
+        <div class="test-section" id="test3">
+            <h3>
+                🔄 Test 3: Multiple Instances 
+                <span class="status pending" id="status3">READY</span>
+            </h3>
+            <p>Testing multiple sphere viewers on the same page.</p>
+            
+            <div class="controls">
+                <button class="btn primary" onclick="createInstance()">Add Instance</button>
+                <button class="btn danger" onclick="destroyAllInstances()">Destroy All</button>
+                <span id="instanceCount">Instances: 0</span>
+            </div>
+            
+            <div id="instances-container"></div>
+        </div>
+
+        <!-- Test Results Console -->
+        <div class="test-section">
+            <h3>📊 Test Console</h3>
+            <div class="results" id="console">
+                <div>🔄 Initializing tests...</div>
+            </div>
+            <div class="controls">
+                <button class="btn primary" onclick="clearConsole()">Clear Console</button>
+                <button class="btn success" onclick="runAllTests()">Run All Tests</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let manualViewer = null;
+        let instances = [];
+        let testResults = {
+            autoInit: false,
+            manualAPI: false,
+            multipleInstances: false
+        };
+
+        // Console logging
+        function log(message, type = 'info') {
+            const console = document.getElementById('console');
+            const timestamp = new Date().toLocaleTimeString();
+            const colors = {
+                info: '#3b82f6',
+                success: '#10b981',
+                error: '#ef4444',
+                warning: '#f59e0b'
+            };
+            
+            console.innerHTML += `
+                <div style="color: ${colors[type]};">
+                    [${timestamp}] ${message}
+                </div>
+            `;
+            console.scrollTop = console.scrollHeight;
+        }
+
+        function clearConsole() {
+            document.getElementById('console').innerHTML = '';
+        }
+
+        function updateStatus(testId, status, text) {
+            const statusEl = document.getElementById(`status${testId}`);
+            statusEl.className = `status ${status}`;
+            statusEl.textContent = text || status.toUpperCase();
+            
+            if (status === 'success') {
+                document.getElementById(`test${testId}`).classList.add('active');
+            }
+        }
+
+        // Test 1: Check auto-initialization
+        function checkAutoInit() {
+            setTimeout(() => {
+                const container = document.getElementById('auto-container');
+                if (window.SphereViewer) {
+                    log('✅ SphereViewer class loaded successfully', 'success');
+                    testResults.autoInit = true;
+                    updateStatus(1, 'success', 'LOADED');
+                    
+                    // Check if container was populated
+                    if (container.children.length > 2) { // More than loading spinner
+                        log('✅ Auto-initialization created components', 'success');
+                        container.classList.remove('loading');
+                    } else {
+                        log('⚠️ Auto-initialization triggered but content may be loading', 'warning');
+                    }
+                } else {
+                    log('❌ SphereViewer class not found', 'error');
+                    updateStatus(1, 'error', 'FAILED');
+                }
+            }, 3000);
+        }
+
+        // Test 2: Manual API functions
+        function initManualTest() {
+            try {
+                if (!window.SphereViewer) {
+                    throw new Error('SphereViewer not loaded');
+                }
+
+                const sessionId = document.getElementById('manualSessionId').value || 'manual-test-456';
+                manualViewer = new window.SphereViewer();
+                
+                manualViewer.init({
+                    sessionId: sessionId,
+                    containerId: 'manual-container',
+                    apiBaseUrl: 'https://sphere-api.featrix.com'
+                });
+
+                log(`✅ Manual API initialized with session: ${sessionId}`, 'success');
+                testResults.manualAPI = true;
+                updateStatus(2, 'success', 'ACTIVE');
+                
+                // Remove loading state
+                document.getElementById('manual-container').classList.remove('loading');
+                
+            } catch (error) {
+                log(`❌ Manual API failed: ${error.message}`, 'error');
+                updateStatus(2, 'error', 'FAILED');
+            }
+        }
+
+        function updateManualSession() {
+            try {
+                if (!manualViewer) {
+                    throw new Error('No manual viewer initialized');
+                }
+
+                const newSessionId = document.getElementById('manualSessionId').value || 'updated-session';
+                manualViewer.update({ sessionId: newSessionId });
+                
+                log(`✅ Session updated to: ${newSessionId}`, 'success');
+            } catch (error) {
+                log(`❌ Session update failed: ${error.message}`, 'error');
+            }
+        }
+
+        function destroyManualTest() {
+            try {
+                if (manualViewer) {
+                    manualViewer.destroy();
+                    manualViewer = null;
+                    log('✅ Manual viewer destroyed', 'success');
+                    updateStatus(2, 'pending', 'READY');
+                    
+                    // Reset container
+                    const container = document.getElementById('manual-container');
+                    container.classList.add('loading');
+                    container.innerHTML = `
+                        <div style="text-align: center; padding: 50px; color: #6b7280;">
+                            <p>Click "Initialize" to start manual test</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                log(`❌ Destroy failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Test 3: Multiple instances
+        function createInstance() {
+            try {
+                if (!window.SphereViewer) {
+                    throw new Error('SphereViewer not loaded');
+                }
+
+                const instanceId = `instance-${instances.length + 1}`;
+                const containerId = `container-${instanceId}`;
+                
+                // Create container HTML
+                const container = document.createElement('div');
+                container.innerHTML = `
+                    <div style="margin: 20px 0;">
+                        <h4>Instance ${instances.length + 1}</h4>
+                        <div id="${containerId}" class="sphere-container loading">
+                            <div class="loading-spinner"></div>
+                        </div>
+                        <button class="btn danger" onclick="destroyInstance('${instanceId}')">Destroy This Instance</button>
+                    </div>
+                `;
+                
+                document.getElementById('instances-container').appendChild(container);
+                
+                // Create viewer instance
+                const viewer = new window.SphereViewer();
+                viewer.init({
+                    sessionId: `multi-instance-${instances.length + 1}`,
+                    containerId: containerId
+                });
+                
+                instances.push({ id: instanceId, viewer: viewer, container: container });
+                
+                log(`✅ Created instance ${instances.length}: ${instanceId}`, 'success');
+                document.getElementById('instanceCount').textContent = `Instances: ${instances.length}`;
+                
+                if (instances.length === 1) {
+                    testResults.multipleInstances = true;
+                    updateStatus(3, 'success', 'WORKING');
+                }
+                
+            } catch (error) {
+                log(`❌ Instance creation failed: ${error.message}`, 'error');
+                updateStatus(3, 'error', 'FAILED');
+            }
+        }
+
+        function destroyInstance(instanceId) {
+            const index = instances.findIndex(inst => inst.id === instanceId);
+            if (index !== -1) {
+                const instance = instances[index];
+                instance.viewer.destroy();
+                instance.container.remove();
+                instances.splice(index, 1);
+                
+                log(`✅ Destroyed instance: ${instanceId}`, 'success');
+                document.getElementById('instanceCount').textContent = `Instances: ${instances.length}`;
+            }
+        }
+
+        function destroyAllInstances() {
+            instances.forEach(instance => {
+                instance.viewer.destroy();
+                instance.container.remove();
+            });
+            instances = [];
+            document.getElementById('instanceCount').textContent = `Instances: 0`;
+            log('✅ All instances destroyed', 'success');
+            updateStatus(3, 'pending', 'READY');
+        }
+
+        function runAllTests() {
+            log('🧪 Running comprehensive test suite...', 'info');
+            
+            // Test 1 is auto-run
+            log('Test 1: Auto-initialization - Check browser console', 'info');
+            
+            // Test 2
+            setTimeout(() => {
+                initManualTest();
+                setTimeout(() => updateManualSession(), 2000);
+            }, 1000);
+            
+            // Test 3
+            setTimeout(() => {
+                createInstance();
+                setTimeout(() => createInstance(), 1000);
+            }, 3000);
+            
+            // Final results
+            setTimeout(() => {
+                log('📊 Test Results Summary:', 'info');
+                log(`Auto-initialization: ${testResults.autoInit ? '✅ PASS' : '❌ FAIL'}`, testResults.autoInit ? 'success' : 'error');
+                log(`Manual API: ${testResults.manualAPI ? '✅ PASS' : '❌ FAIL'}`, testResults.manualAPI ? 'success' : 'error');
+                log(`Multiple Instances: ${testResults.multipleInstances ? '✅ PASS' : '❌ FAIL'}`, testResults.multipleInstances ? 'success' : 'error');
+            }, 8000);
+        }
+
+        // Initialize tests when page loads
+        window.addEventListener('load', function() {
+            log('🌐 Page loaded, React dependencies ready', 'success');
+            checkAutoInit();
+            
+            // Check every few seconds if components are loading
+            let checkCount = 0;
+            const checkInterval = setInterval(() => {
+                checkCount++;
+                if (checkCount > 10) {
+                    clearInterval(checkInterval);
+                    return;
+                }
+                
+                // Check auto-container for updates
+                const autoContainer = document.getElementById('auto-container');
+                if (autoContainer.children.length > 2) {
+                    autoContainer.classList.remove('loading');
+                    log('✅ Auto-initialization content loaded', 'success');
+                    clearInterval(checkInterval);
+                }
+            }, 2000);
+        });
+    </script>
+</body>
+</html> 

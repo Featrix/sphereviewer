@@ -7,7 +7,7 @@ module.exports = {
   output: {
     filename: 'sphere-viewer.js',
     path: path.resolve(__dirname, 'dist'),
-    library: 'SphereViewer',
+    library: 'FeatrixSphereViewer',
     libraryTarget: 'umd',
     globalObject: 'this',
     clean: true,

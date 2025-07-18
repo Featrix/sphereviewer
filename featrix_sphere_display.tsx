@@ -21,7 +21,7 @@ import {
     add_similarity_search_results,
     SphereRecord,
     send_event,
-} from './sphere_control'
+} from './featrix_sphere_control'
 
 import { Button } from '@/components/button'
 import { Subheading } from '@/components/heading'

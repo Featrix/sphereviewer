@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎯 Sphere Viewer - Data-Driven Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #059669 0%, #047857 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #059669, #10b981);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0 0 10px 0;
+            font-size: 2.5em;
+        }
+        .test-section {
+            margin: 30px;
+            padding: 25px;
+            border: 3px dashed #e5e7eb;
+            border-radius: 12px;
+            background: #f9fafb;
+        }
+        .test-section.active {
+            border-color: #059669;
+            background: #f0fdf4;
+        }
+        .test-section h3 {
+            margin-top: 0;
+            color: #1f2937;
+            font-size: 1.5em;
+        }
+        .sphere-container {
+            height: 400px;
+            border: 2px solid #d1d5db;
+            border-radius: 8px;
+            margin: 20px 0;
+            background: white;
+            position: relative;
+            overflow: hidden;
+        }
+        .sphere-container.loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f3f4f6;
+        }
+        .controls {
+            margin: 20px 0;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .btn.primary { background: #059669; color: white; }
+        .btn.primary:hover { background: #047857; }
+        .btn.secondary { background: #6b7280; color: white; }
+        .btn.secondary:hover { background: #4b5563; }
+        .code-block {
+            background: #1f2937;
+            color: #f9fafb;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 14px;
+            overflow-x: auto;
+            margin: 15px 0;
+        }
+        .data-preview {
+            background: #f3f4f6;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            padding: 15px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .status.success { background: #d1fae5; color: #065f46; }
+        .status.error { background: #fee2e2; color: #991b1b; }
+        .status.info { background: #dbeafe; color: #1e40af; }
+    </style>
+</head>
+<body>
+    <!-- Load React dependencies -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+    <div class="container">
+        <div class="header">
+            <h1>🎯 Sphere Viewer</h1>
+            <h2>Data-Driven Embed Test</h2>
+            <p>Testing direct data input without API calls</p>
+        </div>
+
+        <!-- Method 1: Window data -->
+        <div class="test-section" id="test1">
+            <h3>📋 Method 1: Window Data <span class="status info">RECOMMENDED</span></h3>
+            <p>Pass data via window object for maximum control and performance.</p>
+            
+            <div class="code-block">
+&lt;script&gt;
+window.myFeatrixData = {
+  session: { session_id: "example", status: "done", done: true },
+  coords: [/* your coordinate data */],
+  entire_cluster_results: {/* clustering info */}
+};
+&lt;/script&gt;
+&lt;script src="sphere-viewer.js" data-use-window-data="myFeatrixData"&gt;&lt;/script&gt;
+            </div>
+            
+            <div class="sphere-container" id="window-data-container"></div>
+            
+            <div class="controls">
+                <button class="btn primary" onclick="loadWindowDataExample()">Load Window Data</button>
+                <button class="btn secondary" onclick="showDataPreview('window')">Show Data</button>
+            </div>
+            
+            <div id="window-data-preview" class="data-preview" style="display: none;"></div>
+        </div>
+
+        <!-- Method 2: JSON file -->
+        <div class="test-section" id="test2">
+            <h3>📄 Method 2: JSON File <span class="status success">BEST FOR PRODUCTION</span></h3>
+            <p>Load data from a JSON file exported by Featrix.</p>
+            
+            <div class="code-block">
+&lt;script src="sphere-viewer.js" data-featrix-data="data/my-sphere-data.json"&gt;&lt;/script&gt;
+            </div>
+            
+            <div class="sphere-container" id="json-file-container"></div>
+            
+            <div class="controls">
+                <button class="btn primary" onclick="loadJSONExample()">Load from JSON</button>
+                <button class="btn secondary" onclick="showDataPreview('json')">Show Data</button>
+            </div>
+            
+            <div id="json-data-preview" class="data-preview" style="display: none;"></div>
+        </div>
+
+        <!-- Method 3: Manual API -->
+        <div class="test-section" id="test3">
+            <h3>🔧 Method 3: Manual JavaScript API</h3>
+            <p>Programmatically pass data using the JavaScript API.</p>
+            
+            <div class="code-block">
+const viewer = new window.FeatrixSphereViewer();
+viewer.init({
+  data: featrixDataObject,
+  containerId: 'my-container'
+});
+            </div>
+            
+            <div class="sphere-container" id="manual-api-container">
+                <div style="text-align: center; padding: 50px; color: #6b7280;">
+                    <p>Click "Initialize Manual API" to test</p>
+                </div>
+            </div>
+            
+            <div class="controls">
+                <button class="btn primary" onclick="initManualAPI()">Initialize Manual API</button>
+                <button class="btn primary" onclick="updateManualData()">Update Data</button>
+                <button class="btn secondary" onclick="destroyManual()">Destroy</button>
+                <button class="btn secondary" onclick="showDataPreview('manual')">Show Data</button>
+            </div>
+            
+            <div id="manual-data-preview" class="data-preview" style="display: none;"></div>
+        </div>
+
+        <!-- Method 4: Legacy sessionId (still works) -->
+        <div class="test-section" id="test4">
+            <h3>🔄 Method 4: Legacy Session ID <span class="status error">DEPRECATED</span></h3>
+            <p>Still supports the old API-based approach for backwards compatibility.</p>
+            
+            <div class="code-block">
+&lt;script src="sphere-viewer.js" data-session-id="your-session-id"&gt;&lt;/script&gt;
+            </div>
+            
+            <div class="sphere-container" id="legacy-container">
+                <div style="text-align: center; padding: 50px; color: #6b7280;">
+                    <p>⚠️ This method requires API access</p>
+                </div>
+            </div>
+            
+            <div class="controls">
+                <button class="btn secondary" onclick="testLegacyAPI()">Test Legacy (will likely fail)</button>
+            </div>
+        </div>
+
+        <!-- Data Format Guide -->
+        <div class="test-section">
+            <h3>📖 Featrix Data Format Guide</h3>
+            <p>Your Featrix export should have this structure:</p>
+            
+            <div class="code-block">
+{
+  "session": {
+    "session_id": "your-session-id",
+    "status": "done",
+    "done": true,
+    "failed": false
+  },
+  "coords": [
+    {
+      "0": -2.5,        // X coordinate
+      "1": 1.3,         // Y coordinate  
+      "2": 0.8,         // Z coordinate
+      "cluster_pre": 0, // Cluster assignment
+      "__featrix_row_id": 1,
+      "__featrix_row_offset": 0,
+      "scalar_columns": { "age": 25, "income": 50000 },
+      "set_columns": { "category": "A", "region": "North" },
+      "string_columns": { "name": "John Doe" }
+    }
+    // ... more coordinate records
+  ],
+  "entire_cluster_results": {
+    "2": { "cluster_labels": [0, 1, 0], "silhouette_score": 0.75, "n_clusters": 2 },
+    "3": { "cluster_labels": [0, 1, 2], "silhouette_score": 0.68, "n_clusters": 3 }
+    // ... clustering results for different cluster counts
+  }
+}
+            </div>
+            
+            <div class="controls">
+                <button class="btn secondary" onclick="downloadExampleData()">📥 Download Example Data</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Sample data for testing
+        const sampleData = {
+            session: {
+                session_id: "test-data-example",
+                status: "done",
+                done: true,
+                failed: false,
+                created_at: new Date().toISOString()
+            },
+            coords: [
+                {
+                    "0": -2.5, "1": 1.3, "2": 0.8,
+                    "cluster_pre": 0,
+                    "__featrix_row_id": 1,
+                    "__featrix_row_offset": 0,
+                    "scalar_columns": { "age": 25, "income": 50000, "score": 0.85 },
+                    "set_columns": { "category": "A", "region": "North" },
+                    "string_columns": { "name": "John Doe" }
+                },
+                {
+                    "0": 1.2, "1": -0.7, "2": 2.1,
+                    "cluster_pre": 1,
+                    "__featrix_row_id": 2,
+                    "__featrix_row_offset": 1,
+                    "scalar_columns": { "age": 32, "income": 65000, "score": 0.92 },
+                    "set_columns": { "category": "B", "region": "South" },
+                    "string_columns": { "name": "Jane Smith" }
+                },
+                {
+                    "0": 0.1, "1": 2.8, "2": -1.5,
+                    "cluster_pre": 0,
+                    "__featrix_row_id": 3,
+                    "__featrix_row_offset": 2,
+                    "scalar_columns": { "age": 28, "income": 42000, "score": 0.78 },
+                    "set_columns": { "category": "A", "region": "East" },
+                    "string_columns": { "name": "Bob Johnson" }
+                }
+            ],
+            entire_cluster_results: {
+                "2": { "cluster_labels": [0, 1, 0], "silhouette_score": 0.75, "n_clusters": 2 },
+                "3": { "cluster_labels": [0, 1, 2], "silhouette_score": 0.68, "n_clusters": 3 }
+            }
+        };
+
+        let manualViewer = null;
+
+        // Method 1: Window data
+        function loadWindowDataExample() {
+            window.myFeatrixData = sampleData;
+            
+            if (window.FeatrixSphereViewer) {
+                const viewer = new window.FeatrixSphereViewer();
+                viewer.init({
+                    data: window.myFeatrixData,
+                    containerId: 'window-data-container'
+                });
+                console.log('✅ Window data method successful');
+                document.getElementById('test1').classList.add('active');
+            } else {
+                console.log('❌ FeatrixSphereViewer not loaded');
+            }
+        }
+
+        // Method 2: JSON file (simulated)
+        function loadJSONExample() {
+            if (window.FeatrixSphereViewer) {
+                const viewer = new window.FeatrixSphereViewer();
+                viewer.init({
+                    data: sampleData,
+                    containerId: 'json-file-container'
+                });
+                console.log('✅ JSON file method successful (simulated)');
+                document.getElementById('test2').classList.add('active');
+            } else {
+                console.log('❌ FeatrixSphereViewer not loaded');
+            }
+        }
+
+        // Method 3: Manual API
+        function initManualAPI() {
+            if (window.FeatrixSphereViewer) {
+                manualViewer = new window.FeatrixSphereViewer();
+                manualViewer.init({
+                    data: sampleData,
+                    containerId: 'manual-api-container'
+                });
+                console.log('✅ Manual API initialized');
+                document.getElementById('test3').classList.add('active');
+            } else {
+                console.log('❌ FeatrixSphereViewer not loaded');
+            }
+        }
+
+        function updateManualData() {
+            if (manualViewer) {
+                const updatedData = JSON.parse(JSON.stringify(sampleData));
+                updatedData.session.session_id = "updated-" + Date.now();
+                
+                manualViewer.update({ data: updatedData });
+                console.log('✅ Manual API data updated');
+            } else {
+                console.log('❌ No manual viewer to update');
+            }
+        }
+
+        function destroyManual() {
+            if (manualViewer) {
+                manualViewer.destroy();
+                manualViewer = null;
+                console.log('✅ Manual viewer destroyed');
+                
+                // Reset container
+                document.getElementById('manual-api-container').innerHTML = `
+                    <div style="text-align: center; padding: 50px; color: #6b7280;">
+                        <p>Click "Initialize Manual API" to test</p>
+                    </div>
+                `;
+                document.getElementById('test3').classList.remove('active');
+            }
+        }
+
+        // Method 4: Legacy API (will likely fail without real session)
+        function testLegacyAPI() {
+            if (window.FeatrixSphereViewer) {
+                const viewer = new window.FeatrixSphereViewer();
+                viewer.init({
+                    sessionId: 'fake-session-id',
+                    containerId: 'legacy-container'
+                });
+                console.log('⚠️ Legacy API test initiated (may fail due to API)');
+            }
+        }
+
+        // Data preview functions
+        function showDataPreview(method) {
+            const previewId = method + '-data-preview';
+            const preview = document.getElementById(previewId);
+            
+            if (preview.style.display === 'none') {
+                preview.innerHTML = '<pre>' + JSON.stringify(sampleData, null, 2) + '</pre>';
+                preview.style.display = 'block';
+            } else {
+                preview.style.display = 'none';
+            }
+        }
+
+        function downloadExampleData() {
+            const dataStr = JSON.stringify(sampleData, null, 2);
+            const dataBlob = new Blob([dataStr], {type: 'application/json'});
+            const url = URL.createObjectURL(dataBlob);
+            
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'example-featrix-data.json';
+            link.click();
+            
+            URL.revokeObjectURL(url);
+        }
+
+        // Initialize when page loads
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                if (window.FeatrixSphereViewer) {
+                    console.log('✅ FeatrixSphereViewer loaded successfully');
+                    console.log('🎯 Ready to test data-driven methods');
+                } else {
+                    console.log('❌ FeatrixSphereViewer failed to load');
+                }
+            }, 1000);
+        });
+    </script>
+
+    <!-- Load the sphere viewer script -->
+    <script src="dist/sphere-viewer.js"></script>
+</body>
+</html> 

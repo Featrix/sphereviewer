@@ -1,8 +1,8 @@
 import React, { Suspense, useEffect, useRef, useState } from "react";
-import InteractiveSphere, { find_best_cluster_number } from '../sphere_display';
+import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
 import { fetch_session_data, fetch_session_projections } from './embed-data-access';
-import { SphereRecord, SphereRecordIndex, remap_cluster_assignments } from '../sphere_control';
+import { SphereRecord, SphereRecordIndex, remap_cluster_assignments } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 
 // Function to read a JSON object from localStorage by folder and session ID
@@ -138,7 +138,7 @@ interface SphereEmbeddedProps {
     apiBaseUrl?: string;
 }
 
-export default function SphereEmbedded({ initial_data, apiBaseUrl }: SphereEmbeddedProps) {
+export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl }: SphereEmbeddedProps) {
     const init_projections = readFromLocalStorage("projections", initial_data.session.session_id);
     if (init_projections){
         remap_server_cluster_assignments(init_projections?.entire_cluster_results);
@@ -214,7 +214,7 @@ export default function SphereEmbedded({ initial_data, apiBaseUrl }: SphereEmbed
             </div>
 
             {is_done && (
-                <InteractiveSphere 
+                <FeatrixEmbeddingsExplorer 
                     data={sessionData} 
                     jsonData={projections}
                     columnTypes={columnTypes}

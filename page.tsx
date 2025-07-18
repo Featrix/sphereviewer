@@ -5,11 +5,11 @@ import { Heading } from '@/components/heading'
 import { Text, TextLink } from '@/components/text'
 import { Button } from '@/components/button'
 
-import Sphere from './sphere'
+import FeatrixSphere from './featrix_sphere'
 
 import { fetch_session_data, fetch_session_projections } from './data_access'
 
-import SphereHeader from './sphere_header'
+import FeatrixSphereHeader from './featrix_sphere_header'
 
 
 import type { Metadata, ResolvingMetadata } from 'next'
@@ -61,7 +61,7 @@ export default async function Page({ params }: Props) {
         <>
         <div className="flex flex-col gap-8">
             <div className="flex flex-col gap-4">
-                <SphereHeader />
+                <FeatrixSphereHeader />
 
                 <Text>
                     We'd love to hear what you think. You can always email us at<TextLink href="mailto:hello@featrix.ai?subject=I%20Love%20Embeddings" className="ml-1">
@@ -70,7 +70,7 @@ export default async function Page({ params }: Props) {
                     
                 </Text>
                 
-                <Sphere initial_data={data} />
+                <FeatrixSphere initial_data={data} />
             </div>
         </div>
         </>

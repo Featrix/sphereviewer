@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎯 FeatrixSphereViewer - Naming Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            padding: 20px;
+            background: #f0f9ff;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+        .test-result {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            font-weight: 500;
+        }
+        .success { background: #d1fae5; color: #065f46; }
+        .error { background: #fee2e2; color: #991b1b; }
+        .sphere-container {
+            height: 400px;
+            border: 2px solid #d1d5db;
+            border-radius: 8px;
+            margin: 20px 0;
+            background: #f9fafb;
+        }
+        .btn {
+            padding: 10px 20px;
+            background: #059669;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        .btn:hover { background: #047857; }
+    </style>
+</head>
+<body>
+    <!-- Load React dependencies -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+    <div class="container">
+        <h1>🎯 FeatrixSphereViewer Naming Test</h1>
+        <p>Testing the new FeatrixSphereViewer class and branding</p>
+
+        <div id="test-results"></div>
+
+        <div class="sphere-container" id="sphere-container"></div>
+
+        <div>
+            <button class="btn" onclick="testInitialization()">Test Initialization</button>
+            <button class="btn" onclick="testDataLoading()">Test Data Loading</button>
+            <button class="btn" onclick="checkGlobalObject()">Check Global Object</button>
+        </div>
+    </div>
+
+    <script>
+        const sampleData = {
+            session: {
+                session_id: "naming-test-session",
+                status: "done",
+                done: true,
+                failed: false
+            },
+            coords: [
+                { "0": -1.5, "1": 2.3, "2": 0.8, "cluster_pre": 0, "__featrix_row_id": 1 },
+                { "0": 1.2, "1": -0.7, "2": 1.9, "cluster_pre": 1, "__featrix_row_id": 2 },
+                { "0": 0.3, "1": 1.8, "2": -1.1, "cluster_pre": 0, "__featrix_row_id": 3 }
+            ],
+            entire_cluster_results: {
+                "2": { "cluster_labels": [0, 1, 0], "n_clusters": 2 }
+            }
+        };
+
+        let viewer = null;
+
+        function logResult(message, isSuccess = true) {
+            const resultsDiv = document.getElementById('test-results');
+            const div = document.createElement('div');
+            div.className = `test-result ${isSuccess ? 'success' : 'error'}`;
+            div.textContent = message;
+            resultsDiv.appendChild(div);
+            console.log(message);
+        }
+
+        function checkGlobalObject() {
+            if (window.FeatrixSphereViewer) {
+                logResult('✅ window.FeatrixSphereViewer is available', true);
+                logResult(`✅ Type: ${typeof window.FeatrixSphereViewer}`, true);
+            } else {
+                logResult('❌ window.FeatrixSphereViewer not found', false);
+            }
+
+            // Check that old name is NOT available
+            if (window.SphereViewer) {
+                logResult('⚠️ WARNING: Old window.SphereViewer still exists', false);
+            } else {
+                logResult('✅ Old window.SphereViewer correctly removed', true);
+            }
+        }
+
+        function testInitialization() {
+            try {
+                if (!window.FeatrixSphereViewer) {
+                    logResult('❌ FeatrixSphereViewer class not available', false);
+                    return;
+                }
+
+                viewer = new window.FeatrixSphereViewer();
+                logResult('✅ FeatrixSphereViewer instance created successfully', true);
+
+                // Test init method
+                viewer.init({
+                    data: sampleData,
+                    containerId: 'sphere-container'
+                });
+                logResult('✅ FeatrixSphereViewer.init() called successfully', true);
+
+            } catch (error) {
+                logResult(`❌ Initialization failed: ${error.message}`, false);
+            }
+        }
+
+        function testDataLoading() {
+            if (!viewer) {
+                logResult('❌ No viewer instance. Run test initialization first.', false);
+                return;
+            }
+
+            try {
+                // Test update method
+                const updatedData = { ...sampleData };
+                updatedData.session.session_id = "updated-naming-test-" + Date.now();
+                
+                viewer.update({ data: updatedData });
+                logResult('✅ FeatrixSphereViewer.update() called successfully', true);
+
+            } catch (error) {
+                logResult(`❌ Data loading failed: ${error.message}`, false);
+            }
+        }
+
+        // Run initial checks when page loads
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                logResult('🎯 Starting FeatrixSphereViewer naming tests...', true);
+                checkGlobalObject();
+            }, 1000);
+        });
+    </script>
+
+    <!-- Load the sphere viewer script -->
+    <script src="dist/sphere-viewer.js"></script>
+</body>
+</html> 

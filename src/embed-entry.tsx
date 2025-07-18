@@ -1,15 +1,18 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import SphereViewerApp from './SphereViewerApp';
+import FeatrixSphereViewerApp from './FeatrixSphereViewerApp';
 import './embed-styles.css';
 
-interface SphereViewerConfig {
-  sessionId: string;
+interface FeatrixSphereViewerConfig {
+  // New: Accept data directly instead of sessionId
+  data?: any;
+  // Legacy: Still support sessionId for backwards compatibility  
+  sessionId?: string;
   containerId?: string;
   apiBaseUrl?: string;
 }
 
-class SphereViewer {
+class FeatrixSphereViewer {
   private root: ReactDOM.Root | null = null;
   private container: HTMLElement | null = null;
 
@@ -27,28 +30,56 @@ class SphereViewer {
       const sessionId = script.getAttribute('data-session-id');
       const containerId = script.getAttribute('data-container-id');
       const apiBaseUrl = script.getAttribute('data-api-base-url');
+      const dataUrl = script.getAttribute('data-featrix-data');
+      const windowDataKey = script.getAttribute('data-use-window-data');
 
-      if (sessionId) {
-        // Wait for DOM to be ready
-        if (document.readyState === 'loading') {
-          document.addEventListener('DOMContentLoaded', () => {
-            this.init({ sessionId, containerId: containerId || undefined, apiBaseUrl: apiBaseUrl || undefined });
-          });
-        } else {
-          this.init({ sessionId, containerId: containerId || undefined, apiBaseUrl: apiBaseUrl || undefined });
-        }
+      // Priority: 1) Window data, 2) Data URL, 3) Session ID (legacy)
+      if (windowDataKey && (window as any)[windowDataKey]) {
+        this.initWithData((window as any)[windowDataKey], containerId);
+      } else if (dataUrl) {
+        this.loadDataAndInit(dataUrl, containerId);
+      } else if (sessionId) {
+        this.init({ sessionId, containerId: containerId || undefined, apiBaseUrl: apiBaseUrl || undefined });
       }
     }
   }
 
-  init(config: SphereViewerConfig) {
-    const { sessionId, containerId = 'sphere-viewer-container', apiBaseUrl } = config;
+  private async loadDataAndInit(dataUrl: string, containerId?: string | null) {
+    try {
+      const response = await fetch(dataUrl);
+      const data = await response.json();
+      this.initWithData(data, containerId);
+    } catch (error) {
+      console.error('Failed to load Featrix data:', error);
+      this.showError('Failed to load data file', containerId);
+    }
+  }
 
-    // Create container if it doesn't exist
-    let container = document.getElementById(containerId);
+  private initWithData(data: any, containerId?: string | null) {
+    this.init({ data, containerId: containerId || undefined });
+  }
+
+  private showError(message: string, containerId?: string | null) {
+    const container = this.getOrCreateContainer(containerId);
+    if (container) {
+      container.innerHTML = `
+        <div style="display: flex; align-items: center; justify-content: center; height: 100%; background: #fee2e2; color: #991b1b; padding: 20px; text-align: center; border-radius: 8px;">
+          <div>
+            <h3 style="margin: 0 0 10px 0;">❌ Error Loading Sphere Viewer</h3>
+            <p style="margin: 0;">${message}</p>
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  private getOrCreateContainer(containerId?: string | null) {
+    const id = containerId || 'sphere-viewer-container';
+    let container = document.getElementById(id);
+    
     if (!container) {
       container = document.createElement('div');
-      container.id = containerId;
+      container.id = id;
       container.style.cssText = 'width: 100%; height: 500px; min-height: 400px;';
       
       // Insert after the script tag or at the end of body
@@ -60,12 +91,27 @@ class SphereViewer {
         document.body.appendChild(container);
       }
     }
+    
+    return container;
+  }
 
+  init(config: FeatrixSphereViewerConfig) {
+    const { data, sessionId, containerId = 'sphere-viewer-container', apiBaseUrl } = config;
+
+    // Validate that we have either data or sessionId
+    if (!data && !sessionId) {
+      console.error('FeatrixSphereViewer: Must provide either data or sessionId');
+      this.showError('No data or session ID provided', containerId);
+      return;
+    }
+
+    const container = this.getOrCreateContainer(containerId);
     this.container = container;
     this.root = ReactDOM.createRoot(container);
     
     this.root.render(
-      <SphereViewerApp 
+      <FeatrixSphereViewerApp 
+        data={data}
         sessionId={sessionId} 
         apiBaseUrl={apiBaseUrl}
       />
@@ -82,10 +128,11 @@ class SphereViewer {
     }
   }
 
-  update(config: Partial<SphereViewerConfig>) {
-    if (this.root && config.sessionId) {
+  update(config: Partial<FeatrixSphereViewerConfig>) {
+    if (this.root && (config.data || config.sessionId)) {
       this.root.render(
-        <SphereViewerApp 
+        <FeatrixSphereViewerApp 
+          data={config.data}
           sessionId={config.sessionId} 
           apiBaseUrl={config.apiBaseUrl}
         />
@@ -97,13 +144,13 @@ class SphereViewer {
 // Global API
 declare global {
   interface Window {
-    SphereViewer: typeof SphereViewer;
+    FeatrixSphereViewer: typeof FeatrixSphereViewer;
   }
 }
 
-window.SphereViewer = SphereViewer;
+window.FeatrixSphereViewer = FeatrixSphereViewer;
 
 // Auto-initialize instance
-const viewer = new SphereViewer();
+const viewer = new FeatrixSphereViewer();
 
-export default SphereViewer; 
+export default FeatrixSphereViewer; 
