@@ -37,4 +37,19 @@ export function TextLink({ href, className, children, ...props }: TextLinkProps)
   );
 }
 
-export type TextColor = 'gray' | 'red' | 'blue' | 'green' | 'yellow' | 'purple'; 
+// Define TextColor as both a type and a component for backward compatibility
+export type TextColor = 'gray' | 'red' | 'blue' | 'green' | 'yellow' | 'purple';
+
+// TextColor component for backward compatibility with training_status.tsx
+interface TextColorProps {
+  className?: string;
+  children: React.ReactNode;
+}
+
+export function TextColor({ className, children, ...props }: TextColorProps) {
+  return (
+    <span className={clsx('text-gray-700', className)} {...props}>
+      {children}
+    </span>
+  );
+} 

@@ -1,45 +1,66 @@
 {
-  "name": "weedalytics",
-  "version": "0.1.0",
-  "private": true,
+  "name": "@featrix/sphere-viewer",
+  "version": "1.0.0",
+  "description": "Embeddable 3D sphere data visualization component using Three.js and React",
+  "main": "dist/index.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "dev": "env-cmd -f .env.dev next dev",
     "build": "next build",
     "build:embed": "webpack --mode production",
-    "build:all": "npm run build && npm run build:embed",
+    "build:package": "npm run build:types && npm run build:esm && npm run build:cjs",
+    "build:types": "tsc --project tsconfig.package.json --emitDeclarationOnly",
+    "build:esm": "webpack --config webpack.package.js --env module=esm",
+    "build:cjs": "webpack --config webpack.package.js --env module=cjs",
+    "build:all": "npm run build && npm run build:embed && npm run build:package",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "prepublishOnly": "npm run build:package"
+  },
+  "keywords": [
+    "react",
+    "threejs",
+    "3d",
+    "visualization",
+    "sphere",
+    "data-viz",
+    "embeddable",
+    "component"
+  ],
+  "author": "Featrix",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Featrix/sphereviewer.git"
+  },
+  "homepage": "https://github.com/Featrix/sphereviewer#readme",
+  "bugs": {
+    "url": "https://github.com/Featrix/sphereviewer/issues"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0"
   },
   "dependencies": {
     "@headlessui/react": "^2.2.0",
     "@heroicons/react": "^2.1.5",
-    "@libsql/client": "^0.14.0",
-    "@propelauth/nextjs": "file:.yalc/@propelauth/nextjs",
-    "@vercel/analytics": "^1.4.1",
     "clsx": "^2.1.1",
-    "date-fns": "^4.1.0",
-    "date-fns-tz": "^3.2.0",
-    "dotenv": "^16.4.5",
     "framer-motion": "^11.11.17",
-    "next": "15.0.3",
-    "plotly.js": "^3.0.0",
-    "react": "^18",
-    "react-dom": "^18",
-    "react-hot-toast": "^2.4.1",
-    "react-plotly.js": "^2.6.0",
     "three": "^0.174.0",
-    "uuid": "^11.0.3",
-    "zod": "^3.23.8"
+    "uuid": "^11.0.3"
   },
   "devDependencies": {
     "@types/node": "^20",
-    "@types/pg": "^8.11.11",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "@types/three": "^0.174.0",
     "css-loader": "^6.11.0",
-    "drizzle-kit": "^0.28.1",
-    "env-cmd": "^10.1.0",
     "eslint": "^8",
     "eslint-config-next": "15.0.3",
     "postcss": "^8",

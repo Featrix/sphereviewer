@@ -52,7 +52,7 @@ export function TableRow({ children, className, ...props }: { children: React.Re
   );
 }
 
-export function TableHeader({ children, className, ...props }: { children: React.ReactNode; className?: string }) {
+export function TableHeader({ children, className, ...props }: { children?: React.ReactNode; className?: string }) {
   return (
     <th
       className={clsx(
@@ -66,7 +66,7 @@ export function TableHeader({ children, className, ...props }: { children: React
   );
 }
 
-export function TableCell({ children, className, ...props }: { children: React.ReactNode; className?: string }) {
+export function TableCell({ children, className, ...props }: { children?: React.ReactNode; className?: string }) {
   return (
     <td className={clsx('px-6 py-4 whitespace-nowrap text-sm text-gray-900', className)} {...props}>
       {children}

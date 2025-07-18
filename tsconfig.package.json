@@ -1,0 +1,28 @@
+{
+  "extends": "./tsconfig.embed.json",
+  "compilerOptions": {
+    "declaration": true,
+    "emitDeclarationOnly": false,
+    "outDir": "./dist",
+    "skipLibCheck": true,
+    "rootDir": "."
+  },
+  "include": [
+    "src/**/*",
+    "components/**/*",
+    "sphere_*.tsx",
+    "training_status.tsx",
+    "copy_url.tsx"
+  ],
+  "exclude": [
+    "node_modules",
+    "**/*.test.*",
+    "**/*.spec.*",
+    ".next",
+    "dist",
+    "page.tsx",
+    "next.config.ts",
+    "components/badge.tsx",
+    "components/dropdown.tsx"
+  ]
+} 

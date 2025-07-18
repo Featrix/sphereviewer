@@ -1,0 +1,70 @@
+import * as THREE from "three";
+export interface SphereData {
+    scene: THREE.Scene;
+    camera: THREE.PerspectiveCamera;
+    renderer: THREE.WebGLRenderer;
+    raycaster: THREE.Raycaster;
+    mouse: THREE.Vector2;
+    angle: number;
+    verticalAngle: number;
+    cubeSize: number;
+    sceneCenter: THREE.Vector3;
+    orbitRadius: number;
+    isAnimating: boolean;
+    cancelAnimationRef: number;
+    container: HTMLElement;
+    isDragging: boolean;
+    firstPos: {
+        x: number;
+        y: number;
+    };
+    prevPos: {
+        x: number;
+        y: number;
+    };
+    prevPinchDistance: number | null;
+    selectedRecords: Set<string>;
+    event_listeners: Record<string, Map<string, CallableFunction>>;
+    pointRecordsByID: Map<string, SphereRecord>;
+    pointObjectsByRecordID: Map<string, THREE.Mesh>;
+    similaritySearchResults: Map<string, Array<string>>;
+    recordFields: string[];
+}
+export type SphereRecord = {
+    coords: {
+        x: number;
+        y: number;
+        z: number;
+    };
+    id: string;
+    featrix_meta: {
+        cluster_pre: number | null;
+        webgl_id: string | null;
+        __featrix_row_id: number | null;
+        __featrix_row_offset: number | null;
+    };
+    original: {
+        [key: string]: any;
+    };
+};
+export type SphereRecordIndex = Map<string, SphereRecord>;
+export declare function add_similarity_search_results(sphere: SphereData, query_record: string, similar_record_ids: Array<string>): void;
+export declare function remove_similarity_search_results(sphere: SphereData, anchor_id: string): void;
+export declare function render_sphere(sphere: SphereData): void;
+export declare function remap_cluster_assignments(base_assignments: any, new_assignments: any): any;
+export declare function change_cluster_count(sphere: SphereData, jsonData: any, new_cluster_selection: any): void;
+export declare function initialize_sphere(container: HTMLElement, recordList: SphereRecord[]): SphereData;
+export declare function start_animation(sphere: SphereData): void;
+export declare function toggle_animation(sphere: SphereData): void;
+export declare function notify_highlights_changed(sphere: SphereData): void;
+export declare function clear_colors(sphere: SphereData): void;
+export declare function add_new_embedding(sphere: SphereData, new_record: SphereRecord): void;
+export declare function change_object_color(sphere: SphereData, record_id: string, color: string | number): void;
+export declare function show_search_results(sphere: SphereData, searchResultRecords: SphereRecord[]): void;
+export declare function register_event_listener(sphere: SphereData, event_name: string, callback: any): () => void;
+export declare function remove_event_listener(sphere: SphereData, event_name: string, listener_id: string): void;
+export declare function send_event(sphere: SphereData, event_name: string, event: any): void;
+export declare function get_object_color_string(object: THREE.Mesh): string | null;
+export declare function add_selected_record(sphere: SphereData, record_id: string): void;
+export declare function remove_selected_record(sphere: SphereData, record_id: string): void;
+export declare function clear_selected_objects(sphere: SphereData): void;
