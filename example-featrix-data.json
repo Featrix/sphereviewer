@@ -1,18 +1,26 @@
 {
+  "_comment": "This is an example of data exported from the Featrix Platform",
+  "_note": "Featrix automatically generates this format - use directly in Sphere Viewer",
+  
   "session": {
-    "session_id": "example-session-123",
+    "session_id": "customer-segmentation-example-2024",
     "status": "done",
     "done": true,
     "failed": false,
     "created_at": "2024-07-18T12:00:00Z",
     "metadata": {
-      "dataset_name": "Sample Dataset",
-      "num_rows": 1000,
-      "num_columns": 15
+      "dataset_name": "Customer Segmentation Analysis",
+      "num_rows": 5,
+      "num_columns": 8,
+      "analysis_type": "embedding",
+      "algorithm": "umap",
+      "dimensions": 3,
+      "featrix_version": "2.1.0"
     }
   },
   "coords": [
     {
+      "_comment": "Each object represents one row from your original dataset",
       "0": -2.5,
       "1": 1.3,
       "2": 0.8,
@@ -20,17 +28,23 @@
       "__featrix_row_id": 1,
       "__featrix_row_offset": 0,
       "scalar_columns": {
-        "age": 25,
-        "income": 50000,
-        "score": 0.85
+        "_note": "Numeric columns from your original data",
+        "age": 28,
+        "annual_income": 55000,
+        "spending_score": 85,
+        "tenure_years": 3.5
       },
       "set_columns": {
-        "category": "A",
-        "region": "North"
+        "_note": "Categorical columns from your original data",
+        "customer_tier": "Gold",
+        "region": "North America",
+        "subscription_type": "Premium"
       },
       "string_columns": {
-        "name": "John Doe",
-        "description": "Sample record"
+        "_note": "Text columns from your original data",
+        "customer_name": "Alice Johnson",
+        "email": "alice.johnson@example.com",
+        "notes": "High-value customer with excellent engagement history"
       }
     },
     {
@@ -41,17 +55,20 @@
       "__featrix_row_id": 2,
       "__featrix_row_offset": 1,
       "scalar_columns": {
-        "age": 32,
-        "income": 65000,
-        "score": 0.92
+        "age": 45,
+        "annual_income": 78000,
+        "spending_score": 92,
+        "tenure_years": 7.2
       },
       "set_columns": {
-        "category": "B",
-        "region": "South"
+        "customer_tier": "Platinum",
+        "region": "Europe",
+        "subscription_type": "Enterprise"
       },
       "string_columns": {
-        "name": "Jane Smith",
-        "description": "Another sample"
+        "customer_name": "Robert Chen",
+        "email": "robert.chen@example.com",
+        "notes": "Long-term customer with high lifetime value"
       }
     },
     {
@@ -62,35 +79,96 @@
       "__featrix_row_id": 3,
       "__featrix_row_offset": 2,
       "scalar_columns": {
-        "age": 28,
-        "income": 42000,
-        "score": 0.78
+        "age": 32,
+        "annual_income": 42000,
+        "spending_score": 68,
+        "tenure_years": 2.1
       },
       "set_columns": {
-        "category": "A",
-        "region": "East"
+        "customer_tier": "Silver",
+        "region": "Asia Pacific",
+        "subscription_type": "Standard"
       },
       "string_columns": {
-        "name": "Bob Johnson",
-        "description": "Third example"
+        "customer_name": "Maria Rodriguez",
+        "email": "maria.rodriguez@example.com",
+        "notes": "Growing customer with increasing engagement"
+      }
+    },
+    {
+      "0": -1.8,
+      "1": 0.5,
+      "2": 1.9,
+      "cluster_pre": 2,
+      "__featrix_row_id": 4,
+      "__featrix_row_offset": 3,
+      "scalar_columns": {
+        "age": 52,
+        "annual_income": 95000,
+        "spending_score": 78,
+        "tenure_years": 9.8
+      },
+      "set_columns": {
+        "customer_tier": "Platinum",
+        "region": "North America",
+        "subscription_type": "Enterprise"
+      },
+      "string_columns": {
+        "customer_name": "James Wilson",
+        "email": "james.wilson@example.com",
+        "notes": "Enterprise client with multiple service subscriptions"
+      }
+    },
+    {
+      "0": 2.3,
+      "1": -1.2,
+      "2": 0.4,
+      "cluster_pre": 1,
+      "__featrix_row_id": 5,
+      "__featrix_row_offset": 4,
+      "scalar_columns": {
+        "age": 29,
+        "annual_income": 62000,
+        "spending_score": 88,
+        "tenure_years": 4.3
+      },
+      "set_columns": {
+        "customer_tier": "Gold",
+        "region": "Europe",
+        "subscription_type": "Premium"
+      },
+      "string_columns": {
+        "customer_name": "Sophie Laurent",
+        "email": "sophie.laurent@example.com",
+        "notes": "Tech-savvy customer with high product adoption rate"
       }
     }
   ],
   "entire_cluster_results": {
+    "_comment": "Featrix tests multiple cluster counts to find optimal segmentation",
     "2": {
-      "cluster_labels": [0, 1, 0],
+      "cluster_labels": [0, 1, 0, 1, 1],
       "silhouette_score": 0.75,
-      "n_clusters": 2
+      "n_clusters": 2,
+      "algorithm": "kmeans"
     },
     "3": {
-      "cluster_labels": [0, 1, 2],
+      "cluster_labels": [0, 1, 0, 2, 1],
       "silhouette_score": 0.68,
-      "n_clusters": 3
+      "n_clusters": 3,
+      "algorithm": "kmeans"
     },
     "4": {
-      "cluster_labels": [0, 1, 2, 0],
+      "cluster_labels": [0, 1, 0, 2, 3],
       "silhouette_score": 0.62,
-      "n_clusters": 4
+      "n_clusters": 4,
+      "algorithm": "kmeans"
+    },
+    "5": {
+      "cluster_labels": [0, 1, 2, 3, 4],
+      "silhouette_score": 0.58,
+      "n_clusters": 5,
+      "algorithm": "kmeans"
     }
   }
 } 
