@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sphere Viewer - Embeddable Demo</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: #1e40af;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .content {
+            padding: 20px;
+        }
+        .demo-section {
+            margin-bottom: 40px;
+            padding: 20px;
+            border: 2px dashed #ddd;
+            border-radius: 8px;
+        }
+        .demo-section h3 {
+            margin-top: 0;
+            color: #1e40af;
+        }
+        .code-block {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 15px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 14px;
+            overflow-x: auto;
+            margin: 10px 0;
+        }
+        .instructions {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <!-- Load React and ReactDOM from CDN -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+    <div class="container">
+        <div class="header">
+            <h1>🌐 Sphere Viewer - Embeddable Component Demo</h1>
+            <p>Demonstrate how to embed the Sphere Viewer into any webpage</p>
+        </div>
+
+        <div class="content">
+            <div class="instructions">
+                <h3>📋 How to Use</h3>
+                <ol>
+                    <li>Build the embeddable component: <code>npm run build:embed</code></li>
+                    <li>Include React and ReactDOM from CDN (or your preferred method)</li>
+                    <li>Include the sphere-viewer.js script with your session ID</li>
+                    <li>The component will automatically initialize!</li>
+                </ol>
+            </div>
+
+            <div class="demo-section">
+                <h3>Method 1: Auto-initialization with data attributes</h3>
+                <p>The simplest way - just include the script tag with data attributes:</p>
+                
+                <div class="code-block">
+&lt;script src="dist/sphere-viewer.js" 
+        data-session-id="your-session-id-here"
+        data-container-id="my-sphere-container"&gt;&lt;/script&gt;
+
+&lt;div id="my-sphere-container"&gt;&lt;/div&gt;
+                </div>
+
+                <!-- Example container for auto-initialization -->
+                <div id="demo-auto-container" style="border: 1px solid #ddd; min-height: 200px; display: flex; align-items: center; justify-content: center; background: #f9f9f9;">
+                    <p style="color: #666; text-align: center;">
+                        Auto-initialization demo<br>
+                        <small>(Replace with actual session ID to test)</small>
+                    </p>
+                </div>
+            </div>
+
+            <div class="demo-section">
+                <h3>Method 2: Manual initialization with JavaScript API</h3>
+                <p>For more control, use the JavaScript API:</p>
+                
+                <div class="code-block">
+&lt;script src="dist/sphere-viewer.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+  const viewer = new window.SphereViewer();
+  viewer.init({
+    sessionId: 'your-session-id-here',
+    containerId: 'my-custom-container',
+    apiBaseUrl: 'https://sphere-api.featrix.com' // optional
+  });
+&lt;/script&gt;
+
+&lt;div id="my-custom-container"&gt;&lt;/div&gt;
+                </div>
+
+                <!-- Example container for manual initialization -->
+                <div id="demo-manual-container" style="border: 1px solid #ddd; min-height: 200px; display: flex; align-items: center; justify-content: center; background: #f9f9f9;">
+                    <p style="color: #666; text-align: center;">
+                        Manual initialization demo<br>
+                        <small>(Use browser console to test API)</small>
+                    </p>
+                </div>
+            </div>
+
+            <div class="demo-section">
+                <h3>Method 3: Dynamic Updates</h3>
+                <p>Update the viewer with new session data:</p>
+                
+                <div class="code-block">
+// Update to a new session
+viewer.update({ sessionId: 'new-session-id' });
+
+// Destroy the viewer
+viewer.destroy();
+                </div>
+            </div>
+
+            <div class="instructions">
+                <h3>🛠️ Build Instructions</h3>
+                <ol>
+                    <li>Install dependencies: <code>npm install</code></li>
+                    <li>Build the embeddable component: <code>npm run build:embed</code></li>
+                    <li>The output will be in <code>dist/sphere-viewer.js</code></li>
+                    <li>Include this file in your webpage along with React dependencies</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <!-- Test script for manual initialization -->
+    <script>
+        // This would work after building the component:
+        // const viewer = new window.SphereViewer();
+        // viewer.init({
+        //     sessionId: 'your-session-id-here',
+        //     containerId: 'demo-manual-container'
+        // });
+        
+        console.log('Demo page loaded. Build the component with "npm run build:embed" to test!');
+    </script>
+</body>
+</html> 
