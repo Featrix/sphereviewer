@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Featrix Sphere Viewer - 3D Data Visualization</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+            line-height: 1.6; 
+            background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+            color: #1f2937;
+        }
+        .container { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
+        .header { 
+            background: linear-gradient(135deg, #059669 0%, #047857 100%); 
+            color: white; 
+            padding: 60px 0; 
+            text-align: center; 
+        }
+        .header h1 { 
+            font-size: 3.5rem; 
+            font-weight: 700; 
+            margin-bottom: 20px; 
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        .header p { 
+            font-size: 1.3rem; 
+            opacity: 0.95; 
+            max-width: 600px; 
+            margin: 0 auto; 
+        }
+        .main-content { padding: 60px 0; }
+        .section { 
+            background: white; 
+            border-radius: 16px; 
+            padding: 50px; 
+            margin-bottom: 40px; 
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08); 
+            border: 1px solid #e5e7eb; 
+        }
+        .demo-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); 
+            gap: 30px; 
+            margin: 40px 0; 
+        }
+        .demo-card { 
+            background: #f8fafc; 
+            border: 2px solid #e2e8f0; 
+            border-radius: 12px; 
+            padding: 30px; 
+            text-align: center; 
+            transition: all 0.3s ease; 
+        }
+        .demo-card:hover { 
+            border-color: #059669; 
+            box-shadow: 0 8px 25px rgba(5, 150, 105, 0.15); 
+            transform: translateY(-5px); 
+        }
+        .demo-card h3 { 
+            color: #047857; 
+            font-size: 1.4rem; 
+            margin-bottom: 15px; 
+        }
+        .features-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); 
+            gap: 25px; 
+            margin: 30px 0; 
+        }
+        .feature { 
+            background: #f0fdf4; 
+            padding: 25px; 
+            border-radius: 10px; 
+            border-left: 4px solid #059669; 
+        }
+        .feature h4 { 
+            color: #047857; 
+            font-size: 1.2rem; 
+            margin-bottom: 10px; 
+        }
+        .code-block { 
+            background: #1f2937; 
+            color: #e5e7eb; 
+            padding: 25px; 
+            border-radius: 10px; 
+            margin: 20px 0; 
+            overflow-x: auto; 
+            font-family: 'Monaco', 'Menlo', monospace; 
+            font-size: 0.9rem; 
+        }
+        .demo-link { 
+            display: inline-block; 
+            background: #059669; 
+            color: white; 
+            padding: 12px 25px; 
+            border-radius: 8px; 
+            text-decoration: none; 
+            font-weight: 600; 
+            margin: 10px; 
+            transition: all 0.3s ease; 
+        }
+        .demo-link:hover { 
+            background: #047857; 
+            transform: translateY(-2px); 
+            box-shadow: 0 5px 15px rgba(5, 150, 105, 0.3); 
+        }
+        .featrix-info { 
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); 
+            border: 2px solid #0ea5e9; 
+            border-radius: 16px; 
+            padding: 40px; 
+            text-align: center; 
+            margin-top: 40px; 
+        }
+        .featrix-info h2 { 
+            color: #0369a1; 
+            font-size: 2rem; 
+            margin-bottom: 20px; 
+        }
+        .featrix-link { 
+            display: inline-block; 
+            background: #0ea5e9; 
+            color: white; 
+            padding: 12px 25px; 
+            border-radius: 8px; 
+            text-decoration: none; 
+            font-weight: 600; 
+            margin: 10px; 
+            transition: all 0.3s ease; 
+        }
+        .featrix-link:hover { 
+            background: #0284c7; 
+            transform: translateY(-2px); 
+            box-shadow: 0 5px 15px rgba(14, 165, 233, 0.3); 
+        }
+        .footer { 
+            background: #1f2937; 
+            color: #9ca3af; 
+            text-align: center; 
+            padding: 30px 0; 
+        }
+        @media (max-width: 768px) { 
+            .header h1 { font-size: 2.5rem; } 
+            .header p { font-size: 1.1rem; } 
+            .section { padding: 30px 20px; } 
+            .demo-grid { grid-template-columns: 1fr; } 
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <h1>🎯 Featrix Sphere Viewer</h1>
+            <p>Universal 3D data visualization component for any dataset. Transform your data into interactive spheres with zero configuration.</p>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="main-content">
+            
+            <div class="section">
+                <h2 style="text-align: center; color: #047857; font-size: 2.2rem; margin-bottom: 30px;">
+                    🚀 See It In Action
+                </h2>
+                <div class="demo-grid">
+                    <div class="demo-card">
+                        <h3>🎯 Complete Demo</h3>
+                        <p>Full-featured demonstration with real data, multiple integration methods, and interactive controls.</p>
+                        <a href="demo.html" class="demo-link">Launch Interactive Demo</a>
+                    </div>
+                    <div class="demo-card">
+                        <h3>⚡ Quick Test</h3>
+                        <p>Minimal example showing basic integration with sample customer segmentation data.</p>
+                        <a href="simple-test.html" class="demo-link">View Quick Test</a>
+                    </div>
+                    <div class="demo-card">
+                        <h3>🏷️ API Verification</h3>
+                        <p>Technical validation of the FeatrixSphereViewer class and global object availability.</p>
+                        <a href="test-new-naming.html" class="demo-link">Check API Status</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2 style="text-align: center; color: #047857; font-size: 2.2rem; margin-bottom: 30px;">
+                    ✨ Why Choose Featrix Sphere Viewer?
+                </h2>
+                <div class="features-grid">
+                    <div class="feature">
+                        <h4>🎯 Universal Compatibility</h4>
+                        <p>Works with any dataset in the documented JSON format. No vendor lock-in.</p>
+                    </div>
+                    <div class="feature">
+                        <h4>🚀 Zero Configuration</h4>
+                        <p>Featrix Platform exports data in perfect format. Use directly without modifications.</p>
+                    </div>
+                    <div class="feature">
+                        <h4>⚡ High Performance</h4>
+                        <p>WebGL-powered 3D rendering with smooth interactions and responsive design.</p>
+                    </div>
+                    <div class="feature">
+                        <h4>📱 Mobile Ready</h4>
+                        <p>Fully responsive interface that works perfectly on all devices and screen sizes.</p>
+                    </div>
+                    <div class="feature">
+                        <h4>🔧 Easy Integration</h4>
+                        <p>Simple script tag inclusion. No complex setup or build processes required.</p>
+                    </div>
+                    <div class="feature">
+                        <h4>🎨 Interactive Controls</h4>
+                        <p>Built-in zoom, rotation, clustering, and data exploration tools.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2 style="text-align: center; color: #047857; font-size: 2.2rem; margin-bottom: 30px;">
+                    🔧 Simple Integration
+                </h2>
+                <p style="text-align: center; font-size: 1.2rem; margin-bottom: 30px; color: #374151;">
+                    Add 3D data visualization to your website in under 2 minutes:
+                </p>
+                
+                <div style="margin: 30px 0;">
+                    <h3 style="color: #047857; margin-bottom: 15px;">1️⃣ Include the Script</h3>
+                    <div class="code-block">
+&lt;script src="https://bits/sv/sphere-viewer.js"&gt;&lt;/script&gt;
+                    </div>
+                </div>
+
+                <div style="margin: 30px 0;">
+                    <h3 style="color: #047857; margin-bottom: 15px;">2️⃣ Add a Container</h3>
+                    <div class="code-block">
+&lt;div id="my-sphere-viewer"&gt;&lt;/div&gt;
+                    </div>
+                </div>
+
+                <div style="margin: 30px 0;">
+                    <h3 style="color: #047857; margin-bottom: 15px;">3️⃣ Initialize with Your Data</h3>
+                    <div class="code-block">
+&lt;script&gt;
+const viewer = new FeatrixSphereViewer();
+viewer.init({
+    data: yourDataObject,
+    containerId: 'my-sphere-viewer'
+});
+&lt;/script&gt;
+                    </div>
+                </div>
+
+                <p style="text-align: center; margin-top: 20px;">
+                    <strong>That's it!</strong> Your 3D visualization will appear automatically. 
+                    <a href="demo.html" style="color: #059669; font-weight: 600;">See it in action →</a>
+                </p>
+            </div>
+
+            <div class="featrix-info">
+                <h2>🚀 Powered by Featrix</h2>
+                <p style="font-size: 1.1rem; margin-bottom: 25px;">
+                    <strong>Featrix</strong> is the leading platform for AI-powered data transformation and visualization. 
+                    We help organizations turn complex datasets into actionable insights through advanced machine learning 
+                    and intuitive visualizations.
+                </p>
+                <p style="margin-bottom: 25px;">
+                    Our mission is to democratize data science by making sophisticated analytics accessible to everyone. 
+                    The Featrix Sphere Viewer is part of our commitment to providing powerful, easy-to-use tools 
+                    for data exploration and presentation.
+                </p>
+                <a href="https://featrix.ai" class="featrix-link" target="_blank">🌐 Discover Featrix Platform</a>
+                <a href="mailto:hello@featrix.ai" class="featrix-link">✉️ Contact Our Team</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <div class="container">
+            <p>&copy; 2024 Featrix. All rights reserved. | <a href="https://featrix.ai" style="color: #60a5fa;">featrix.ai</a></p>
+        </div>
+    </div>
+</body>
+</html> 
