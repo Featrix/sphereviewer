@@ -317,22 +317,6 @@ cat > /tmp/sv-index.html << 'EOF'
     <div class="container">
         <div class="main-content">
             
-            <div class="featrix-info">
-                <h2>🚀 Powered by Featrix</h2>
-                <p style="font-size: 1.1rem; margin-bottom: 25px;">
-                    <strong>Featrix</strong> is the leading platform for AI-powered data transformation and visualization. 
-                    We help organizations turn complex datasets into actionable insights through advanced machine learning 
-                    and intuitive visualizations.
-                </p>
-                <p style="margin-bottom: 25px;">
-                    Our mission is to democratize data science by making sophisticated analytics accessible to everyone. 
-                    The Featrix Sphere Viewer is part of our commitment to providing powerful, easy-to-use tools 
-                    for data exploration and presentation.
-                </p>
-                <a href="https://featrix.ai" class="featrix-link" target="_blank">🌐 Discover Featrix Platform</a>
-                <a href="mailto:hello@featrix.ai" class="featrix-link">✉️ Contact Our Team</a>
-            </div>
-
             <div class="section">
                 <h2 style="text-align: center; color: #047857; font-size: 2.2rem; margin-bottom: 30px;">
                     🎯 Interactive Demos
@@ -433,6 +417,22 @@ window.myFeatrixData = {
                     <strong>That's it!</strong> Your 3D visualization will appear automatically. 
                     <a href="demo.html" style="color: #059669; font-weight: 600;">See it in action →</a>
                 </p>
+            </div>
+
+            <div class="featrix-info">
+                <h2>🚀 Powered by Featrix</h2>
+                <p style="font-size: 1.1rem; margin-bottom: 25px;">
+                    <strong>Featrix</strong> is the leading platform for AI-powered data transformation and visualization. 
+                    We help organizations turn complex datasets into actionable insights through advanced machine learning 
+                    and intuitive visualizations.
+                </p>
+                <p style="margin-bottom: 25px;">
+                    Our mission is to democratize data science by making sophisticated analytics accessible to everyone. 
+                    The Featrix Sphere Viewer is part of our commitment to providing powerful, easy-to-use tools 
+                    for data exploration and presentation.
+                </p>
+                <a href="https://featrix.ai" class="featrix-link" target="_blank">🌐 Discover Featrix Platform</a>
+                <a href="mailto:hello@featrix.ai" class="featrix-link">✉️ Contact Our Team</a>
             </div>
         </div>
     </div>
