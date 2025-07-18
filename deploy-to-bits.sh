@@ -65,10 +65,11 @@ print_status "Copying embeddable script..."
 scp $LOCAL_BUILD_DIR/sphere-viewer.js $HOST:$REMOTE_PATH/
 print_success "sphere-viewer.js deployed"
 
-# Copy example data
-print_status "Copying example data..."
+# Copy example data and real logistics data
+print_status "Copying data files..."
 scp example-featrix-data.json $HOST:$REMOTE_PATH/
-print_success "example-featrix-data.json deployed"
+scp logistics-featrix-data.json $HOST:$REMOTE_PATH/
+print_success "Data files deployed (example + real logistics data)"
 
 # Copy documentation
 print_status "Copying documentation..."
@@ -87,7 +88,8 @@ print_success "Branded public landing page deployed"
 
 # Copy demo and test files
 print_status "Copying demo and test files..."
-scp data-driven-test.html $HOST:$REMOTE_PATH/demo.html  # Demo as separate file
+scp data-driven-test.html $HOST:$REMOTE_PATH/demo.html  # Technical demo
+scp logistics-demo.html $HOST:$REMOTE_PATH/logistics-demo.html  # Clean logistics demo
 scp simple-test.html $HOST:$REMOTE_PATH/
 scp test-new-naming.html $HOST:$REMOTE_PATH/
 print_success "Demo files deployed"
@@ -106,15 +108,18 @@ echo -e "${BLUE}[INFO]${NC} Deployed to: $HOST:$REMOTE_PATH"
 echo -e "${BLUE}[INFO]${NC} Files deployed:"
 echo -e "  📦 sphere-viewer.js ($(du -h $LOCAL_BUILD_DIR/sphere-viewer.js | cut -f1)) - Main embeddable component"
 echo -e "  📄 example-featrix-data.json - Sample data"
+echo -e "  🚛 logistics-featrix-data.json - Real logistics dataset (2000 companies)"
 echo -e "  🌐 index.html - Branded public landing page"
-echo -e "  🎯 demo.html - Complete data-driven demo"
+echo -e "  🚛 logistics-demo.html - Professional logistics demo"
+echo -e "  🎯 demo.html - Technical demo with multiple methods"
 echo -e "  ⚡ simple-test.html - Basic test"
 echo -e "  🏷️ test-new-naming.html - Naming verification"
 echo -e "  📚 Documentation files"
 echo ""
 echo -e "${BLUE}[INFO]${NC} Access URLs:"
 echo -e "  🌐 Public Landing: http://$HOST/sv/"
-echo -e "  🎯 Live Demo: http://$HOST/sv/demo.html"
+echo -e "  🚛 Logistics Demo: http://$HOST/sv/logistics-demo.html"
+echo -e "  🎯 Technical Demo: http://$HOST/sv/demo.html"
 echo -e "  ⚡ Simple Test: http://$HOST/sv/simple-test.html"
 echo ""
 echo -e "${GREEN}[SUCCESS] Deployment complete! FeatrixSphereViewer is now live! 🚀${NC}" 

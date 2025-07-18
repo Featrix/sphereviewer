@@ -261,14 +261,60 @@ viewer.init({
     </div>
 
     <script>
-        // Sample data for testing
+        // Real logistics data will be loaded from JSON file
+        let realLogisticsData = null;
+        
+        // Load real logistics data
+        fetch('logistics-featrix-data.json')
+            .then(response => response.json())
+            .then(data => {
+                realLogisticsData = data;
+                console.log('✅ Loaded real logistics data:', data.coords.length, 'companies');
+                console.log('📊 Available clusters:', Object.keys(data.entire_cluster_results));
+                
+                // Update the data preview
+                updateDataStatus();
+            })
+            .catch(error => {
+                console.error('❌ Failed to load real logistics data:', error);
+                updateDataStatus('Failed to load real data');
+            });
+        
+        function updateDataStatus(error = null) {
+            const statusElements = document.querySelectorAll('[id$="-status"]');
+            if (error) {
+                statusElements.forEach(el => {
+                    if (el) el.innerHTML = `⚠️ Using fallback sample data (${error})`;
+                });
+            } else if (realLogisticsData) {
+                statusElements.forEach(el => {
+                    if (el) el.innerHTML = `✅ Real logistics data loaded: ${realLogisticsData.coords.length} companies`;
+                });
+            }
+        }
+
+        // Get current data (real or fallback)
+        function getCurrentData() {
+            return realLogisticsData || sampleData;
+        }
+
+        // Fallback sample data for testing
         const sampleData = {
             session: {
-                session_id: "test-data-example",
+                session_id: "sample-logistics-fallback",
                 status: "done",
                 done: true,
                 failed: false,
-                created_at: new Date().toISOString()
+                created_at: new Date().toISOString(),
+                metadata: {
+                    dataset_name: "Sample Logistics Data (Fallback)",
+                    num_rows: 3,
+                    num_columns: 15,
+                    analysis_type: "embedding",
+                    algorithm: "umap",
+                    dimensions: 3,
+                    featrix_version: "2.1.0"
+                }
             },
             coords: [
                 {
@@ -276,27 +322,27 @@ viewer.init({
                     "cluster_pre": 0,
                     "__featrix_row_id": 1,
                     "__featrix_row_offset": 0,
-                    "scalar_columns": { "age": 25, "income": 50000, "score": 0.85 },
-                    "set_columns": { "category": "A", "region": "North" },
-                    "string_columns": { "name": "John Doe" }
+                    "scalar_columns": { "Owned Trucks": 150, "Total Trailers": 300, "Sleeper Cabs": 80 },
+                    "set_columns": { "Carrier Type": "authorized_for_hire", "Country": "US", "Carrier Operation": "Interstate" },
+                    "string_columns": { "Legal Name": "Sample Transport Inc", "Cargo": "General Freight" }
                 },
                 {
                     "0": 1.2, "1": -0.7, "2": 2.1,
                     "cluster_pre": 1,
                     "__featrix_row_id": 2,
                     "__featrix_row_offset": 1,
-                    "scalar_columns": { "age": 32, "income": 65000, "score": 0.92 },
-                    "set_columns": { "category": "B", "region": "South" },
-                    "string_columns": { "name": "Jane Smith" }
+                    "scalar_columns": { "Owned Trucks": 45, "Total Trailers": 80, "Sleeper Cabs": 20 },
+                    "set_columns": { "Carrier Type": "authorized_for_hire", "Country": "US", "Carrier Operation": "Interstate" },
+                    "string_columns": { "Legal Name": "Metro Delivery LLC", "Cargo": "Beverages" }
                 },
                 {
                     "0": 0.1, "1": 2.8, "2": -1.5,
                     "cluster_pre": 0,
                     "__featrix_row_id": 3,
                     "__featrix_row_offset": 2,
-                    "scalar_columns": { "age": 28, "income": 42000, "score": 0.78 },
-                    "set_columns": { "category": "A", "region": "East" },
-                    "string_columns": { "name": "Bob Johnson" }
+                    "scalar_columns": { "Owned Trucks": 230, "Total Trailers": 450, "Sleeper Cabs": 180 },
+                    "set_columns": { "Carrier Type": "authorized_for_hire", "Country": "US", "Carrier Operation": "Interstate" },
+                    "string_columns": { "Legal Name": "National Freight Systems", "Cargo": "Machinery" }
                 }
             ],
             entire_cluster_results: {
@@ -309,7 +355,8 @@ viewer.init({
 
         // Method 1: Window data
         function loadWindowDataExample() {
-            window.myFeatrixData = sampleData;
+            const currentData = getCurrentData();
+            window.myFeatrixData = currentData;
             
             if (window.FeatrixSphereViewer) {
                 const viewer = new window.FeatrixSphereViewer();
@@ -317,7 +364,7 @@ viewer.init({
                     data: window.myFeatrixData,
                     containerId: 'window-data-container'
                 });
-                console.log('✅ Window data method successful');
+                console.log('✅ Window data method successful with', currentData.coords.length, 'data points');
                 document.getElementById('test1').classList.add('active');
             } else {
                 console.log('❌ FeatrixSphereViewer not loaded');
@@ -326,13 +373,14 @@ viewer.init({
 
         // Method 2: JSON file (simulated)
         function loadJSONExample() {
+            const currentData = getCurrentData();
             if (window.FeatrixSphereViewer) {
                 const viewer = new window.FeatrixSphereViewer();
                 viewer.init({
-                    data: sampleData,
+                    data: currentData,
                     containerId: 'json-file-container'
                 });
-                console.log('✅ JSON file method successful (simulated)');
+                console.log('✅ JSON file method successful with', currentData.coords.length, 'data points');
                 document.getElementById('test2').classList.add('active');
             } else {
                 console.log('❌ FeatrixSphereViewer not loaded');
@@ -341,13 +389,14 @@ viewer.init({
 
         // Method 3: Manual API
         function initManualAPI() {
+            const currentData = getCurrentData();
             if (window.FeatrixSphereViewer) {
                 manualViewer = new window.FeatrixSphereViewer();
                 manualViewer.init({
-                    data: sampleData,
+                    data: currentData,
                     containerId: 'manual-api-container'
                 });
-                console.log('✅ Manual API initialized');
+                console.log('✅ Manual API initialized with', currentData.coords.length, 'data points');
                 document.getElementById('test3').classList.add('active');
             } else {
                 console.log('❌ FeatrixSphereViewer not loaded');
@@ -400,7 +449,12 @@ viewer.init({
             const preview = document.getElementById(previewId);
             
             if (preview.style.display === 'none') {
-                preview.innerHTML = '<pre>' + JSON.stringify(sampleData, null, 2) + '</pre>';
+                const currentData = getCurrentData();
+                const previewData = {
+                    ...currentData,
+                    coords: currentData.coords.slice(0, 3) // Show only first 3 for preview
+                };
+                preview.innerHTML = '<pre>' + JSON.stringify(previewData, null, 2) + '</pre>';
                 preview.style.display = 'block';
             } else {
                 preview.style.display = 'none';
@@ -408,16 +462,21 @@ viewer.init({
         }
 
         function downloadExampleData() {
-            const dataStr = JSON.stringify(sampleData, null, 2);
+            const currentData = getCurrentData();
+            const filename = realLogisticsData ? 'logistics-featrix-data.json' : 'sample-featrix-data.json';
+            
+            const dataStr = JSON.stringify(currentData, null, 2);
             const dataBlob = new Blob([dataStr], {type: 'application/json'});
             const url = URL.createObjectURL(dataBlob);
             
             const link = document.createElement('a');
             link.href = url;
-            link.download = 'example-featrix-data.json';
+            link.download = filename;
             link.click();
             
             URL.revokeObjectURL(url);
+            
+            console.log(`📥 Downloaded ${filename} with ${currentData.coords.length} data points`);
         }
 
         // Initialize when page loads
