@@ -309,6 +309,9 @@
             
             try {
                 console.log('🎯 Initializing Featrix Sphere Viewer...');
+                console.log('🔍 FeatrixSphereViewer type:', typeof window.FeatrixSphereViewer);
+                console.log('🔍 FeatrixSphereViewer value:', window.FeatrixSphereViewer);
+                
                 sphereViewer = new window.FeatrixSphereViewer();
                 sphereViewer.init({
                     data: logisticsData,
@@ -317,6 +320,7 @@
                 console.log('✅ Sphere viewer initialized successfully');
             } catch (error) {
                 console.error('❌ Failed to initialize sphere viewer:', error);
+                console.error('🔍 window.FeatrixSphereViewer:', window.FeatrixSphereViewer);
                 showError('Failed to initialize 3D visualization.');
             }
         }

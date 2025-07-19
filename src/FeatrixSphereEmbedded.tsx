@@ -139,7 +139,18 @@ interface SphereEmbeddedProps {
 }
 
 export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl }: SphereEmbeddedProps) {
-    const init_projections = readFromLocalStorage("projections", initial_data.session.session_id);
+    // Use passed data first, fallback to localStorage
+    let init_projections = null;
+    
+    // Check if we have direct data (coords, entire_cluster_results)
+    if (initial_data && initial_data.coords && initial_data.entire_cluster_results) {
+        console.log("Internal data:", initial_data);
+        init_projections = initial_data;
+    } else {
+        // Fallback to localStorage for API-based sessions
+        init_projections = readFromLocalStorage("projections", initial_data.session.session_id);
+    }
+    
     if (init_projections){
         remap_server_cluster_assignments(init_projections?.entire_cluster_results);
         fix_server_cluster_pre_assignments(init_projections);

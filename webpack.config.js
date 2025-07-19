@@ -9,6 +9,7 @@ module.exports = {
     path: path.resolve(__dirname, 'dist'),
     library: 'FeatrixSphereViewer',
     libraryTarget: 'umd',
+    libraryExport: 'default',
     globalObject: 'this',
     clean: true,
   },

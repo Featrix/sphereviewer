@@ -150,6 +150,7 @@ declare global {
 
 // Expose the class globally
 window.FeatrixSphereViewer = FeatrixSphereViewer;
+console.log('🔧 FeatrixSphereViewer class assigned to window:', typeof window.FeatrixSphereViewer);
 
 // Auto-initialize only if script has data attributes (not for manual usage)
 const scripts = document.querySelectorAll('script[src*="sphere-viewer.js"]');
