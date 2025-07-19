@@ -148,9 +148,18 @@ declare global {
   }
 }
 
+// Expose the class globally
 window.FeatrixSphereViewer = FeatrixSphereViewer;
 
-// Auto-initialize instance
-const viewer = new FeatrixSphereViewer();
+// Auto-initialize only if script has data attributes (not for manual usage)
+const scripts = document.querySelectorAll('script[src*="sphere-viewer.js"]');
+const currentScript = scripts[scripts.length - 1] as HTMLElement;
+if (currentScript && (
+  currentScript.hasAttribute('data-session-id') || 
+  currentScript.hasAttribute('data-featrix-data') || 
+  currentScript.hasAttribute('data-use-window-data')
+)) {
+  const viewer = new FeatrixSphereViewer();
+}
 
 export default FeatrixSphereViewer; 
