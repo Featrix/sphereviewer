@@ -5,28 +5,7 @@ import { fetch_session_data, fetch_session_projections } from './embed-data-acce
 import { SphereRecord, SphereRecordIndex, remap_cluster_assignments } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 
-// Function to read a JSON object from localStorage by folder and session ID
-function readFromLocalStorage(collection: string, sessionId: string) {   
-    try {
-        const key = `${collection}_${sessionId}`;
-        const data = localStorage.getItem(key);
-        return data ? JSON.parse(data) : null;
-    } catch (error) {
-        console.error("Error loading items from local storage, returning `null`.")
-        return null;
-    }
-}
-
-// Function to write a JSON object to localStorage by folder and session ID
-function writeToLocalStorage(collection: string, sessionId: string, jsonObject: any) {
-    const key = `${collection}_${sessionId}`;
-    const data = JSON.stringify(jsonObject);
-    try {
-        localStorage.setItem(key, data);
-    } catch {
-        console.error("error saving items to local storage.")
-    }
-}
+// LocalStorage functions removed - direct data flow only
 
 const getColumnTypes = (projections: any) => {
     try {
@@ -139,16 +118,13 @@ interface SphereEmbeddedProps {
 }
 
 export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl }: SphereEmbeddedProps) {
-    // Use passed data first, fallback to localStorage
+    // Use the passed data directly - no localStorage
     let init_projections = null;
     
     // Check if we have direct data (coords, entire_cluster_results)
     if (initial_data && initial_data.coords && initial_data.entire_cluster_results) {
         console.log("Internal data:", initial_data);
         init_projections = initial_data;
-    } else {
-        // Fallback to localStorage for API-based sessions
-        init_projections = readFromLocalStorage("projections", initial_data.session.session_id);
     }
     
     if (init_projections){
@@ -173,7 +149,6 @@ export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl }: Sphe
         const fetchProgress = async () => {
             try {
                 const server_session_data = await fetch_session_data(session_id, apiBaseUrl);
-                writeToLocalStorage("session", session_id, server_session_data);
 
                 const is_done = server_session_data.session.status === "done";
                 const is_failed = server_session_data.session.status === "failed";
@@ -182,7 +157,6 @@ export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl }: Sphe
                     setIsDone(true);
 
                     const projections = await fetch_session_projections(session_id, apiBaseUrl);
-                    writeToLocalStorage("projections", session_id, projections);
                     if (projections) {
                         remap_server_cluster_assignments(projections?.entire_cluster_results);
                         fix_server_cluster_pre_assignments(projections);

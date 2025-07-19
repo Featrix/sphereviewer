@@ -12,30 +12,7 @@ import { SphereRecord, SphereRecordIndex, remap_cluster_assignments } from './fe
 import { v4 as uuid4 } from 'uuid';
 
 
-// Function to read a JSON object from localStorage by folder and session ID
-function readFromLocalStorage(collection: string, sessionId: string) {   
-    try {
-        const key = `${collection}_${sessionId}`;  // Create a unique key using folder and sessionId
-        const data = localStorage.getItem(key);
-        return data ? JSON.parse(data) : null;  // Parse the JSON string back into an object
-    } catch (error) {
-        // Most errors here occur if a component using this function
-        // is used on the server side, where localStorage is not available.
-        console.error("Error loading items from local storage, returning `null`.")
-        return null;
-    }
-}
-
-// Function to write a JSON object to localStorage by folder and session ID
-function writeToLocalStorage(collection: string, sessionId: string, jsonObject: any) {
-    const key = `${collection}_${sessionId}`;  // Create a unique key using folder and sessionId
-    const data = JSON.stringify(jsonObject);  // Convert the object to a JSON string
-    try {
-        localStorage.setItem(key, data);  // Store the string in localStorage
-    } catch {
-        console.error("error saving items to local storage.")
-    }
-}
+// LocalStorage functions removed - direct data flow only
 
 
 const getColumnTypes = (projections: any) => {
@@ -171,8 +148,10 @@ function fix_server_cluster_pre_assignments(serverData: any) {
 
 
 export default function FeatrixSphere({ initial_data }: { initial_data: any }) {
-    const init_projections = readFromLocalStorage("projections", initial_data.session.session_id);
-    if (init_projections){
+    // Use passed data directly - no localStorage  
+    let init_projections = null;
+    if (initial_data && initial_data.coords && initial_data.entire_cluster_results) {
+        init_projections = initial_data;
         remap_server_cluster_assignments(init_projections?.entire_cluster_results);
         fix_server_cluster_pre_assignments(init_projections);
     }
@@ -199,7 +178,6 @@ export default function FeatrixSphere({ initial_data }: { initial_data: any }) {
             try {
                 // rename to session_data
                 const server_session_data = await fetch_session_data(session_id); // Replace with your endpoint
-                writeToLocalStorage("session", session_id, server_session_data);
 
                 const is_done = server_session_data.session.status === "done";
                 const is_failed = server_session_data.session.status === "failed";
@@ -207,7 +185,6 @@ export default function FeatrixSphere({ initial_data }: { initial_data: any }) {
                     setIsDone(true); // Mark as done to stop polling
 
                     const projections = await fetch_session_projections(session_id);
-                    writeToLocalStorage("projections", session_id, projections);
                     if (projections) {
                         remap_server_cluster_assignments(projections?.entire_cluster_results);
                         fix_server_cluster_pre_assignments(projections);
