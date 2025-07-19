@@ -63,10 +63,28 @@
             border-radius: 16px;
             box-shadow: 0 8px 32px rgba(0,0,0,0.1);
             border: 1px solid #e5e7eb;
-            min-height: 600px;
+            height: 600px; /* Fixed height instead of min-height */
             margin-bottom: 30px;
             position: relative;
             overflow: hidden;
+        }
+        
+        /* Ensure sphere viewer content fits properly */
+        .sphere-container > div {
+            height: 100% !important;
+            width: 100% !important;
+        }
+        
+        /* Ensure WebGL canvas fills container */
+        .sphere-container canvas {
+            width: 100% !important;
+            height: 100% !important;
+            display: block !important;
+        }
+        
+        /* Override any embedded component styling that might be too large */
+        .sphere-container * {
+            max-width: 100% !important;
         }
         
         .loading {
@@ -171,9 +189,12 @@
     </style>
 </head>
 <body>
-    <!-- Load React dependencies -->
+    <!-- Load React dependencies first -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Load the Featrix Sphere Viewer immediately after React -->
+    <script src="sphere-viewer.js"></script>
 
     <div class="container">
         <div class="header">
@@ -207,13 +228,10 @@
                 </div>
             </div>
 
-            <div class="sample-data" id="sample-companies" style="display: none;">
-                <h4>🏢 Sample Companies in Dataset:</h4>
-                <div id="company-list"></div>
-            </div>
+
         </div>
 
-        <div class="sphere-container" id="sphere-viewer">
+        <div class="sphere-container" id="sphere-viewer-container">
             <div class="loading">
                 <div class="spinner"></div>
                 <p>Initializing 3D visualization...</p>
@@ -288,41 +306,102 @@
             document.getElementById('session-id').textContent = logisticsData.session.session_id.split('_')[0];
             document.getElementById('data-stats').style.display = 'grid';
             
-            // Show sample companies
-            const sampleCompanies = logisticsData.coords.slice(0, 5).map(company => {
-                const name = company.string_columns?.["Legal Name"] || 'Unknown Company';
-                const cargo = company.string_columns?.Cargo || 'Unknown Cargo';
-                const trucks = company.scalar_columns?.["Owned Trucks"] || 0;
-                return `<div class="company">${name} - ${cargo} (${trucks} trucks)</div>`;
-            }).join('');
-            
-            document.getElementById('company-list').innerHTML = sampleCompanies;
-            document.getElementById('sample-companies').style.display = 'block';
+            // Sample companies section removed
         }
 
         function initializeSphereViewer() {
-            if (!window.FeatrixSphereViewer || !logisticsData) {
-                console.log('⏳ Waiting for sphere viewer to load...');
-                setTimeout(initializeSphereViewer, 500);
+            console.log('🔍 Checking dependencies...', {
+                React: !!window.React,
+                ReactDOM: !!window.ReactDOM,
+                FeatrixSphereViewer: !!window.FeatrixSphereViewer,
+                logisticsData: !!logisticsData
+            });
+
+            if (!window.React || !window.ReactDOM || !window.FeatrixSphereViewer || !logisticsData) {
+                console.log('⏳ Waiting for dependencies to load...');
+                setTimeout(initializeSphereViewer, 1000);
                 return;
             }
-            
+
             try {
-                console.log('🎯 Initializing Featrix Sphere Viewer...');
+                console.log('🎯 Setting up sphere viewer with data...');
+                console.log('📊 Data sample:', {
+                    coords: logisticsData.coords?.length,
+                    clusters: Object.keys(logisticsData.entire_cluster_results || {}).length,
+                    session: logisticsData.session?.session_id
+                });
+                
+                // Clear the loading div
+                const container = document.getElementById('sphere-viewer-container');
+                console.log('📐 Container before clear:', {
+                    width: container.clientWidth,
+                    height: container.clientHeight,
+                    children: container.children.length
+                });
+                
+                container.innerHTML = '';
+                
+                console.log('📐 Container after clear:', {
+                    width: container.clientWidth,
+                    height: container.clientHeight,
+                    children: container.children.length
+                });
+                
+                // Create sphere viewer instance
                 sphereViewer = new window.FeatrixSphereViewer();
                 sphereViewer.init({
                     data: logisticsData,
-                    containerId: 'sphere-viewer'
+                    containerId: 'sphere-viewer-container'
                 });
+                
+                // Check if canvas was created after a short delay
+                setTimeout(() => {
+                    const canvases = container.querySelectorAll('canvas');
+                    console.log('🎨 Canvas check:', {
+                        canvasCount: canvases.length,
+                        containerChildren: container.children.length,
+                        containerSize: {
+                            width: container.clientWidth,
+                            height: container.clientHeight
+                        }
+                    });
+                    if (canvases.length > 0) {
+                        const canvas = canvases[0];
+                        console.log('🎨 Canvas details:', {
+                            width: canvas.width,
+                            height: canvas.height,
+                            style: canvas.style.cssText,
+                            visible: canvas.offsetParent !== null
+                        });
+                        
+                        // If height is still 0, force a resize
+                        if (canvas.height === 0) {
+                            console.log('⚡ Forcing canvas resize...');
+                            window.dispatchEvent(new Event('resize'));
+                            
+                            // Check again after forced resize
+                            setTimeout(() => {
+                                console.log('🎨 Canvas after resize:', {
+                                    width: canvas.width,
+                                    height: canvas.height,
+                                    style: canvas.style.cssText
+                                });
+                            }, 500);
+                        }
+                    }
+                }, 2000);
+                
                 console.log('✅ Sphere viewer initialized successfully');
             } catch (error) {
                 console.error('❌ Failed to initialize sphere viewer:', error);
-                showError('Failed to initialize 3D visualization.');
+                console.error('❌ Error details:', error.stack);
+                showError(`Failed to initialize 3D visualization: ${error.message}`);
             }
         }
 
         function showError(message) {
-            document.getElementById('sphere-viewer').innerHTML = `
+            const container = document.getElementById('sphere-viewer-container');
+            container.innerHTML = `
                 <div class="error-message">
                     <strong>⚠️ Error:</strong> ${message}
                 </div>
@@ -330,7 +409,8 @@
         }
 
         function reloadDemo() {
-            document.getElementById('sphere-viewer').innerHTML = `
+            const container = document.getElementById('sphere-viewer-container');
+            container.innerHTML = `
                 <div class="loading">
                     <div class="spinner"></div>
                     <p>Reloading 3D visualization...</p>
@@ -371,8 +451,5 @@
             loadLogisticsData();
         });
     </script>
-
-    <!-- Load the Featrix Sphere Viewer -->
-    <script src="sphere-viewer.js"></script>
 </body>
 </html> 

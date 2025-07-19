@@ -34,6 +34,7 @@ export interface SphereData {
     similaritySearchResults: Map<string, Array<string>>
 
     recordFields: string[];
+    hasLoggedSizeIssue?: boolean;
 }
 
 export type SphereRecord = {
@@ -135,17 +136,61 @@ function fit_sphere_to_container(sphere: SphereData) {
     const width = sphere.container.clientWidth;
     const height = sphere.container.clientHeight;
 
-    sphere.camera.aspect = width / height;
+    // Force minimum height if container has no height
+    const effectiveHeight = height > 0 ? height : 500;
+
+    sphere.camera.aspect = width / effectiveHeight;
     sphere.camera.updateProjectionMatrix();
-    sphere.renderer.setSize(width, height);
+    sphere.renderer.setSize(width, effectiveHeight);
+    
+    // Force canvas style if it still has zero height
+    if (sphere.renderer.domElement.style.height === '0px' && effectiveHeight > 0) {
+        sphere.renderer.domElement.style.height = `${effectiveHeight}px`;
+        console.log('🔧 Force-fixed canvas height to', effectiveHeight);
+    }
 }
 
 function attach_sphere_to_container(sphere: SphereData) {
+    console.log('🔧 Attaching sphere to container:', {
+        containerSize: {
+            width: sphere.container.clientWidth,
+            height: sphere.container.clientHeight
+        },
+        rendererSize: {
+            width: sphere.renderer.domElement.width,
+            height: sphere.renderer.domElement.height
+        },
+        containerChildren: sphere.container.children.length
+    });
+    
     sphere.container.appendChild(sphere.renderer.domElement);
+    
+    console.log('🔧 After attachment:', {
+        containerChildren: sphere.container.children.length,
+        canvasStyle: sphere.renderer.domElement.style.cssText
+    });
 }
 
 export function render_sphere(sphere: SphereData) {
+    const beforeWidth = sphere.container.clientWidth;
+    const beforeHeight = sphere.container.clientHeight;
+    
     fit_sphere_to_container(sphere);
+
+    const afterCanvasWidth = sphere.renderer.domElement.width;
+    const afterCanvasHeight = sphere.renderer.domElement.height;
+    
+    // Log size issues only once to avoid spam
+    if (afterCanvasHeight === 0 || beforeHeight === 0) {
+        if (!sphere.hasLoggedSizeIssue) {
+            console.log('🔧 Render sphere sizing issue:', {
+                containerBefore: { width: beforeWidth, height: beforeHeight },
+                canvasAfter: { width: afterCanvasWidth, height: afterCanvasHeight },
+                rendererSize: sphere.renderer.getSize(new THREE.Vector2())
+            });
+            sphere.hasLoggedSizeIssue = true;
+        }
+    }
 
     sphere.camera.position.x = sphere.orbitRadius * Math.sin(sphere.angle) * Math.cos(sphere.verticalAngle);
     sphere.camera.position.y = sphere.orbitRadius * Math.sin(sphere.verticalAngle);

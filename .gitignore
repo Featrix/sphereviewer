@@ -73,3 +73,6 @@ jspm_packages/
 # temporary folders
 tmp/
 temp/ 
+# Customer data files - DO NOT COMMIT
+*featrix-data.json
+logistics-*.json

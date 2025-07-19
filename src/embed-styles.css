@@ -15,8 +15,18 @@
 /* Ensure the container has proper dimensions */
 .sphere-viewer-container {
   width: 100%;
+  height: 100%;
   min-height: 400px;
   box-sizing: border-box;
+}
+
+/* Ensure embedded container fills parent */
+.sphere-embedded-container {
+  width: 100%;
+  height: 100%;
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Make sure embedded styles don't conflict with parent page */
@@ -43,6 +53,34 @@
 .sphere-viewer-container canvas {
   display: block;
   outline: none;
+}
+
+/* Force all components to inherit full height */
+.sphere-viewer-container,
+.sphere-viewer-container > *,
+.sphere-embedded-container,
+.sphere-embedded-container > * {
+  height: 100% !important;
+}
+
+/* Override ALL possible height constraints */
+.sphere-embedded-container [class*="h-"],
+.sphere-embedded-container [class*="min-h-"],
+.sphere-embedded-container [class*="max-h-"],
+.sphere-embedded-container .bg-gray-100,
+.sphere-embedded-container .flex,
+.sphere-embedded-container .flex-col {
+  height: 100% !important;
+  min-height: 100% !important;
+  max-height: none !important;
+}
+
+/* Specific Tailwind overrides */
+.sphere-embedded-container .h-\[25rem\],
+.sphere-embedded-container .h-\[35rem\],
+.sphere-embedded-container .sm\:h-\[25rem\],
+.sphere-embedded-container .sm\:h-\[35rem\] {
+  height: 100% !important;
 }
 
 /* Responsive design for embedded component */
