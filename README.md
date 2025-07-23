@@ -4,7 +4,7 @@
 
 A powerful, embeddable 3D sphere data visualization component built with React and Three.js. Display your data in an interactive 3D space with clustering, selection, and real-time training status.
 
-![Sphere Viewer Demo](https://via.placeholder.com/800x400/1e40af/ffffff?text=3D+Sphere+Visualization)
+![Sphere Viewer Demo](https://img.shields.io/badge/3D%20Sphere-Visualization-blue?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMTAiIHN0cm9rZT0iI2ZmZmZmZiIgc3Ryb2tlLXdpZHRoPSIyIi8+CjxwYXRoIGQ9Im0xMiAyYTEwIDEwIDAgMCAwIDAgMjAgMTAgMTAgMCAwIDAgMC0yMCIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIwLjIiLz4KPHBhdGggZD0iTTEyIDJhMTAgMTAgMCAwIDEgMCAyMCIgc3Ryb2tlPSIjZmZmZmZmIiBzdHJva2Utd2lkdGg9IjIiLz4KPHN2Zz4K)
 
 ## 🚀 Quick Start
 

@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sphere Viewer Demo - 20250716-142858_653c60</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #1e40af, #3b82f6);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            margin: 0 0 10px 0;
+            font-size: 2.5em;
+        }
+        
+        .header p {
+            margin: 0;
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        
+        .info-section {
+            padding: 20px;
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        
+        .session-info {
+            display: inline-block;
+            background: #e0f2fe;
+            color: #0369a1;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-weight: bold;
+        }
+        
+        .sphere-container {
+            height: 600px;
+            background: #f9fafb;
+            border: 2px solid #e5e7eb;
+            margin: 20px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        
+        .loading {
+            text-align: center;
+            color: #6b7280;
+        }
+        
+        .loading .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #e5e7eb;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .controls {
+            padding: 20px;
+            background: #f8fafc;
+            border-top: 1px solid #e2e8f0;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+        
+        .btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .btn:hover {
+            background: #2563eb;
+        }
+        
+        .btn:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <!-- Load React dependencies -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+    <div class="container">
+        <div class="header">
+            <h1>🌐 Sphere Viewer Demo</h1>
+            <p>Interactive 3D Data Visualization</p>
+        </div>
+
+        <div class="info-section">
+            <p><strong>Session ID:</strong> <span class="session-info">20250716-142858_653c60</span></p>
+            <p><small>This demo uses the specified session ID from Featrix platform.</small></p>
+        </div>
+
+        <!-- Sphere viewer will be rendered here -->
+        <div id="sphere-viewer-container" class="sphere-container">
+            <div class="loading">
+                <div class="spinner"></div>
+                <p>Initializing 3D Sphere Viewer...</p>
+                <small>Loading session: 20250716-142858_653c60</small>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button class="btn" onclick="reloadViewer()" id="reloadBtn">Reload Viewer</button>
+            <button class="btn" onclick="updateSession()" id="updateBtn">Update Session</button>
+        </div>
+    </div>
+
+    <!-- Load the sphere viewer with auto-initialization -->
+    <script src="dist/sphere-viewer.js" 
+            data-session-id="20250716-142858_653c60"
+            data-container-id="sphere-viewer-container"></script>
+
+    <!-- Additional controls and debugging -->
+    <script>
+        let viewer = null;
+        
+        // Initialize with manual control as backup
+        function initializeManualViewer() {
+            console.log('🔧 Initializing manual viewer...');
+            
+            if (window.SphereViewer) {
+                viewer = new window.SphereViewer();
+                viewer.init({
+                    sessionId: '20250716-142858_653c60',
+                    containerId: 'sphere-viewer-container',
+                    apiBaseUrl: 'https://sphere-api.featrix.com'
+                });
+                console.log('✅ Manual viewer initialized');
+            } else {
+                console.log('⏳ SphereViewer not ready yet, retrying...');
+                setTimeout(initializeManualViewer, 1000);
+            }
+        }
+        
+        function reloadViewer() {
+            console.log('🔄 Reloading viewer...');
+            const container = document.getElementById('sphere-viewer-container');
+            container.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Reloading 3D Sphere Viewer...</p>
+                    <small>Session: 20250716-142858_653c60</small>
+                </div>
+            `;
+            
+            setTimeout(() => {
+                if (viewer && viewer.destroy) {
+                    viewer.destroy();
+                }
+                initializeManualViewer();
+            }, 1000);
+        }
+        
+        function updateSession() {
+            const newSessionId = prompt('Enter new session ID:', '20250716-142858_653c60');
+            if (newSessionId && viewer && viewer.update) {
+                console.log(`🔄 Updating to session: ${newSessionId}`);
+                viewer.update({ sessionId: newSessionId });
+                
+                // Update the displayed session ID
+                document.querySelector('.session-info').textContent = newSessionId;
+            }
+        }
+        
+        // Debug information
+        window.addEventListener('load', () => {
+            console.log('🚀 Demo page loaded');
+            console.log('📦 Dependencies:', {
+                React: !!window.React,
+                ReactDOM: !!window.ReactDOM,
+                SphereViewer: !!window.SphereViewer
+            });
+            
+            // Fallback to manual initialization if auto-init doesn't work
+            setTimeout(() => {
+                if (!viewer && window.SphereViewer) {
+                    console.log('🔧 Auto-init may not have worked, trying manual...');
+                    initializeManualViewer();
+                }
+            }, 3000);
+        });
+        
+        // Log any errors
+        window.addEventListener('error', (e) => {
+            console.error('❌ Page error:', e.error);
+        });
+    </script>
+</body>
+</html> 
