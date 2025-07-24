@@ -1847,6 +1847,10 @@
         
         // Update sphere with REAL epoch data
         function updateEpochFromReal(epochIndex) {
+            // DISABLED to prevent browser crash
+            console.log('updateEpochFromReal disabled to prevent mesh creation loop');
+            return;
+            
             console.log(`🎯 updateEpochFromReal(${epochIndex}) called`);
             
             // Get the actual epoch keys (they don't start from 1 and have gaps)
@@ -1897,6 +1901,10 @@
         
         // Move points to REAL epoch positions WITH CLUSTER ANIMATION
         function movePointsToRealEpoch(epochData, epochIndex) {
+            // DISABLED to prevent browser crash
+            console.log('movePointsToRealEpoch disabled to prevent mesh creation loop');
+            return;
+            
             if (!window.sphereViewerInstance?.sphereRef) return;
             
             const sphereData = window.sphereViewerInstance.sphereRef;
@@ -2170,10 +2178,13 @@
                             epochData.coords.slice(0, 10).forEach((coord, index) => {
                                 if (coord && typeof coord.x === 'number') {
                                     try {
-                                        const geometry = new window.THREE.BoxGeometry(0.1, 0.1, 0.1); // Use box instead of sphere
-                                        const material = new window.THREE.MeshBasicMaterial({ color: 0x00ff00 });
-                                        const mesh = new window.THREE.Mesh(geometry, material);
-                                        mesh.position.set(coord.x, coord.y, coord.z);
+                                                                                                // DISABLED - Causing browser crash
+                                console.log('BoxGeometry creation disabled');
+                                return; // Exit function to prevent crash
+                                
+                                const geometry = null; // Disabled
+                                const material = null; // Disabled  
+                                const mesh = null; // Disabled
                                         mesh.userData.isTrainingPoint = true;
                                         sphereData.scene.add(mesh);
                                         
