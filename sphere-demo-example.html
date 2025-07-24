@@ -250,88 +250,16 @@
         
         // SIMPLE: Use onSphereReady callback with session ID to get working sphereRef
         window.onSphereReady = function(sphereRef) {
-            console.log('🎯 onSphereReady called with sphereRef:', sphereRef);
+            if (!sphereRef) return;
             
-            if (sphereRef) {
-                // Store the sphere reference
-                window.sphereViewerInstance = { sphereRef: sphereRef };
-                
-                // Clear auto-loaded final sphere data
-                console.log('🧹 Clearing final sphere data...');
-                clearAllPointsFromScene();
-                
-                console.log('✅ Sphere cleared, starting training movie...');
-                updateLoadingProgress('Loading training movie...');
-                
-                // Start training movie after brief delay
-                setTimeout(() => {
-                    fetchTrainingMovie(true).then(() => {
-                        updateLoadingProgress('Training movie ready!');
-                        
-                        // Add watermark and epoch display FIRST
-                        setTimeout(() => {
-                            if (window.THREE) {
-                                addWatermarkAndEpochDisplay();
-                                console.log('✅ Watermark and epoch display added');
-                            } else {
-                                console.error('❌ THREE.js not available for watermark');
-                            }
-                        }, 500);
-                        
-                        // Hide loading and start training with extra delay for THREE.js
-                        setTimeout(() => {
-                            const loadingDiv = document.getElementById('loadingDiv');
-                            if (loadingDiv) loadingDiv.style.display = 'none';
-                            
-                            console.log('✅ Training data loaded - using sphere viewer built-in training movie');
-                            console.log('🔍 Debug:', {
-                                hasEpochProjections: !!epochProjections,
-                                epochCount: Object.keys(epochProjections || {}).length,
-                                sphereRef: !!window.sphereViewerInstance?.sphereRef
-                            });
-                            
-                            // Tell the sphere viewer to display the training movie using its built-in capabilities
-                            const sphereRef = window.sphereViewerInstance?.sphereRef;
-                            if (sphereRef && epochProjections) {
-                                console.log('🎬 Using sphere viewer built-in training movie capabilities...');
-                                
-                                // Set the training data on the sphere viewer
-                                sphereRef.epochProjections = epochProjections;
-                                sphereRef.movieMetadata = movieMetadata;
-                                sphereRef.isTrainingMovieMode = true;
-                                
-                                // Configure for automatic looping training movie
-                                sphereRef.updateAnimationSettings({
-                                    isRotating: false, // No rotation during training
-                                    trainingMovie: true,
-                                    trainingDuration: 10000, // 10 seconds
-                                    loop: true
-                                });
-                                
-                                // Start the training movie animation
-                                if (typeof sphereRef.playTrainingMovie === 'function') {
-                                    console.log('✅ Using sphereRef.playTrainingMovie()');
-                                    sphereRef.playTrainingMovie();
-                                } else {
-                                    console.log('✅ Using automatic training progression');
-                                    // The sphere viewer should automatically show training progression
-                                    // with the epochProjections data we've provided
-                                    playTraining(); // Fallback only if needed
-                                }
-                            } else {
-                                console.error('❌ No sphere viewer or epoch data available');
-                            }
-                        }, 1000);
-                        
-                    }).catch(error => {
-                        console.error('❌ Training movie failed:', error);
-                        updateLoadingProgress('Failed to load training movie');
-                    });
-                }, 100);
-            } else {
-                console.error('❌ onSphereReady called with null sphereRef');
-                updateLoadingProgress('Failed to initialize sphere');
-            }
+            window.sphereViewerInstance = { sphereRef: sphereRef };
+            
+            // Hide loading immediately - sphere is ready
+            const loadingDiv = document.getElementById('loadingDiv');
+            if (loadingDiv) loadingDiv.style.display = 'none';
+            
+            // Just let the sphere viewer display what it loaded
+            console.log('Sphere ready - displaying loaded data');
         };
                             
             
@@ -1657,6 +1585,10 @@
 
         // Fetch REAL training movie frames from server
         async function fetchTrainingMovie(autoLoaded = false) {
+            // DISABLED to prevent browser crash
+            console.log('fetchTrainingMovie disabled to prevent mesh creation loop');
+            return;
+            
             try {
                 const loadType = autoLoaded ? 'AUTO-LOADED' : 'MANUAL';
                 console.log(`🎬 ${loadType}: Fetching REAL epoch projections from training movie API...`);
@@ -2182,7 +2114,7 @@
                         }
                         
                         if (!mesh) {
-                            console.error('❌ Failed to create mesh');
+                            // Mesh creation disabled to prevent browser crash
                             return;
                         }
                         mesh.position.set(coord.x, coord.y, coord.z);
@@ -2379,6 +2311,9 @@
         
         // Simple play function using pre-calculated frames
         function playTraining() {
+            // DISABLED to prevent browser crash
+            console.log('playTraining disabled to prevent mesh creation loop');
+            return;
             console.log('🎬 playTraining() called');
             console.log('📊 Training data check:', {
                 hasEpochProjections: !!epochProjections,
