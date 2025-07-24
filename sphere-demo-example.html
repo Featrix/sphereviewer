@@ -637,39 +637,11 @@
         // Re-setup periodically in case new gap-4 divs are added
         setInterval(setupTargetedXWatcher, 5000);
         
-        // SMART INITIALIZATION - Wait until EVERYTHING is ready before WebGL
+        // SMART INITIALIZATION - Prevent multiple sphere instances
         let sphereReadyExecuted = false;
         let initializationInProgress = false;
         
-        function waitForEverythingReady() {
-            return new Promise((resolve) => {
-                function checkReadiness() {
-                    const checks = {
-                        domReady: document.readyState === 'complete',
-                        containerExists: !!document.getElementById('sphere-viewer-container'),
-                        containerSized: (() => {
-                            const container = document.getElementById('sphere-viewer-container');
-                            return container && container.clientWidth > 0 && container.clientHeight > 0;
-                        })(),
-                        dependenciesLoaded: !!(window.React && window.ReactDOM && window.FeatrixSphereViewer),
-                        noExistingCanvas: !document.querySelector('canvas')
-                    };
-                    
-                    console.log('🔍 Readiness check:', checks);
-                    
-                    if (Object.values(checks).every(check => check === true)) {
-                        console.log('✅ Everything is ready for WebGL context creation!');
-                        resolve();
-                    } else {
-                        console.log('⏳ Still waiting for readiness...');
-                        setTimeout(checkReadiness, 100);
-                    }
-                }
-                checkReadiness();
-            });
-        }
-        
-        window.onSphereReady = async function(sphereRef) {
+        window.onSphereReady = function(sphereRef) {
             // PREVENT MULTIPLE EXECUTIONS - CRITICAL FOR PREVENTING GIANT X
             if (sphereReadyExecuted || initializationInProgress) {
                 console.log('🚫 Sphere initialization already handled, skipping...');
@@ -677,20 +649,8 @@
             }
             
             initializationInProgress = true;
-            console.log('🎯 Starting SAFE sphere initialization...');
-            
-            // Wait for everything to be properly ready
-            await waitForEverythingReady();
-            
-            // Double-check no other WebGL context exists
-            const existingCanvas = document.querySelector('canvas');
-            if (existingCanvas) {
-                console.log('🚫 WebGL canvas already exists, aborting to prevent context conflict');
-                initializationInProgress = false;
-                return;
-            }
-            
             sphereReadyExecuted = true;
+            console.log('🎯 Sphere is ready - proceeding with training movie setup...');
             
             console.log('🎯 SPHERE READY - IMMEDIATELY SETTING TO INITIAL POSITIONS!');
             
@@ -1998,9 +1958,22 @@
                 
                 console.log(`✅ Successfully created ${createdCount}/${epochData.coords.length} points for epoch ${epochIndex + 1}`);
                 console.log(`📈 Scene now has ${sphereData.scene.children.length} total children`);
+                console.log(`🗺️ Point maps updated: pointObjectsByRecordID=${sphereData.pointObjectsByRecordID.size}, pointRecordsByID=${sphereData.pointRecordsByID.size}`);
                 
                 if (createdCount === 0) {
                     console.error('❌ No points were created! Check coordinate data and THREE.js availability');
+                } else {
+                    // Test visibility of first few points
+                    let visibleCount = 0;
+                    sphereData.scene.children.forEach((child, index) => {
+                        if (child.geometry?.type === 'SphereGeometry' && child.visible) {
+                            visibleCount++;
+                        }
+                        if (index < 3 && child.geometry?.type === 'SphereGeometry') {
+                            console.log(`🔍 Point ${index}: visible=${child.visible}, position=${child.position.x.toFixed(2)},${child.position.y.toFixed(2)},${child.position.z.toFixed(2)}, scale=${child.scale.x}`);
+                        }
+                    });
+                    console.log(`👁️ Visible sphere points: ${visibleCount}/${createdCount}`);
                 }
                 
             } else {
@@ -2039,16 +2012,6 @@
             } else {
                 console.error('❌ Missing renderer, scene, or camera for rendering');
             }
-            
-            // Debug: Check what's actually in the scene
-            console.log('🔍 Scene children after update:', sphereData.scene.children.map(child => ({
-                type: child.type,
-                geometry: child.geometry?.type,
-                material: child.material?.type,
-                position: {x: child.position.x.toFixed(3), y: child.position.y.toFixed(3), z: child.position.z.toFixed(3)},
-                visible: child.visible,
-                scale: child.scale
-            })));
             
             // Restore animation state
             sphereData.isAnimating = wasAnimating;
