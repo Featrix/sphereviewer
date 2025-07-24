@@ -501,9 +501,10 @@
 &lt;script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"&gt;&lt;/script&gt;
 
 &lt;!-- Load Sphere Viewer --&gt;
+&lt;!-- EMPTY SPHERE LOADER - NO DATA UNTIL TRAINING MOVIE IS READY --&gt;
 &lt;script src="https://unpkg.com/@featrix/sphere-viewer@latest/dist/sphere-viewer.js" 
-        data-session-id="<span id="codeSessionId">20250716-142858_653c60</span>"
-        data-training-movie="<span id="codeTrainingMovie">true</span>"
+        data-container-id="sphere-viewer-container"
+        data-training-movie="<span id="codeTrainingMovie">false</span>"
         data-is-rotating="<span id="codeRotating">true</span>"
         data-rotation-speed="<span id="codeSpeed">0.1</span>"
         data-animate-clusters="<span id="codeClusters">false</span>"
@@ -652,10 +653,15 @@
             sphereReadyExecuted = true;
             console.log('🎯 Sphere is ready - proceeding with training movie setup...');
             
-            console.log('🎯 SPHERE READY - IMMEDIATELY SETTING TO INITIAL POSITIONS!');
-            
             // Store sphere reference
             window.sphereViewerInstance = { sphereRef: sphereRef };
+            
+            // IMMEDIATELY CLEAR ANY EXISTING POINTS - SHOW NOTHING UNTIL TRAINING READY
+            console.log('🧹 CLEARING ALL POINTS - Show nothing until training movie ready');
+            if (sphereRef.clearPoints) {
+                sphereRef.clearPoints();
+                console.log('✅ All initial points cleared - sphere is now empty');
+            }
             
             // Set fast rotation speed during animation
             if (sphereRef.updateAnimationSettings) {
@@ -1112,14 +1118,14 @@
                 
                 const script = document.createElement('script');
                 script.src = 'sphere-viewer.js';
-                script.setAttribute('data-session-id', '20250716-142858_653c60');
+                // NO SESSION-ID - LOAD EMPTY SPHERE FIRST, THEN TRAINING DATA ONLY
                 script.setAttribute('data-container-id', 'sphere-viewer-container');
                 script.setAttribute('data-is-rotating', 'true');
                 script.setAttribute('data-rotation-speed', '0.25');
                 script.setAttribute('data-animate-clusters', 'true');
                 script.setAttribute('data-point-size', '0.05');
                 script.setAttribute('data-point-opacity', '0.5');
-                script.setAttribute('data-training-movie', 'true');
+                script.setAttribute('data-training-movie', 'false'); // Don't auto-load training movie
                 
                 document.head.appendChild(script);
                 console.log('✅ sphere-viewer.js loaded safely after DOM ready');
@@ -2179,11 +2185,13 @@
                 return;
             }
             
-            // CLEAR FINAL SPHERE - Ensure no overlap between final and training positions
-            console.log('🎬 Clearing final sphere before training animation...');
+            // ENSURE CLEAN START - No final sphere data should exist 
+            console.log('🧹 ENSURING CLEAN START - No final sphere data should interfere');
             if (window.sphereViewerInstance?.sphereRef?.clearPoints) {
                 window.sphereViewerInstance.sphereRef.clearPoints();
-                console.log('✅ Final sphere points cleared');
+                console.log('✅ All existing points cleared - sphere is empty for training');
+            } else {
+                console.log('✅ Sphere already empty - no clearPoints needed');
             }
             
             // Wait a moment then start with first epoch
