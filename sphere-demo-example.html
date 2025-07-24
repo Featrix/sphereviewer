@@ -1763,12 +1763,37 @@
                 const epochUrl = `https://sphere-api.featrix.com/compute/session/20250716-142858_653c60/epoch_projections`;
                 console.log('🌐 Requesting epoch projections:', epochUrl);
                 
-                const epochResponse = await fetch(epochUrl);
-                if (!epochResponse.ok) {
-                    throw new Error(`Epoch projections request failed: ${epochResponse.status} ${epochResponse.statusText}`);
-                }
+                // Add timeout and better error tracking
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('❌ Epoch projections fetch timeout after 15 seconds')), 15000)
+                );
                 
-                const epochData = await epochResponse.json();
+                const fetchPromise = fetch(epochUrl).then(async response => {
+                    console.log('📡 Epoch response received:', {
+                        status: response.status,
+                        ok: response.ok,
+                        statusText: response.statusText,
+                        headers: [...response.headers.entries()]
+                    });
+                    
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        console.error('❌ Epoch HTTP Error:', { status: response.status, text: errorText });
+                        throw new Error(`Epoch projections request failed: ${response.status} ${response.statusText} - ${errorText}`);
+                    }
+                    
+                    console.log('📦 Parsing epoch JSON...');
+                    const epochData = await response.json();
+                    console.log('✅ Epoch JSON parsed successfully:', {
+                        hasProjections: !!epochData.epoch_projections,
+                        projectionKeys: epochData.epoch_projections ? Object.keys(epochData.epoch_projections).length : 0,
+                        hasMetadata: !!epochData.movie_metadata
+                    });
+                    
+                    return epochData;
+                });
+                
+                const epochData = await Promise.race([fetchPromise, timeoutPromise]);
                 epochProjections = epochData.epoch_projections;
                 movieMetadata = epochData.movie_metadata;
                 
@@ -1780,10 +1805,22 @@
                 updateLoadingProgress('Processing training frames...', 1, totalFrames);
                 
                 // Also get training metrics for timeline
-                const metricsResponse = await fetch(`https://sphere-api.featrix.com/compute/session/20250716-142858_653c60/training_metrics`);
-                if (metricsResponse.ok) {
-                    const metricsData = await metricsResponse.json();
-                    trainingMovieData = metricsData.training_metrics?.progress_info?.loss_history || [];
+                console.log('🎯 Fetching training metrics...');
+                try {
+                    const metricsResponse = await fetch(`https://sphere-api.featrix.com/compute/session/20250716-142858_653c60/training_metrics`);
+                    console.log('📊 Metrics response:', { status: metricsResponse.status, ok: metricsResponse.ok });
+                    
+                    if (metricsResponse.ok) {
+                        const metricsData = await metricsResponse.json();
+                        trainingMovieData = metricsData.training_metrics?.progress_info?.loss_history || [];
+                        console.log('✅ Training metrics loaded:', trainingMovieData.length, 'data points');
+                    } else {
+                        console.warn('⚠️ Training metrics fetch failed, continuing without metrics');
+                        trainingMovieData = [];
+                    }
+                } catch (metricsError) {
+                    console.warn('⚠️ Training metrics error (non-critical):', metricsError);
+                    trainingMovieData = [];
                 }
                 
                 // Simulate frame processing progress
