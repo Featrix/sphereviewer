@@ -575,8 +575,67 @@
             }
         });
         
-        // DISABLED: Real-time monitor was too aggressive
-        // Will use targeted interval-based approach instead
+        // TARGETED MUTATION OBSERVER - Watch only the gap-4 div where X appears
+        function setupTargetedXWatcher() {
+            const gapDivs = document.querySelectorAll('div[class*="gap-4"]');
+            gapDivs.forEach(gapDiv => {
+                if (gapDiv.dataset.xWatcherAttached) return; // Don't attach multiple times
+                gapDiv.dataset.xWatcherAttached = 'true';
+                
+                console.log('🔍 Setting up X watcher on gap-4 div:', gapDiv.className);
+                
+                const observer = new MutationObserver((mutations) => {
+                    mutations.forEach(mutation => {
+                        mutation.addedNodes.forEach(node => {
+                            if (node.nodeType === 1) { // Element node
+                                const element = node;
+                                const text = element.textContent?.trim() || '';
+                                
+                                // Check if this element or any of its children contain X
+                                function checkForX(el) {
+                                    const elText = el.textContent?.trim() || '';
+                                    const computedStyle = window.getComputedStyle(el);
+                                    
+                                    if ((elText === '×' || elText === 'X') && 
+                                        (computedStyle.position === 'absolute' || 
+                                         computedStyle.position === 'fixed' ||
+                                         parseInt(computedStyle.zIndex) > 100)) {
+                                        
+                                        console.log('🚨 REALTIME: X detected being added to gap-4 div - DESTROYING:', {
+                                            tag: el.tagName,
+                                            text: elText,
+                                            className: el.className,
+                                            computedPosition: computedStyle.position,
+                                            computedZIndex: computedStyle.zIndex
+                                        });
+                                        el.remove();
+                                        return true;
+                                    }
+                                    
+                                    // Check children
+                                    for (let child of el.children || []) {
+                                        if (checkForX(child)) return true;
+                                    }
+                                    return false;
+                                }
+                                
+                                checkForX(element);
+                            }
+                        });
+                    });
+                });
+                
+                observer.observe(gapDiv, { 
+                    childList: true, 
+                    subtree: true 
+                });
+            });
+        }
+        
+        // Set up watchers after a delay to ensure DOM is ready
+        setTimeout(setupTargetedXWatcher, 1000);
+        // Re-setup periodically in case new gap-4 divs are added
+        setInterval(setupTargetedXWatcher, 5000);
         
         // SMART INITIALIZATION - Wait until EVERYTHING is ready before WebGL
         let sphereReadyExecuted = false;
@@ -818,7 +877,7 @@
         // LIGHT BACKGROUND PROTECTION - Only run occasionally since we prevent the problem at source
         setInterval(emergencyXKiller, 1000); // Much less frequent now
 
-        console.log('🛡️ SMART WEBGL PROTECTION - Preventing context conflicts at source!');
+        console.log('🛡️ SURGICAL X PROTECTION - Targeting gap-4 divs where X appears!');
         
         // Manual trigger for emergency overlay killing
         window.killOverlaysNow = function() {
@@ -827,34 +886,82 @@
             emergencyXKiller();
         };
         
-        // Debug function to find suspicious elements
+        // Debug function to map gap-4 div structure where X appears
         window.findSuspiciousElements = function() {
-            console.log('🔍 SCANNING FOR SUSPICIOUS ELEMENTS...');
-            const allElements = document.querySelectorAll('*');
-            let count = 0;
-            allElements.forEach(el => {
-                if ((el.textContent === '×' || el.textContent === 'X' || 
-                     el.innerHTML === '×' || el.innerHTML === 'X' ||
-                     el.style.position === 'absolute' || el.style.position === 'fixed') &&
-                    !el.closest('.container') && !el.closest('.controls')) {
-                    console.log(`🔍 SUSPICIOUS ELEMENT ${++count}:`, {
-                        tag: el.tagName,
-                        id: el.id,
-                        className: el.className,
-                        text: el.textContent,
-                        html: el.innerHTML,
-                        style: el.style.cssText,
-                        parent: el.parentElement?.tagName
+            console.log('🔍 SCANNING GAP-4 DIVS FOR X ELEMENTS...');
+            const gapDivs = document.querySelectorAll('div[class*="gap-4"]');
+            console.log(`Found ${gapDivs.length} gap-4 divs`);
+            
+            gapDivs.forEach((gapDiv, index) => {
+                console.log(`\n🔍 GAP-4 DIV ${index + 1}:`, {
+                    className: gapDiv.className,
+                    id: gapDiv.id,
+                    childCount: gapDiv.children.length
+                });
+                
+                // Map all children
+                Array.from(gapDiv.children).forEach((child, childIndex) => {
+                    const text = child.textContent?.trim() || '';
+                    const computedStyle = window.getComputedStyle(child);
+                    
+                    console.log(`  Child ${childIndex + 1}:`, {
+                        tag: child.tagName,
+                        className: child.className,
+                        id: child.id,
+                        text: text.substring(0, 50),
+                        position: computedStyle.position,
+                        zIndex: computedStyle.zIndex,
+                        hasXContent: text === '×' || text === 'X'
                     });
-                }
+                    
+                    // Check grandchildren if text is exactly X
+                    if (text === '×' || text === 'X') {
+                        console.log(`    🚨 FOUND X ELEMENT:`, {
+                            fullText: text,
+                            innerHTML: child.innerHTML,
+                            style: child.style.cssText,
+                            computedPosition: computedStyle.position,
+                            computedZIndex: computedStyle.zIndex
+                        });
+                    }
+                });
             });
-            console.log(`🔍 Found ${count} suspicious elements`);
+        };
+        
+        // Debug function to monitor gap-4 div changes in real-time
+        window.watchGap4Changes = function() {
+            console.log('👁️ Starting real-time gap-4 div monitoring...');
+            const gapDivs = document.querySelectorAll('div[class*="gap-4"]');
+            gapDivs.forEach((gapDiv, index) => {
+                console.log(`👁️ Watching gap-4 div ${index + 1}:`, gapDiv.className);
+                
+                const observer = new MutationObserver((mutations) => {
+                    mutations.forEach(mutation => {
+                        if (mutation.addedNodes.length > 0) {
+                            console.log(`🔄 Changes detected in gap-4 div ${index + 1}:`);
+                            mutation.addedNodes.forEach(node => {
+                                if (node.nodeType === 1) {
+                                    console.log('  Added element:', {
+                                        tag: node.tagName,
+                                        className: node.className,
+                                        text: node.textContent?.trim() || '',
+                                        innerHTML: node.innerHTML
+                                    });
+                                }
+                            });
+                        }
+                    });
+                });
+                
+                observer.observe(gapDiv, { childList: true, subtree: true });
+            });
         };
         
         // Force browser to use fresh copy (cache busting)
         console.log('🔄 Script loaded at:', new Date().toISOString());
-        console.log('💡 Smart initialization should prevent WebGL context conflicts');
-        console.log('💡 If issues occur, run killOverlaysNow() or press Ctrl+K');
+        console.log('💡 Smart initialization + surgical X protection for gap-4 divs');
+        console.log('💡 Debug functions: findSuspiciousElements(), watchGap4Changes(), killOverlaysNow()');
+        console.log('💡 Emergency: Press Ctrl+K to kill overlays');
         
         // Keyboard shortcut to kill overlays
         document.addEventListener('keydown', function(event) {
@@ -868,24 +975,54 @@
         // DISABLED: createElement override was too aggressive and broke the sphere viewer
         // console.log('🚫 createElement override disabled to allow sphere viewer to work');
         
-        // MINIMAL CANVAS PROTECTION - Only run occasionally since we prevent at source
+        // SURGICAL X PROTECTION - Target the exact gap-4 div where X appears
         setInterval(() => {
+            // Find the specific gap-4 div where the X appears
+            const gapDivs = document.querySelectorAll('div[class*="gap-4"]');
+            gapDivs.forEach(gapDiv => {
+                // Scan all children for suspicious X elements
+                const allChildren = gapDiv.querySelectorAll('*');
+                allChildren.forEach(child => {
+                    const text = child.textContent?.trim() || '';
+                    const style = child.style.cssText || '';
+                    const computedStyle = window.getComputedStyle(child);
+                    
+                    // Look for X with positioning or high z-index
+                    if ((text === '×' || text === 'X') && 
+                        (computedStyle.position === 'absolute' || 
+                         computedStyle.position === 'fixed' ||
+                         parseInt(computedStyle.zIndex) > 100)) {
+                        
+                        console.log('🎯 SURGICAL STRIKE: Found X in gap-4 div - DESTROYING:', {
+                            tag: child.tagName,
+                            text: text,
+                            className: child.className,
+                            style: style.substring(0, 100),
+                            computedPosition: computedStyle.position,
+                            computedZIndex: computedStyle.zIndex,
+                            parentClass: gapDiv.className
+                        });
+                        child.remove();
+                    }
+                });
+            });
+            
+            // Also check canvas siblings as backup
             const canvas = document.querySelector('canvas');
             if (canvas && canvas.parentElement) {
                 const siblings = Array.from(canvas.parentElement.children);
                 siblings.forEach(sibling => {
                     if (sibling !== canvas) {
                         const text = sibling.textContent?.trim() || '';
-                        // Only remove EXACT × or X with high z-index
                         if ((text === '×' || text === 'X') && 
                             sibling.style.zIndex && parseInt(sibling.style.zIndex) > 1000) {
-                            console.log('🔫 Removing high z-index X near canvas');
+                            console.log('🔫 Backup: Removing high z-index X near canvas');
                             sibling.remove();
                         }
                     }
                 });
             }
-        }, 2000); // Much less frequent
+        }, 500); // More frequent since we're being surgical
         
         // SMART SCRIPT LOADING - Only load sphere-viewer.js when DOM is completely ready
         function loadSphereViewerWhenReady() {
