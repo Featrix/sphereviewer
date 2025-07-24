@@ -1364,13 +1364,32 @@
                 speedValue.textContent = newSpeed;
                 console.log('🎯 Rotation speed slider changed to:', newSpeed);
                 
-                // IMMEDIATE rotation speed update
+                // IMMEDIATE rotation speed update with DEBUGGING
                 const globalViewer = window.sphereViewerInstance;
-                if (globalViewer && globalViewer.sphereRef && globalViewer.sphereRef.updateAnimationSettings) {
-                    globalViewer.sphereRef.updateAnimationSettings({
-                        rotationSpeed: newSpeed
-                    });
-                    console.log('✅ Rotation speed updated immediately to:', newSpeed);
+                console.log('🔍 DEBUG rotation speed - globalViewer:', !!globalViewer);
+                console.log('🔍 DEBUG rotation speed - sphereRef:', !!globalViewer?.sphereRef);
+                console.log('🔍 DEBUG rotation speed - updateAnimationSettings:', !!globalViewer?.sphereRef?.updateAnimationSettings);
+                
+                if (globalViewer && globalViewer.sphereRef) {
+                    if (globalViewer.sphereRef.updateAnimationSettings) {
+                        try {
+                            globalViewer.sphereRef.updateAnimationSettings({
+                                rotationSpeed: newSpeed
+                            });
+                            console.log('✅ Rotation speed updated immediately to:', newSpeed);
+                            showNotification(`🔄 Rotation speed: ${newSpeed}`, 'success');
+                        } catch (error) {
+                            console.error('❌ Error updating rotation speed:', error);
+                            showNotification(`❌ Failed to update rotation speed: ${error.message}`, 'error');
+                        }
+                    } else {
+                        console.error('❌ updateAnimationSettings method not found on sphereRef');
+                        console.log('🔍 Available sphereRef methods:', Object.keys(globalViewer.sphereRef));
+                        showNotification('❌ Rotation update method not available', 'error');
+                    }
+                } else {
+                    console.error('❌ No sphere viewer instance available');
+                    showNotification('❌ Sphere not ready for rotation control', 'error');
                 }
                 
                 updateAnimationSettings(); // Also update all other settings
@@ -1393,13 +1412,32 @@
                 const isRotating = e.target.checked;
                 console.log('🎯 Rotation checkbox changed to:', isRotating);
                 
-                // IMMEDIATE rotation enable/disable
+                // IMMEDIATE rotation enable/disable with DEBUGGING
                 const globalViewer = window.sphereViewerInstance;
-                if (globalViewer && globalViewer.sphereRef && globalViewer.sphereRef.updateAnimationSettings) {
-                    globalViewer.sphereRef.updateAnimationSettings({
-                        isRotating: isRotating
-                    });
-                    console.log('✅ Rotation enabled/disabled immediately:', isRotating);
+                console.log('🔍 DEBUG rotation checkbox - globalViewer:', !!globalViewer);
+                console.log('🔍 DEBUG rotation checkbox - sphereRef:', !!globalViewer?.sphereRef);
+                console.log('🔍 DEBUG rotation checkbox - updateAnimationSettings:', !!globalViewer?.sphereRef?.updateAnimationSettings);
+                
+                if (globalViewer && globalViewer.sphereRef) {
+                    if (globalViewer.sphereRef.updateAnimationSettings) {
+                        try {
+                            globalViewer.sphereRef.updateAnimationSettings({
+                                isRotating: isRotating
+                            });
+                            console.log('✅ Rotation enabled/disabled immediately:', isRotating);
+                            showNotification(`🔄 Rotation ${isRotating ? 'enabled' : 'disabled'}`, 'success');
+                        } catch (error) {
+                            console.error('❌ Error updating rotation state:', error);
+                            showNotification(`❌ Failed to update rotation: ${error.message}`, 'error');
+                        }
+                    } else {
+                        console.error('❌ updateAnimationSettings method not found on sphereRef');
+                        console.log('🔍 Available sphereRef methods:', Object.keys(globalViewer.sphereRef));
+                        showNotification('❌ Rotation update method not available', 'error');
+                    }
+                } else {
+                    console.error('❌ No sphere viewer instance available');
+                    showNotification('❌ Sphere not ready for rotation control', 'error');
                 }
                 
                 updateAnimationSettings(); // Also update all other settings
@@ -2576,6 +2614,30 @@
             console.log('🧪 Testing rotation controls...');
             const globalViewer = window.sphereViewerInstance;
             
+            console.log('🔍 DETAILED DEBUG INFO:');
+            console.log('  - window.sphereViewerInstance exists:', !!globalViewer);
+            console.log('  - sphereViewerInstance type:', typeof globalViewer);
+            
+            if (globalViewer) {
+                console.log('  - sphereRef exists:', !!globalViewer.sphereRef);
+                console.log('  - sphereRef type:', typeof globalViewer.sphereRef);
+                
+                if (globalViewer.sphereRef) {
+                    console.log('  - updateAnimationSettings exists:', !!globalViewer.sphereRef.updateAnimationSettings);
+                    console.log('  - updateAnimationSettings type:', typeof globalViewer.sphereRef.updateAnimationSettings);
+                    console.log('  - Available methods on sphereRef:', Object.keys(globalViewer.sphereRef).filter(key => typeof globalViewer.sphereRef[key] === 'function'));
+                    console.log('  - All sphereRef properties:', Object.keys(globalViewer.sphereRef));
+                }
+            }
+            
+            // Test DOM elements
+            const rotationCheckbox = document.getElementById('isRotating');
+            const rotationSlider = document.getElementById('rotationSpeed');
+            console.log('  - Rotation checkbox exists:', !!rotationCheckbox);
+            console.log('  - Rotation slider exists:', !!rotationSlider);
+            console.log('  - Checkbox checked:', rotationCheckbox?.checked);
+            console.log('  - Slider value:', rotationSlider?.value);
+            
             if (!globalViewer) {
                 console.error('❌ No sphereViewerInstance found');
                 return 'FAILED: No sphereViewerInstance';
@@ -2588,6 +2650,7 @@
             
             if (!globalViewer.sphereRef.updateAnimationSettings) {
                 console.error('❌ No updateAnimationSettings method found');
+                console.log('💡 Available methods:', Object.keys(globalViewer.sphereRef).filter(key => typeof globalViewer.sphereRef[key] === 'function'));
                 return 'FAILED: No updateAnimationSettings method';
             }
             
@@ -2603,6 +2666,60 @@
                 console.error('❌ Rotation controls test failed:', error);
                 return 'FAILED: ' + error.message;
             }
+        };
+        
+        // Manual rotation test function (accessible from console)
+        window.testManualRotation = function(speed = 0.3) {
+            console.log('🔄 Testing manual rotation with speed:', speed);
+            const globalViewer = window.sphereViewerInstance;
+            
+            if (!globalViewer?.sphereRef) {
+                console.error('❌ No sphere reference available');
+                return 'FAILED: No sphere reference';
+            }
+            
+            // Try different methods to enable rotation
+            const attempts = [
+                () => globalViewer.sphereRef.updateAnimationSettings({ isRotating: true, rotationSpeed: speed }),
+                () => globalViewer.sphereRef.setRotation && globalViewer.sphereRef.setRotation(true, speed),
+                () => globalViewer.sphereRef.enableRotation && globalViewer.sphereRef.enableRotation(speed),
+                () => globalViewer.sphereRef.animationSettings && (globalViewer.sphereRef.animationSettings.isRotating = true, globalViewer.sphereRef.animationSettings.rotationSpeed = speed),
+                () => {
+                    if (globalViewer.sphereRef.scene && globalViewer.sphereRef.camera && globalViewer.sphereRef.renderer) {
+                        console.log('🎯 Attempting direct Three.js scene rotation...');
+                        if (!window.manualRotationInterval) {
+                            window.manualRotationInterval = setInterval(() => {
+                                globalViewer.sphereRef.scene.rotation.y += speed;
+                                globalViewer.sphereRef.renderer.render(globalViewer.sphereRef.scene, globalViewer.sphereRef.camera);
+                            }, 16); // ~60fps
+                        }
+                        return 'Direct scene rotation started';
+                    }
+                }
+            ];
+            
+            for (let i = 0; i < attempts.length; i++) {
+                try {
+                    const result = attempts[i]();
+                    console.log(`✅ Attempt ${i + 1} succeeded:`, result || 'Success');
+                    return `SUCCESS: Method ${i + 1} worked`;
+                } catch (error) {
+                    console.log(`❌ Attempt ${i + 1} failed:`, error.message);
+                }
+            }
+            
+            return 'FAILED: All rotation methods failed';
+        };
+        
+        // Stop manual rotation
+        window.stopManualRotation = function() {
+            if (window.manualRotationInterval) {
+                clearInterval(window.manualRotationInterval);
+                window.manualRotationInterval = null;
+                console.log('🛑 Manual rotation stopped');
+                return 'Manual rotation stopped';
+            }
+            return 'No manual rotation was running';
         };
         
         // Ensure movie button stays active after sphere loading
