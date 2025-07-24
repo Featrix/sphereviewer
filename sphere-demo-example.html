@@ -637,6 +637,7 @@
         
         window.onSphereReady = function(sphereRef) {
             console.log('🎉 onSphereReady CALLED! sphereRef:', !!sphereRef);
+            console.log('🎉 SUCCESS: Sphere viewer has initialized!!');
             
             // PREVENT MULTIPLE EXECUTIONS - CRITICAL FOR PREVENTING GIANT X
             if (sphereReadyExecuted || initializationInProgress) {
@@ -1133,6 +1134,49 @@
         
         // Script loads via static tag - no dynamic loading needed
         console.log('✅ Using static script loading');
+        
+        // Check if sphere viewer loaded properly
+        setTimeout(() => {
+            console.log('🔍 Post-load check:', {
+                hasWindow: typeof window !== 'undefined',
+                hasOnSphereReady: typeof window.onSphereReady === 'function',
+                hasFeatrixSphere: typeof window.FeatrixSphere !== 'undefined',
+                hasContainer: !!document.getElementById('sphere-viewer-container'),
+                containerVisible: document.getElementById('sphere-viewer-container')?.offsetHeight > 0
+            });
+            
+            // Look for any script errors
+            if (window.FeatrixSphere) {
+                console.log('✅ FeatrixSphere available');
+                
+                // If onSphereReady hasn't been called after 3 seconds, try manual init
+                setTimeout(() => {
+                    if (!window.sphereViewerInstance) {
+                        console.log('🔧 onSphereReady not called yet - attempting manual initialization...');
+                        try {
+                            const container = document.getElementById('sphere-viewer-container');
+                            if (container && window.FeatrixSphere) {
+                                console.log('🚀 Attempting manual sphere creation...');
+                                const viewer = new window.FeatrixSphere({
+                                    containerId: 'sphere-viewer-container',
+                                    sessionId: '20250716-142858_653c60'
+                                });
+                                if (viewer && typeof window.onSphereReady === 'function') {
+                                    console.log('🎯 Manual viewer created, calling onSphereReady...');
+                                    window.onSphereReady(viewer);
+                                }
+                            }
+                        } catch (error) {
+                            console.error('❌ Manual initialization failed:', error);
+                        }
+                    } else {
+                        console.log('✅ Sphere already initialized successfully');
+                    }
+                }, 3000);
+            } else {
+                console.error('❌ FeatrixSphere not found - sphere-viewer.js may not have loaded properly');
+            }
+        }, 2000);
     </script>
 
     <!-- Additional controls and debugging -->
@@ -2700,9 +2744,16 @@
             }
         }
         
-        // Log any errors
+        // Log any errors with detailed info
         window.addEventListener('error', (e) => {
             console.error('❌ Page error:', e.error);
+            console.error('❌ Error source:', e.filename, 'line:', e.lineno);
+            console.error('❌ Error message:', e.message);
+        });
+        
+        // Also catch unhandled promise rejections
+        window.addEventListener('unhandledrejection', (e) => {
+            console.error('❌ Unhandled promise rejection:', e.reason);
         });
 
         // Test basic JavaScript functionality
@@ -2717,6 +2768,36 @@
             } catch (error) {
                 console.error('❌ Test failed:', error);
                 return 'Test failed: ' + error.message;
+            }
+        };
+        
+        // Debug sphere initialization (accessible from console)
+        window.debugSphereInit = function() {
+            console.log('🔍 SPHERE INITIALIZATION DEBUG:');
+            console.log('- FeatrixSphere available:', typeof window.FeatrixSphere);
+            console.log('- onSphereReady defined:', typeof window.onSphereReady);
+            console.log('- Container exists:', !!document.getElementById('sphere-viewer-container'));
+            console.log('- Container visible:', document.getElementById('sphere-viewer-container')?.offsetHeight > 0);
+            console.log('- sphereViewerInstance:', !!window.sphereViewerInstance);
+            console.log('- Global window keys containing "sphere":', Object.keys(window).filter(k => k.toLowerCase().includes('sphere')));
+            console.log('- All script tags:', Array.from(document.querySelectorAll('script')).map(s => s.src || 'inline'));
+            
+            if (window.FeatrixSphere) {
+                console.log('🚀 Attempting manual sphere creation test...');
+                try {
+                    const testViewer = new window.FeatrixSphere({
+                        containerId: 'sphere-viewer-container',
+                        sessionId: '20250716-142858_653c60'
+                    });
+                    console.log('✅ Manual creation successful:', !!testViewer);
+                    return testViewer;
+                } catch (error) {
+                    console.error('❌ Manual creation failed:', error);
+                    return error;
+                }
+            } else {
+                console.error('❌ FeatrixSphere not available');
+                return null;
             }
         };
         
