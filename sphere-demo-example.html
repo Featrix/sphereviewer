@@ -2163,6 +2163,93 @@
             console.log(`✅ ${actionMsg} ${pointIndex} points to REAL epoch ${epochIndex + 1} positions ${statusMsg}`);
         }
         
+        // Smooth interpolation between two epochs 
+        function interpolatePointsBetweenEpochs(fromEpochIndex, toEpochIndex, progress) {
+            if (!window.sphereViewerInstance?.sphereRef) return;
+            
+            const sphereData = window.sphereViewerInstance.sphereRef;
+            const epochKeys = Object.keys(epochProjections).sort();
+            
+            // Get epoch data
+            const fromEpochKey = epochKeys[fromEpochIndex];
+            const toEpochKey = epochKeys[toEpochIndex];
+            const fromEpochData = epochProjections[fromEpochKey];
+            const toEpochData = epochProjections[toEpochKey];
+            
+            if (!fromEpochData || !toEpochData) {
+                console.warn(`⚠️ Missing epoch data for interpolation: ${fromEpochIndex} -> ${toEpochIndex}`);
+                return;
+            }
+            
+            const existingPoints = Array.from(sphereData.pointObjectsByRecordID?.values() || []);
+            if (existingPoints.length === 0) {
+                console.warn('⚠️ No existing points to interpolate');
+                return;
+            }
+            
+            // Cluster animation settings
+            const animateClustersEnabled = document.getElementById('animateClusters')?.checked || false;
+            let currentMaxClusters = null;
+            
+            if (animateClustersEnabled) {
+                const maxClusters = getMaxClusters();
+                const totalEpochs = epochKeys.length;
+                const epochsPerCluster = Math.max(1, Math.floor(totalEpochs / maxClusters));
+                // Interpolate cluster visibility too
+                const fromClusters = Math.min(maxClusters, Math.floor(fromEpochIndex / epochsPerCluster) + 1);
+                const toClusters = Math.min(maxClusters, Math.floor(toEpochIndex / epochsPerCluster) + 1);
+                currentMaxClusters = Math.floor(fromClusters + (toClusters - fromClusters) * progress);
+            }
+            
+            // Interpolate each point
+            existingPoints.forEach((mesh, index) => {
+                if (index < fromEpochData.coords.length && index < toEpochData.coords.length) {
+                    const fromCoord = fromEpochData.coords[index];
+                    const toCoord = toEpochData.coords[index];
+                    
+                    // Smooth position interpolation using THREE.Vector3.lerp
+                    if (!window.THREE || !window.THREE.Vector3) {
+                        console.warn('⚠️ THREE.js Vector3 not available, using direct positioning');
+                        // Fallback to manual interpolation
+                        const x = fromCoord.x + (toCoord.x - fromCoord.x) * progress;
+                        const y = fromCoord.y + (toCoord.y - fromCoord.y) * progress;
+                        const z = fromCoord.z + (toCoord.z - fromCoord.z) * progress;
+                        mesh.position.set(x, y, z);
+                    } else {
+                        const fromPos = new THREE.Vector3(fromCoord.x, fromCoord.y, fromCoord.z);
+                        const toPos = new THREE.Vector3(toCoord.x, toCoord.y, toCoord.z);
+                        const interpolatedPos = fromPos.lerp(toPos, progress);
+                        mesh.position.copy(interpolatedPos);
+                    }
+                    
+                    // Interpolate cluster color if needed
+                    if (fromCoord.cluster !== undefined && toCoord.cluster !== undefined) {
+                        let finalCluster = toCoord.cluster; // Use target cluster
+                        
+                        if (animateClustersEnabled && currentMaxClusters !== null) {
+                            finalCluster = toCoord.cluster < currentMaxClusters ? toCoord.cluster : 0;
+                        }
+                        
+                        try {
+                            const color = getClusterColor(finalCluster);
+                            if (mesh.material && mesh.material.color && mesh.material.color.setHex) {
+                                mesh.material.color.setHex(color);
+                            }
+                        } catch (e) {
+                            console.warn(`⚠️ Error setting interpolated color for point ${index}:`, e);
+                        }
+                    }
+                }
+            });
+            
+            // Force render
+            if (sphereData.renderer && sphereData.scene && sphereData.camera) {
+                sphereData.renderer.render(sphereData.scene, sphereData.camera);
+            }
+            
+            console.log(`🔄 Interpolated ${existingPoints.length} points: epoch ${fromEpochIndex} -> ${toEpochIndex} (${(progress * 100).toFixed(1)}%)`);
+        }
+        
         // Simple play function using pre-calculated frames
         function playTraining() {
             console.log('🎬 playTraining() called');
@@ -2185,50 +2272,70 @@
                 return;
             }
             
-            // ENSURE CLEAN START - No final sphere data should exist 
-            console.log('🧹 ENSURING CLEAN START - No final sphere data should interfere');
-            if (window.sphereViewerInstance?.sphereRef?.clearPoints) {
-                window.sphereViewerInstance.sphereRef.clearPoints();
-                console.log('✅ All existing points cleared - sphere is empty for training');
-            } else {
-                console.log('✅ Sphere already empty - no clearPoints needed');
-            }
+            // NO CLEARING - Keep existing points and smoothly interpolate them
+            console.log('🎬 Starting smooth interpolation training animation...');
             
-            // Wait a moment then start with first epoch
-            setTimeout(() => {
-                updateEpochFromReal(0); // Start with first epoch
-                console.log('🎬 Training animation started with first epoch');
-            }, 100);
+            // If no points exist yet, create them from first epoch
+            const sphereData = window.sphereViewerInstance.sphereRef;
+            const existingPoints = Array.from(sphereData.pointObjectsByRecordID?.values() || []);
+            
+            if (existingPoints.length === 0) {
+                console.log('🆕 No points exist - creating from first epoch');
+                updateEpochFromReal(0); // Create initial points
+            } else {
+                console.log('✅ Points already exist - will smoothly interpolate between epochs');
+            }
             
             const totalEpochs = Object.keys(epochProjections).length;
             console.log(`🚀 Starting REAL training animation: ${totalEpochs} epochs`);
             
-            let currentFrame = 0;
-            // Use the animation duration set by speed buttons
+            // SMOOTH INTERPOLATION ANIMATION
+            let currentEpochIndex = 0;
+            let interpolationStep = 0;
+            
+            // Use animation duration and create smooth steps between epochs
             const totalDurationMs = (animationDurationSeconds || 3) * 1000;
-            const frameInterval = totalDurationMs / totalEpochs; // Distribute total time across all epochs
-            console.log(`⏱️ Using ${animationDurationSeconds || 3}s total duration, ${frameInterval.toFixed(1)}ms per frame`);
+            const stepsPerEpoch = 10; // 10 interpolation steps between each epoch for smooth movement
+            const totalSteps = totalEpochs * stepsPerEpoch;
+            const stepInterval = totalDurationMs / totalSteps;
+            
+            console.log(`⏱️ Smooth animation: ${animationDurationSeconds || 3}s total, ${stepsPerEpoch} steps per epoch, ${stepInterval.toFixed(1)}ms per step`);
             
             autoPlayInterval = setInterval(() => {
-                if (currentFrame >= totalEpochs) {
-                    // LOOP: Restart the animation instead of pausing
-                    console.log('🔄 Training animation completed - LOOPING back to start');
-                    currentFrame = 0; // Reset to beginning
-                    updateEpochFromReal(0); // Go back to first epoch
-                    return;
+                // Calculate current and next epoch indices
+                const fromEpochIndex = currentEpochIndex;
+                const toEpochIndex = (currentEpochIndex + 1) % totalEpochs;
+                
+                // Calculate interpolation progress (0.0 to 1.0)
+                const progress = interpolationStep / stepsPerEpoch;
+                
+                // If we're at the last epoch, interpolate back to first (for looping)
+                if (currentEpochIndex === totalEpochs - 1) {
+                    interpolatePointsBetweenEpochs(fromEpochIndex, 0, progress);
+                } else {
+                    interpolatePointsBetweenEpochs(fromEpochIndex, toEpochIndex, progress);
                 }
                 
-                updateEpochFromReal(currentFrame);
-                
-                // Update progress bar
+                // Update progress bar (based on overall progress through all epochs)
                 const progressBar = document.getElementById('progressBar');
                 if (progressBar) {
-                    const progress = (currentFrame / totalEpochs) * 100;
-                    progressBar.style.width = `${progress}%`;
+                    const overallProgress = ((currentEpochIndex * stepsPerEpoch + interpolationStep) / totalSteps) * 100;
+                    progressBar.style.width = `${overallProgress}%`;
                 }
                 
-                currentFrame++;
-            }, frameInterval);
+                // Move to next step
+                interpolationStep++;
+                
+                // If we've completed all steps for this epoch, move to next epoch
+                if (interpolationStep >= stepsPerEpoch) {
+                    interpolationStep = 0;
+                    currentEpochIndex = (currentEpochIndex + 1) % totalEpochs;
+                    
+                    if (currentEpochIndex === 0) {
+                        console.log('🔄 Training animation completed one loop - continuing to next loop');
+                    }
+                }
+            }, stepInterval);
             
             const playBtn = document.getElementById('playBtn');
             playBtn.textContent = '⏸️ PLAYING - Click to Lock Training';
