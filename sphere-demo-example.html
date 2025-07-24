@@ -309,6 +309,83 @@
     <!-- Load React dependencies -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- CRITICAL: Define onSphereReady BEFORE sphere-viewer.js loads -->
+    <script>
+        console.log('🎯 Defining onSphereReady BEFORE sphere-viewer.js loads...');
+        
+        // Function to update loading progress
+        function updateLoadingProgress(message, frameNum = null, totalFrames = null) {
+            const loadingMessage = document.getElementById('loadingMessage');
+            const loadingDetails = document.getElementById('loadingDetails');
+            
+            if (loadingMessage) {
+                loadingMessage.textContent = message;
+            }
+            
+            if (loadingDetails && frameNum !== null && totalFrames !== null) {
+                loadingDetails.textContent = `Loading frame ${frameNum} of ${totalFrames}`;
+            } else if (loadingDetails && frameNum === null) {
+                loadingDetails.textContent = message;
+            }
+        }
+        
+        // Define the callback that sphere-viewer.js will capture during auto-init
+        window.onSphereReady = function(sphereRef) {
+            console.log('🎉 onSphereReady CALLED! sphereRef:', !!sphereRef);
+            console.log('🎉 SUCCESS: Sphere viewer has initialized!!');
+            
+            // Store the sphere reference
+            window.sphereViewerInstance = { sphereRef: sphereRef };
+            
+            // Update loading immediately
+            updateLoadingProgress('Sphere ready, preparing training movie...');
+            
+            // Clear any existing points - show nothing until training ready
+            console.log('🧹 CLEARING ALL POINTS - Show nothing until training movie ready');
+            if (sphereRef.clearPoints) {
+                sphereRef.clearPoints();
+                console.log('✅ All initial points cleared - sphere is now empty');
+            }
+            
+            updateLoadingProgress('Clearing sphere data...');
+            
+            // Auto-fetch and play training movie (will be defined later in main script)
+            console.log('🎯 AUTO-STARTING TRAINING MOVIE...');
+            setTimeout(() => {
+                if (typeof fetchTrainingMovie === 'function') {
+                    fetchTrainingMovie(true).then(() => {
+                        updateLoadingProgress('Training movie ready!');
+                        
+                        // Hide loading and start training movie
+                        setTimeout(() => {
+                            const loadingDiv = document.getElementById('loadingDiv');
+                            if (loadingDiv) {
+                                loadingDiv.style.display = 'none';
+                            }
+                            if (typeof playTraining === 'function') {
+                                playTraining();
+                            }
+                        }, 500);
+                    }).catch(error => {
+                        console.error('❌ Auto-training movie failed:', error);
+                        updateLoadingProgress('Failed to load training movie');
+                    });
+                } else {
+                    console.log('⏳ fetchTrainingMovie not yet defined, will retry...');
+                    // Retry in 1 second
+                    setTimeout(() => window.onSphereReady(sphereRef), 1000);
+                }
+            }, 100);
+        };
+        
+        console.log('✅ onSphereReady defined and ready for sphere-viewer.js capture');
+    </script>
+    
+    <!-- Load sphere-viewer.js - it will auto-initialize with onSphereReady -->
+    <script src="sphere-viewer.js" 
+            data-container-id="sphere-viewer-container"
+            data-session-id="20250716-142858_653c60"></script>
 
     <div class="container">
         <div class="header">
@@ -631,99 +708,8 @@
         // Re-setup periodically in case new gap-4 divs are added
         setInterval(setupTargetedXWatcher, 5000);
         
-        // SMART INITIALIZATION - Prevent multiple sphere instances
-        let sphereReadyExecuted = false;
-        let initializationInProgress = false;
-        
-        window.onSphereReady = function(sphereRef) {
-            console.log('🎉 onSphereReady CALLED! sphereRef:', !!sphereRef);
-            console.log('🎉 SUCCESS: Sphere viewer has initialized!!');
-            
-            // PREVENT MULTIPLE EXECUTIONS - CRITICAL FOR PREVENTING GIANT X
-            if (sphereReadyExecuted || initializationInProgress) {
-                console.log('🚫 Sphere initialization already handled, skipping...');
-                return;
-            }
-            
-            initializationInProgress = true;
-            sphereReadyExecuted = true;
-            console.log('🎯 Sphere is ready - proceeding with AUTO-LOAD training movie setup...');
-            
-            // Show immediate frame progress
-            updateLoadingProgress('Sphere ready, preparing training movie...');
-            
-            // Store sphere reference
-            window.sphereViewerInstance = { sphereRef: sphereRef };
-            
-            // IMMEDIATELY CLEAR ANY EXISTING POINTS - SHOW NOTHING UNTIL TRAINING READY
-            console.log('🧹 CLEARING ALL POINTS - Show nothing until training movie ready');
-            updateLoadingProgress('Clearing sphere data...');
-            if (sphereRef.clearPoints) {
-                sphereRef.clearPoints();
-                console.log('✅ All initial points cleared - sphere is now empty');
-            }
-            
-            // Set fast rotation speed during animation
-            if (sphereRef.updateAnimationSettings) {
-                sphereRef.updateAnimationSettings({
-                    isRotating: true,
-                    rotationSpeed: 0.25  // FAST rotation during training
-                });
-                console.log('🔄 Set FAST rotation (0.25) for training animation');
-            }
-            
-            // IMMEDIATELY load training movie...
-            console.log('🎬 IMMEDIATELY AUTO-LOADING training movie...');
-            console.log('🔍 About to call fetchTrainingMovie() - this should happen automatically');
-            updateLoadingProgress('Auto-loading training movie...');
-            
-            fetchTrainingMovie(true).then(() => {
-                console.log('✅ Training movie fetch completed successfully');
-                console.log('📊 Epoch projections loaded:', {
-                    epochCount: Object.keys(epochProjections || {}).length,
-                    firstFewKeys: Object.keys(epochProjections || {}).slice(0, 3)
-                });
-                
-                console.log('🎨 Starting AUTO-PLAY training movie...');
-                // AUTO-PLAY: Start training movie immediately
-                setTimeout(() => {
-                    console.log('🎬 AUTO-PLAY: About to call playTraining()...');
-                    console.log('🔍 Pre-play check:', {
-                        hasEpochProjections: !!epochProjections,
-                        epochCount: Object.keys(epochProjections || {}).length,
-                        hasSphereInstance: !!window.sphereViewerInstance,
-                        hasSphereRef: !!window.sphereViewerInstance?.sphereRef,
-                        hasAutoPlayInterval: !!autoPlayInterval
-                    });
-                    
-                    try {
-                        // FORCE HIDE LOADING SCREEN BEFORE STARTING
-                        const loadingDiv = document.querySelector('.loading');
-                        if (loadingDiv) {
-                            loadingDiv.style.display = 'none';
-                            console.log('🚀 AUTO-PLAY: Loading screen hidden before starting training movie');
-                        }
-                        
-                        playTraining();
-                        console.log('🚀 AUTO-PLAY: Training movie started automatically');
-                    } catch (error) {
-                        console.error('❌ AUTO-PLAY FAILED:', error);
-                        showNotification(`❌ Auto-play failed: ${error.message}`, 'error');
-                    }
-                }, 500); // Small delay to ensure everything is ready
-                
-                // Mark initialization as complete
-                initializationInProgress = false;
-                console.log('✅ SAFE sphere initialization completed successfully!');
-            }).catch(error => {
-                console.error('❌ Training movie failed to load:', error);
-                console.error('❌ Error details:', error.stack);
-                initializationInProgress = false; // Reset on error too
-                
-                // Show error to user
-                showNotification(`❌ Failed to load training data: ${error.message}`, 'error');
-            });
-        };
+        // onSphereReady is now defined earlier in the <head> before sphere-viewer.js loads
+        // This ensures the callback is captured during auto-initialization
 
         // NUCLEAR OVERLAY KILLER - DESTROY THE GIANT X AT ALL COSTS
         function killAllOverlays() {
@@ -1146,34 +1132,10 @@
                 containerVisible: document.getElementById('sphere-viewer-container')?.offsetHeight > 0
             });
             
-            // Look for any script errors - CORRECT CLASS NAME
+            // Check if sphere viewer loaded properly
             if (window.FeatrixSphereViewer) {
                 console.log('✅ FeatrixSphereViewer available');
-                
-                // If onSphereReady hasn't been called after 3 seconds, try manual init
-                setTimeout(() => {
-                    if (!window.sphereViewerInstance) {
-                        console.log('🔧 onSphereReady not called yet - attempting manual initialization...');
-                        try {
-                            const container = document.getElementById('sphere-viewer-container');
-                            if (container && window.FeatrixSphereViewer) {
-                                console.log('🚀 Attempting manual sphere creation...');
-                                const viewer = new window.FeatrixSphereViewer({
-                                    containerId: 'sphere-viewer-container',
-                                    sessionId: '20250716-142858_653c60'
-                                });
-                                if (viewer && typeof window.onSphereReady === 'function') {
-                                    console.log('🎯 Manual viewer created, calling onSphereReady...');
-                                    window.onSphereReady(viewer.sphereRef);
-                                }
-                            }
-                        } catch (error) {
-                            console.error('❌ Manual initialization failed:', error);
-                        }
-                    } else {
-                        console.log('✅ Sphere already initialized successfully');
-                    }
-                }, 3000);
+                console.log('✅ Auto-initialization should trigger onSphereReady automatically');
             } else {
                 console.error('❌ FeatrixSphereViewer not found - sphere-viewer.js may not have loaded properly');
             }
@@ -1726,26 +1688,7 @@
         // Legacy variables (deprecated - use epochProjections instead)
         // Note: These are already declared at top of script to prevent ReferenceError
 
-        // Loading progress function
-        function updateLoadingProgress(message, frameNum = null, totalFrames = null) {
-            const loadingMessageEl = document.getElementById('loadingMessage');
-            const loadingDetailsEl = document.getElementById('loadingDetails');
-            
-            if (loadingMessageEl) {
-                if (frameNum !== null && totalFrames !== null) {
-                    loadingMessageEl.textContent = `Loading frame ${frameNum} of ${totalFrames}`;
-                } else {
-                    loadingMessageEl.textContent = message;
-                }
-            }
-            
-            if (loadingDetailsEl && frameNum !== null && totalFrames !== null) {
-                const progress = Math.round((frameNum / totalFrames) * 100);
-                loadingDetailsEl.textContent = `Training movie data: ${progress}% complete`;
-            }
-            
-            console.log(`📊 Loading progress: ${message}${frameNum !== null ? ` (${frameNum}/${totalFrames})` : ''}`);
-        }
+        // updateLoadingProgress is now defined in the <head> section before sphere-viewer.js loads
 
         // Fetch REAL training movie frames from server
         async function fetchTrainingMovie(autoLoaded = false) {
@@ -2775,32 +2718,19 @@
         // Debug sphere initialization (accessible from console)
         window.debugSphereInit = function() {
             console.log('🔍 SPHERE INITIALIZATION DEBUG:');
-            console.log('- FeatrixSphere available:', typeof window.FeatrixSphere);
             console.log('- FeatrixSphereViewer available:', typeof window.FeatrixSphereViewer);
             console.log('- onSphereReady defined:', typeof window.onSphereReady);
             console.log('- Container exists:', !!document.getElementById('sphere-viewer-container'));
             console.log('- Container visible:', document.getElementById('sphere-viewer-container')?.offsetHeight > 0);
             console.log('- sphereViewerInstance:', !!window.sphereViewerInstance);
-            console.log('- Global window keys containing "sphere":', Object.keys(window).filter(k => k.toLowerCase().includes('sphere')));
-            console.log('- All script tags:', Array.from(document.querySelectorAll('script')).map(s => s.src || 'inline'));
+            console.log('- Auto-initialization should handle sphere creation automatically');
             
-            if (window.FeatrixSphereViewer) {
-                console.log('🚀 Attempting manual sphere creation test...');
-                try {
-                    const testViewer = new window.FeatrixSphereViewer({
-                        containerId: 'sphere-viewer-container',
-                        sessionId: '20250716-142858_653c60'
-                    });
-                    console.log('✅ Manual creation successful:', !!testViewer);
-                    return testViewer;
-                } catch (error) {
-                    console.error('❌ Manual creation failed:', error);
-                    return error;
-                }
-            } else {
-                console.error('❌ FeatrixSphereViewer not available');
-                return null;
-            }
+            return {
+                hasFeatrixSphereViewer: typeof window.FeatrixSphereViewer !== 'undefined',
+                hasOnSphereReady: typeof window.onSphereReady === 'function',
+                hasContainer: !!document.getElementById('sphere-viewer-container'),
+                hasSphereInstance: !!window.sphereViewerInstance
+            };
         };
         
         // Test rotation controls function (accessible from console)
