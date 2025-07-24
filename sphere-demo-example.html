@@ -250,16 +250,26 @@
         
         // SIMPLE: Use onSphereReady callback with session ID to get working sphereRef
         window.onSphereReady = function(sphereRef) {
-            if (!sphereRef) return;
-            
-            window.sphereViewerInstance = { sphereRef: sphereRef };
-            
-            // Hide loading immediately - sphere is ready
-            const loadingDiv = document.getElementById('loadingDiv');
-            if (loadingDiv) loadingDiv.style.display = 'none';
-            
-            // Just let the sphere viewer display what it loaded
-            console.log('Sphere ready - displaying loaded data');
+            try {
+                if (CHECK_ERROR_STOP()) return;
+                
+                if (!sphereRef) {
+                    EMERGENCY_STOP('Sphere viewer failed to initialize - sphereRef is null');
+                    return;
+                }
+                
+                window.sphereViewerInstance = { sphereRef: sphereRef };
+                
+                // Hide loading immediately - sphere is ready
+                const loadingDiv = document.getElementById('loadingDiv');
+                if (loadingDiv) loadingDiv.style.display = 'none';
+                
+                // Just let the sphere viewer display what it loaded
+                console.log('Sphere ready - displaying loaded data');
+                
+            } catch (error) {
+                EMERGENCY_STOP(`Error in onSphereReady: ${error.message}`);
+            }
         };
                             
             
@@ -579,13 +589,65 @@
         var initialPositions = null;
         var animationDurationSeconds = 3;
         
+        // GLOBAL ERROR STOPPER - If any error occurs, stop ALL execution
+        var CRITICAL_ERROR_OCCURRED = false;
+        var ERROR_STOP_MESSAGE = null;
+        
+        function EMERGENCY_STOP(errorMessage) {
+            if (CRITICAL_ERROR_OCCURRED) return; // Already stopped
+            
+            CRITICAL_ERROR_OCCURRED = true;
+            ERROR_STOP_MESSAGE = errorMessage;
+            
+            console.error('🚨 EMERGENCY STOP:', errorMessage);
+            console.error('🚨 All further execution halted to prevent console spam');
+            
+            // Show user-friendly error
+            const loadingDiv = document.getElementById('loadingDiv');
+            if (loadingDiv) {
+                loadingDiv.innerHTML = `
+                    <div style="color: #ef4444; text-align: center; padding: 20px;">
+                        <h3>⚠️ Error Occurred</h3>
+                        <p>${errorMessage}</p>
+                        <p><em>Execution stopped to prevent browser issues</em></p>
+                    </div>
+                `;
+                loadingDiv.style.display = 'block';
+            }
+        }
+        
+        function CHECK_ERROR_STOP() {
+            if (CRITICAL_ERROR_OCCURRED) {
+                console.log('⚠️ Function blocked due to previous error:', ERROR_STOP_MESSAGE);
+                return true;
+            }
+            return false;
+        }
+        
         // OVERRIDE THREE.JS ERROR HANDLING TO PREVENT GIANT X
         window.THREE = window.THREE || {};
         
-        // Intercept console.error to prevent WebGL error popups
+        // Intercept console.error to catch critical errors and stop execution
         const originalConsoleError = console.error;
         console.error = function(...args) {
-            const errorMsg = args.join(' ').toLowerCase();
+            if (CRITICAL_ERROR_OCCURRED) return; // Already stopped, prevent spam
+            
+            const errorString = args.join(' ');
+            const errorMsg = errorString.toLowerCase();
+            
+            // Check for critical errors that should stop all execution
+            if (errorString.includes('Failed to create mesh') ||
+                errorString.includes('TypeError:') ||
+                errorString.includes('is not a constructor') ||
+                errorString.includes('is not a function') ||
+                errorString.includes('Cannot read properties of') ||
+                errorString.includes('Cannot set properties of')) {
+                
+                EMERGENCY_STOP(`Critical error: ${errorString.substring(0, 100)}...`);
+                return; // Don't spam console
+            }
+            
+            // Filter out THREE.js WebGL context lost errors
             if (errorMsg.includes('webgl') || 
                 errorMsg.includes('context') || 
                 errorMsg.includes('lost') ||
@@ -593,11 +655,23 @@
                 console.warn('🚫 BLOCKED WebGL error:', ...args);
                 return;
             }
+            
             originalConsoleError.apply(console, args);
         };
         
-        // Intercept window.onerror
+        // Intercept window.onerror to catch unhandled errors
         window.onerror = function(message, source, lineno, colno, error) {
+            if (CRITICAL_ERROR_OCCURRED) return; // Already stopped
+            
+            const errorMsg = message?.toString() || '';
+            if (errorMsg.includes('TypeError') || 
+                errorMsg.includes('is not a constructor') ||
+                errorMsg.includes('is not a function') ||
+                errorMsg.includes('Cannot read properties')) {
+                
+                EMERGENCY_STOP(`JavaScript error: ${errorMsg.substring(0, 100)}...`);
+                return;
+            }
             const msg = message.toLowerCase();
             if (msg.includes('webgl') || 
                 msg.includes('context') || 
@@ -1585,7 +1659,7 @@
 
         // Fetch REAL training movie frames from server
         async function fetchTrainingMovie(autoLoaded = false) {
-            // DISABLED to prevent browser crash
+            if (CHECK_ERROR_STOP()) return;
             console.log('fetchTrainingMovie disabled to prevent mesh creation loop');
             return;
             
@@ -1847,7 +1921,7 @@
         
         // Update sphere with REAL epoch data
         function updateEpochFromReal(epochIndex) {
-            // DISABLED to prevent browser crash
+            if (CHECK_ERROR_STOP()) return;
             console.log('updateEpochFromReal disabled to prevent mesh creation loop');
             return;
             
@@ -1901,7 +1975,7 @@
         
         // Move points to REAL epoch positions WITH CLUSTER ANIMATION
         function movePointsToRealEpoch(epochData, epochIndex) {
-            // DISABLED to prevent browser crash
+            if (CHECK_ERROR_STOP()) return;
             console.log('movePointsToRealEpoch disabled to prevent mesh creation loop');
             return;
             
@@ -2322,7 +2396,7 @@
         
         // Simple play function using pre-calculated frames
         function playTraining() {
-            // DISABLED to prevent browser crash
+            if (CHECK_ERROR_STOP()) return;
             console.log('playTraining disabled to prevent mesh creation loop');
             return;
             console.log('🎬 playTraining() called');
