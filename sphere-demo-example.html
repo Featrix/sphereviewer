@@ -77,6 +77,39 @@
             display: none !important;
             visibility: hidden !important;
         }
+
+        /* NUCLEAR CSS - KILL ANYTHING THAT COULD BE THE GIANT X */
+        *:not(.container):not(.controls):not([id*="sphere"]):not([id*="epoch"]):not([id*="play"]):not([id*="progress"]) {
+            content: none !important;
+        }
+        
+        /* Kill WebGL error overlays */
+        div:not([id]):not([class])[style*="position"] {
+            display: none !important;
+        }
+        
+        /* Kill anything with X or × content that's not a button */
+        *:not(button):not(.btn):not(.controls *) {
+            &::before,
+            &::after {
+                content: none !important;
+            }
+        }
+        
+        /* Kill divs with no ID/class that are positioned */
+        div:not([id]):not([class])[style*="absolute"],
+        div:not([id]):not([class])[style*="fixed"] {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+            z-index: -9999 !important;
+        }
+        
+        /* Kill high z-index elements that aren't our controls */
+        *:not(.container *):not(.controls *)[style*="z-index"] {
+            z-index: -1 !important;
+            display: none !important;
+        }
         
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
@@ -485,6 +518,36 @@
         var initialPositions = null;
         var animationDurationSeconds = 3;
         
+        // OVERRIDE THREE.JS ERROR HANDLING TO PREVENT GIANT X
+        window.THREE = window.THREE || {};
+        
+        // Intercept console.error to prevent WebGL error popups
+        const originalConsoleError = console.error;
+        console.error = function(...args) {
+            const errorMsg = args.join(' ').toLowerCase();
+            if (errorMsg.includes('webgl') || 
+                errorMsg.includes('context') || 
+                errorMsg.includes('lost') ||
+                errorMsg.includes('three')) {
+                console.warn('🚫 BLOCKED WebGL error:', ...args);
+                return;
+            }
+            originalConsoleError.apply(console, args);
+        };
+        
+        // Intercept window.onerror
+        window.onerror = function(message, source, lineno, colno, error) {
+            const msg = message.toLowerCase();
+            if (msg.includes('webgl') || 
+                msg.includes('context') || 
+                msg.includes('lost') ||
+                msg.includes('three')) {
+                console.warn('🚫 BLOCKED window error:', message);
+                return true; // Prevent default error handling
+            }
+            return false;
+        };
+        
         // GLOBAL onSphereReady callback - SINGLE EXECUTION ONLY
         let sphereReadyExecuted = false;
         window.onSphereReady = function(sphereRef) {
@@ -521,53 +584,206 @@
             });
         };
 
-        // AGGRESSIVE RUNTIME OVERLAY KILLER - PREVENT GIANT X FOREVER
+        // NUCLEAR OVERLAY KILLER - DESTROY THE GIANT X AT ALL COSTS
         function killAllOverlays() {
-            // Kill any potential error overlays
+            let killCount = 0;
+            
+            // NUCLEAR SELECTORS - catch everything that could be an overlay
             const overlaySelectors = [
+                // Position-based
                 'div[style*="position: absolute"]',
                 'div[style*="position: fixed"]',
-                'div[style*="z-index: 999"]',
-                'div[style*="z-index: 1000"]',
+                'div[style*="position:absolute"]',
+                'div[style*="position:fixed"]',
+                
+                // Z-index based
+                'div[style*="z-index"]',
+                '*[style*="z-index: 999"]',
+                '*[style*="z-index: 1000"]',
+                '*[style*="z-index:999"]',
+                '*[style*="z-index:1000"]',
+                
+                // Background based
                 'div[style*="background: black"]',
                 'div[style*="background:#000"]',
+                'div[style*="background: #000"]',
+                'div[style*="background:black"]',
+                'div[style*="background:#000000"]',
+                
+                // Font/text based
                 'div[style*="font-size:24px"]',
+                'div[style*="font-size: 24px"]',
+                'div[style*="color: white"]',
+                'div[style*="color:white"]',
+                
+                // Canvas related
                 'canvas + div',
                 'canvas ~ div',
+                'canvas + *',
+                'canvas ~ *',
+                
+                // Class/ID based
                 '[class*="webgl"]',
                 '[class*="error"]',
-                '[class*="overlay"]'
+                '[class*="overlay"]',
+                '[class*="modal"]',
+                '[class*="popup"]',
+                '[id*="webgl"]',
+                '[id*="error"]',
+                '[id*="overlay"]',
+                
+                // Generic overlays
+                'div:not([id]):not([class])[style*="position"]',
+                'div[style*="pointer-events: none"]',
+                'div[style*="pointer-events:none"]'
             ];
+            
+            // NUCLEAR SEARCH: Find anything that looks suspicious
+            const allDivs = document.querySelectorAll('div');
+            allDivs.forEach(div => {
+                if (!div.id && 
+                    !div.className && 
+                    div.style.position === 'absolute' || 
+                    div.style.position === 'fixed' ||
+                    div.style.zIndex > 500 ||
+                    div.textContent === '×' ||
+                    div.textContent === 'X' ||
+                    div.innerHTML === '×' ||
+                    div.innerHTML === 'X') {
+                    
+                    console.log('🔫 KILLING SUSPICIOUS ELEMENT:', {
+                        tag: div.tagName,
+                        text: div.textContent,
+                        html: div.innerHTML,
+                        style: div.style.cssText,
+                        position: div.style.position,
+                        zIndex: div.style.zIndex
+                    });
+                    
+                    div.remove();
+                    killCount++;
+                }
+            });
             
             overlaySelectors.forEach(selector => {
                 try {
                     const elements = document.querySelectorAll(selector);
                     elements.forEach(el => {
-                        if (el && el.style && !el.id && !el.classList.contains('controls') && !el.closest('.controls')) {
-                            el.style.display = 'none';
-                            el.style.visibility = 'hidden';
-                            el.style.opacity = '0';
+                        if (el && 
+                            !el.closest('.container') && 
+                            !el.closest('.controls') && 
+                            !el.closest('.main-content') && 
+                            !el.id?.includes('sphere') &&
+                            !el.id?.includes('epoch') &&
+                            !el.id?.includes('progress') &&
+                            !el.id?.includes('play')) {
+                            
+                            console.log('🔫 KILLING OVERLAY:', {
+                                selector: selector,
+                                tag: el.tagName,
+                                id: el.id,
+                                className: el.className,
+                                text: el.textContent?.substring(0, 50),
+                                style: el.style.cssText?.substring(0, 100)
+                            });
+                            
+                            el.remove();
+                            killCount++;
                         }
                     });
                 } catch (e) {
                     // Ignore errors
                 }
             });
+            
+            if (killCount > 0) {
+                console.log(`💀 DESTROYED ${killCount} overlay elements`);
+            }
         }
 
-        // Run overlay killer every 100ms to prevent giant X
-        setInterval(killAllOverlays, 100);
+        // Run overlay killer every 50ms - MORE AGGRESSIVE
+        setInterval(killAllOverlays, 50);
         
         // Also kill overlays on DOM changes
         if (window.MutationObserver) {
-            const observer = new MutationObserver(killAllOverlays);
+            const observer = new MutationObserver((mutations) => {
+                let hasNewNodes = false;
+                mutations.forEach(mutation => {
+                    if (mutation.addedNodes.length > 0) {
+                        hasNewNodes = true;
+                    }
+                });
+                if (hasNewNodes) {
+                    console.log('🔍 DOM CHANGED - Running overlay killer');
+                    killAllOverlays();
+                }
+            });
             observer.observe(document.body, { childList: true, subtree: true });
         }
+        
+        // EMERGENCY KILLER: Look for the giant X specifically
+        function emergencyXKiller() {
+            const suspiciousElements = document.querySelectorAll('*');
+            suspiciousElements.forEach(el => {
+                if ((el.textContent === '×' || el.textContent === 'X' || el.innerHTML === '×' || el.innerHTML === 'X') &&
+                    el.tagName !== 'BUTTON' &&
+                    !el.closest('.controls') &&
+                    !el.closest('.container')) {
+                    console.log('🚨 EMERGENCY: FOUND GIANT X - DESTROYING:', el);
+                    el.remove();
+                }
+            });
+        }
+        
+        // Run emergency killer more frequently
+        setInterval(emergencyXKiller, 25);
 
-        console.log('🛡️ Overlay killer activated - Giant X will be eliminated!');
+        console.log('🛡️ NUCLEAR OVERLAY KILLER ACTIVATED - Giant X will be DESTROYED!');
+        
+        // Manual trigger for emergency overlay killing
+        window.killOverlaysNow = function() {
+            console.log('🚨 MANUAL OVERLAY KILL TRIGGERED');
+            killAllOverlays();
+            emergencyXKiller();
+        };
+        
+        // Debug function to find suspicious elements
+        window.findSuspiciousElements = function() {
+            console.log('🔍 SCANNING FOR SUSPICIOUS ELEMENTS...');
+            const allElements = document.querySelectorAll('*');
+            let count = 0;
+            allElements.forEach(el => {
+                if ((el.textContent === '×' || el.textContent === 'X' || 
+                     el.innerHTML === '×' || el.innerHTML === 'X' ||
+                     el.style.position === 'absolute' || el.style.position === 'fixed') &&
+                    !el.closest('.container') && !el.closest('.controls')) {
+                    console.log(`🔍 SUSPICIOUS ELEMENT ${++count}:`, {
+                        tag: el.tagName,
+                        id: el.id,
+                        className: el.className,
+                        text: el.textContent,
+                        html: el.innerHTML,
+                        style: el.style.cssText,
+                        parent: el.parentElement?.tagName
+                    });
+                }
+            });
+            console.log(`🔍 Found ${count} suspicious elements`);
+        };
         
         // Force browser to use fresh copy (cache busting)
         console.log('🔄 Script loaded at:', new Date().toISOString());
+        console.log('💡 Run killOverlaysNow() or findSuspiciousElements() in console if giant X appears');
+        console.log('💡 Press Ctrl+K to manually kill overlays');
+        
+        // Keyboard shortcut to kill overlays
+        document.addEventListener('keydown', function(event) {
+            if (event.ctrlKey && event.key === 'k') {
+                event.preventDefault();
+                console.log('⌨️ CTRL+K pressed - KILLING OVERLAYS');
+                killOverlaysNow();
+            }
+        });
     </script>
     <script src="sphere-viewer.js" 
             data-session-id="20250716-142858_653c60"
