@@ -266,19 +266,38 @@
                     fetchTrainingMovie(true).then(() => {
                         updateLoadingProgress('Training movie ready!');
                         
-                        // Add watermark and epoch display
+                        // Add watermark and epoch display FIRST
                         setTimeout(() => {
                             if (window.THREE) {
                                 addWatermarkAndEpochDisplay();
+                                console.log('✅ Watermark and epoch display added');
+                            } else {
+                                console.error('❌ THREE.js not available for watermark');
                             }
                         }, 500);
                         
-                        // Hide loading and start training
+                        // Hide loading and start training with extra delay for THREE.js
                         setTimeout(() => {
                             const loadingDiv = document.getElementById('loadingDiv');
                             if (loadingDiv) loadingDiv.style.display = 'none';
-                            playTraining();
-                        }, 1000);
+                            
+                            // Ensure THREE.js is available before starting training
+                            if (window.THREE) {
+                                console.log('✅ THREE.js available, starting training...');
+                                playTraining();
+                            } else {
+                                console.error('❌ THREE.js still not available for training');
+                                // Try again after longer delay
+                                setTimeout(() => {
+                                    if (window.THREE) {
+                                        console.log('✅ THREE.js finally available, starting training...');
+                                        playTraining();
+                                    } else {
+                                        console.error('❌ THREE.js unavailable - training failed');
+                                    }
+                                }, 2000);
+                            }
+                        }, 1500);
                         
                     }).catch(error => {
                         console.error('❌ Training movie failed:', error);
@@ -2219,6 +2238,50 @@
                 
                 if (createdCount === 0) {
                     console.error('❌ No points were created! Check coordinate data and THREE.js availability');
+                    console.error('❌ Debug info:', {
+                        hasThreeJS: !!window.THREE,
+                        hasEpochData: !!epochData,
+                        hasCoords: !!epochData?.coords,
+                        coordsLength: epochData?.coords?.length,
+                        firstCoord: epochData?.coords?.[0],
+                        sphereDataExists: !!sphereData,
+                        sceneExists: !!sphereData.scene
+                    });
+                    
+                    // Try a simple fallback point creation
+                    console.log('🔧 Trying fallback point creation...');
+                    try {
+                        if (window.THREE && epochData?.coords?.length > 0) {
+                            console.log('🔧 Creating simple test points...');
+                            epochData.coords.slice(0, 10).forEach((coord, index) => {
+                                if (coord && typeof coord.x === 'number') {
+                                    try {
+                                        const geometry = new window.THREE.BoxGeometry(0.1, 0.1, 0.1); // Use box instead of sphere
+                                        const material = new window.THREE.MeshBasicMaterial({ color: 0x00ff00 });
+                                        const mesh = new window.THREE.Mesh(geometry, material);
+                                        mesh.position.set(coord.x, coord.y, coord.z);
+                                        mesh.userData.isTrainingPoint = true;
+                                        sphereData.scene.add(mesh);
+                                        
+                                        const recordId = `fallback_point_${index}`;
+                                        sphereData.pointObjectsByRecordID.set(recordId, mesh);
+                                        
+                                        console.log(`✅ Created fallback point ${index + 1}`);
+                                    } catch (e) {
+                                        console.error(`❌ Failed to create fallback point ${index}:`, e);
+                                    }
+                                }
+                            });
+                            
+                            // Force render
+                            if (sphereData.renderer && sphereData.camera) {
+                                sphereData.renderer.render(sphereData.scene, sphereData.camera);
+                                console.log('✅ Forced render after fallback points');
+                            }
+                        }
+                    } catch (error) {
+                        console.error('❌ Fallback point creation failed:', error);
+                    }
                 } else {
                     // Test visibility of first few points
                     let visibleCount = 0;
@@ -2806,6 +2869,59 @@
                 return 'Manual rotation stopped';
             }
             return 'No manual rotation was running';
+        };
+        
+        // DEBUG: Check point creation and THREE.js availability
+        window.debugPointCreation = function() {
+            console.log('🔍 DEBUG: Point Creation Status');
+            console.log('- THREE.js available:', !!window.THREE);
+            console.log('- Sphere instance:', !!window.sphereViewerInstance);
+            console.log('- Sphere ref:', !!window.sphereViewerInstance?.sphereRef);
+            
+            const sphereRef = window.sphereViewerInstance?.sphereRef;
+            if (sphereRef) {
+                console.log('- Scene exists:', !!sphereRef.scene);
+                console.log('- Scene children count:', sphereRef.scene?.children?.length || 0);
+                console.log('- Point objects map size:', sphereRef.pointObjectsByRecordID?.size || 0);
+                console.log('- Point records map size:', sphereRef.pointRecordsByID?.size || 0);
+                
+                // Check if we have epoch data
+                console.log('- Epoch projections loaded:', !!epochProjections);
+                console.log('- Epoch count:', Object.keys(epochProjections || {}).length);
+                
+                if (epochProjections && Object.keys(epochProjections).length > 0) {
+                    const firstEpochKey = Object.keys(epochProjections)[0];
+                    const firstEpoch = epochProjections[firstEpochKey];
+                    console.log('- First epoch key:', firstEpochKey);
+                    console.log('- First epoch coords:', firstEpoch?.coords?.length || 0);
+                    console.log('- First coord sample:', firstEpoch?.coords?.[0]);
+                }
+                
+                // Try to create a test point
+                if (window.THREE && sphereRef.scene) {
+                    try {
+                        console.log('🧪 Creating test point...');
+                        const geometry = new window.THREE.BoxGeometry(0.2, 0.2, 0.2);
+                        const material = new window.THREE.MeshBasicMaterial({ color: 0xff0000 });
+                        const mesh = new window.THREE.Mesh(geometry, material);
+                        mesh.position.set(0, 0, 0);
+                        mesh.userData.isTestPoint = true;
+                        sphereRef.scene.add(mesh);
+                        
+                        if (sphereRef.renderer && sphereRef.camera) {
+                            sphereRef.renderer.render(sphereRef.scene, sphereRef.camera);
+                        }
+                        
+                        console.log('✅ Test point created successfully');
+                        return 'Test point created';
+                    } catch (error) {
+                        console.error('❌ Failed to create test point:', error);
+                        return 'Failed to create test point: ' + error.message;
+                    }
+                }
+            }
+            
+            return 'Debug complete - check console for details';
         };
         
         // DEBUG: Check if watermark exists and add it if missing
