@@ -684,8 +684,29 @@
                 console.log('🎨 Starting AUTO-PLAY training movie...');
                 // AUTO-PLAY: Start training movie immediately
                 setTimeout(() => {
-                    playTraining();
-                    console.log('🚀 AUTO-PLAY: Training movie started automatically');
+                    console.log('🎬 AUTO-PLAY: About to call playTraining()...');
+                    console.log('🔍 Pre-play check:', {
+                        hasEpochProjections: !!epochProjections,
+                        epochCount: Object.keys(epochProjections || {}).length,
+                        hasSphereInstance: !!window.sphereViewerInstance,
+                        hasSphereRef: !!window.sphereViewerInstance?.sphereRef,
+                        hasAutoPlayInterval: !!autoPlayInterval
+                    });
+                    
+                    try {
+                        // FORCE HIDE LOADING SCREEN BEFORE STARTING
+                        const loadingDiv = document.querySelector('.loading');
+                        if (loadingDiv) {
+                            loadingDiv.style.display = 'none';
+                            console.log('🚀 AUTO-PLAY: Loading screen hidden before starting training movie');
+                        }
+                        
+                        playTraining();
+                        console.log('🚀 AUTO-PLAY: Training movie started automatically');
+                    } catch (error) {
+                        console.error('❌ AUTO-PLAY FAILED:', error);
+                        showNotification(`❌ Auto-play failed: ${error.message}`, 'error');
+                    }
                 }, 500); // Small delay to ensure everything is ready
                 
                 // Mark initialization as complete
@@ -1756,6 +1777,15 @@
                 updateLoadingProgress('Training movie ready!');
                 showNotification(`✅ Real training movie loaded! ${totalFrames} epochs`, 'success');
                 
+                // Hide loading screen to show the sphere
+                setTimeout(() => {
+                    const loadingDiv = document.querySelector('.loading');
+                    if (loadingDiv) {
+                        loadingDiv.style.display = 'none';
+                        console.log('✅ Loading screen hidden - sphere should now be visible');
+                    }
+                }, 1000); // Brief delay to show "ready" message
+                
                 // Show controls and update button
                 document.getElementById('epochSliderSection').style.display = 'block';
                 const epochSlider = document.getElementById('epochSlider');
@@ -2362,6 +2392,13 @@
                 return;
             }
             
+            // ENSURE LOADING SCREEN IS HIDDEN
+            const loadingDiv = document.querySelector('.loading');
+            if (loadingDiv && loadingDiv.style.display !== 'none') {
+                loadingDiv.style.display = 'none';
+                console.log('🔧 FORCE: Loading screen hidden at playTraining start');
+            }
+            
             // NO CLEARING - Keep existing points and smoothly interpolate them
             console.log('🎬 Starting smooth interpolation training animation...');
             
@@ -2371,7 +2408,31 @@
             
             if (existingPoints.length === 0) {
                 console.log('🆕 No points exist - creating from first epoch');
-                updateEpochFromReal(0); // Create initial points
+                console.log('📊 Sphere data before updateEpochFromReal:', {
+                    hasScene: !!sphereData?.scene,
+                    hasPointObjectsByRecordID: !!sphereData?.pointObjectsByRecordID,
+                    pointObjectsSize: sphereData?.pointObjectsByRecordID?.size || 0,
+                    sceneChildren: sphereData?.scene?.children?.length || 0
+                });
+                
+                try {
+                    updateEpochFromReal(0); // Create initial points
+                    console.log('✅ updateEpochFromReal(0) completed');
+                    
+                    // Check if points were actually created
+                    const newPoints = Array.from(sphereData.pointObjectsByRecordID?.values() || []);
+                    console.log(`🔍 After updateEpochFromReal: ${newPoints.length} points created`);
+                    
+                    if (newPoints.length === 0) {
+                        console.error('❌ updateEpochFromReal did not create any points!');
+                        showNotification('❌ Failed to create training movie points', 'error');
+                        return;
+                    }
+                } catch (error) {
+                    console.error('❌ updateEpochFromReal failed:', error);
+                    showNotification(`❌ Failed to create points: ${error.message}`, 'error');
+                    return;
+                }
             } else {
                 console.log('✅ Points already exist - will smoothly interpolate between epochs');
             }
