@@ -1565,20 +1565,40 @@
         }
         
         function updateDisplayedSettings(trainingMovie, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity) {
-            // Update current settings display
-            document.getElementById('currentRotation').textContent = isRotating ? 'Enabled' : 'Disabled';
-            document.getElementById('currentSpeed').textContent = rotationSpeed.toString();
-            document.getElementById('currentClusters').textContent = animateClusters ? 'Enabled' : 'Disabled';
-            document.getElementById('currentPointSize').textContent = pointSize.toString();
-            document.getElementById('currentPointOpacity').textContent = pointOpacity.toString();
+            // Update current settings display - with null checks
+            const currentRotation = document.getElementById('currentRotation');
+            if (currentRotation) currentRotation.textContent = isRotating ? 'Enabled' : 'Disabled';
             
-            // Update embed code
-            document.getElementById('codeTrainingMovie').textContent = trainingMovie.toString();
-            document.getElementById('codeRotating').textContent = isRotating.toString();
-            document.getElementById('codeSpeed').textContent = rotationSpeed.toString();
-            document.getElementById('codeClusters').textContent = animateClusters.toString();
-            document.getElementById('codePointSize').textContent = pointSize.toString();
-            document.getElementById('codePointOpacity').textContent = pointOpacity.toString();
+            const currentSpeed = document.getElementById('currentSpeed');
+            if (currentSpeed) currentSpeed.textContent = rotationSpeed.toString();
+            
+            const currentClusters = document.getElementById('currentClusters');
+            if (currentClusters) currentClusters.textContent = animateClusters ? 'Enabled' : 'Disabled';
+            
+            const currentPointSize = document.getElementById('currentPointSize');
+            if (currentPointSize) currentPointSize.textContent = pointSize.toString();
+            
+            const currentPointOpacity = document.getElementById('currentPointOpacity');
+            if (currentPointOpacity) currentPointOpacity.textContent = pointOpacity.toString();
+            
+            // Update embed code - with null checks
+            const codeTrainingMovie = document.getElementById('codeTrainingMovie');
+            if (codeTrainingMovie) codeTrainingMovie.textContent = trainingMovie.toString();
+            
+            const codeRotating = document.getElementById('codeRotating');
+            if (codeRotating) codeRotating.textContent = isRotating.toString();
+            
+            const codeSpeed = document.getElementById('codeSpeed');
+            if (codeSpeed) codeSpeed.textContent = rotationSpeed.toString();
+            
+            const codeClusters = document.getElementById('codeClusters');
+            if (codeClusters) codeClusters.textContent = animateClusters.toString();
+            
+            const codePointSize = document.getElementById('codePointSize');
+            if (codePointSize) codePointSize.textContent = pointSize.toString();
+            
+            const codePointOpacity = document.getElementById('codePointOpacity');
+            if (codePointOpacity) codePointOpacity.textContent = pointOpacity.toString();
         }
         
         function copyEmbedCode() {
@@ -2646,16 +2666,32 @@
                 const pointSize = parseFloat(script.getAttribute('data-point-size') || '0.05');
                 const pointOpacity = parseFloat(script.getAttribute('data-point-opacity') || '0.5');
                 
-                // Update UI controls to match
-                document.getElementById('trainingMovie').checked = trainingMovie;
-                document.getElementById('isRotating').checked = isRotating;
-                document.getElementById('rotationSpeed').value = rotationSpeed;
-                document.getElementById('speedValue').textContent = rotationSpeed;
-                document.getElementById('animateClusters').checked = animateClusters;
-                document.getElementById('pointSize').value = pointSize;
-                document.getElementById('sizeValue').textContent = pointSize;
-                document.getElementById('pointOpacity').value = pointOpacity;
-                document.getElementById('opacityValue').textContent = pointOpacity;
+                // Update UI controls to match - with null checks
+                const trainingMovieEl = document.getElementById('trainingMovie');
+                if (trainingMovieEl) trainingMovieEl.checked = trainingMovie;
+                
+                const isRotatingEl = document.getElementById('isRotating');
+                if (isRotatingEl) isRotatingEl.checked = isRotating;
+                
+                const rotationSpeedEl = document.getElementById('rotationSpeed');
+                if (rotationSpeedEl) rotationSpeedEl.value = rotationSpeed;
+                const speedValue = document.getElementById('speedValue');
+                if (speedValue) speedValue.textContent = rotationSpeed;
+                
+                const animateClustersEl = document.getElementById('animateClusters');
+                if (animateClustersEl) animateClustersEl.checked = animateClusters;
+                
+                const pointSizeEl = document.getElementById('pointSize');
+                if (pointSizeEl) pointSizeEl.value = pointSize;
+                
+                const sizeValue = document.getElementById('sizeValue');
+                if (sizeValue) sizeValue.textContent = pointSize;
+                
+                const pointOpacityEl = document.getElementById('pointOpacity');
+                if (pointOpacityEl) pointOpacityEl.value = pointOpacity;
+                
+                const opacityValue = document.getElementById('opacityValue');
+                if (opacityValue) opacityValue.textContent = pointOpacity;
                 
                 // Update the displayed settings immediately
                 updateDisplayedSettings(trainingMovie, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity);
