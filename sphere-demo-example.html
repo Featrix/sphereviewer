@@ -1131,6 +1131,12 @@
         
         // SMART SCRIPT LOADING - Only load sphere-viewer.js when DOM is completely ready
         function loadSphereViewerWhenReady() {
+            console.log('🔍 loadSphereViewerWhenReady check:', {
+                readyState: document.readyState,
+                hasContainer: !!document.getElementById('sphere-viewer-container'),
+                containerWidth: document.getElementById('sphere-viewer-container')?.clientWidth || 0
+            });
+            
             if (document.readyState === 'complete' && 
                 document.getElementById('sphere-viewer-container') &&
                 document.getElementById('sphere-viewer-container').clientWidth > 0) {
@@ -1139,7 +1145,7 @@
                 updateLoadingProgress('Loading sphere viewer...');
                 
                 const script = document.createElement('script');
-                script.src = 'https://unpkg.com/@featrix/sphere-viewer@latest/dist/sphere-viewer.js';
+                script.src = 'sphere-viewer.js';
                 // NO SESSION-ID - LOAD EMPTY SPHERE FIRST, THEN TRAINING DATA ONLY
                 script.setAttribute('data-container-id', 'sphere-viewer-container');
                 script.setAttribute('data-is-rotating', 'true');
@@ -1155,9 +1161,39 @@
                     updateLoadingProgress('Sphere viewer script loaded, initializing...');
                 };
                 
-                script.onerror = function() {
-                    console.error('❌ Failed to load sphere-viewer.js script');
-                    updateLoadingProgress('Failed to load sphere viewer');
+                script.onerror = function(error) {
+                    console.error('❌ Failed to load sphere-viewer.js script from local file');
+                    console.error('❌ Error details:', error);
+                    console.error('❌ Script src was:', script.src);
+                    
+                    // Try fallback to CDN
+                    console.log('🔄 Attempting fallback to CDN...');
+                    updateLoadingProgress('Local file failed, trying CDN...');
+                    
+                    const fallbackScript = document.createElement('script');
+                    fallbackScript.src = 'https://cdn.jsdelivr.net/npm/@featrix/sphere-viewer@latest/dist/sphere-viewer.js';
+                    fallbackScript.setAttribute('data-container-id', 'sphere-viewer-container');
+                    fallbackScript.setAttribute('data-is-rotating', 'true');
+                    fallbackScript.setAttribute('data-rotation-speed', '0.25');
+                    fallbackScript.setAttribute('data-animate-clusters', 'true');
+                    fallbackScript.setAttribute('data-point-size', '0.05');
+                    fallbackScript.setAttribute('data-point-opacity', '0.5');
+                    fallbackScript.setAttribute('data-training-movie', 'false');
+                    
+                    fallbackScript.onload = function() {
+                        console.log('✅ Fallback CDN sphere-viewer.js loaded successfully');
+                        updateLoadingProgress('CDN sphere viewer loaded, initializing...');
+                    };
+                    
+                    fallbackScript.onerror = function(cdnError) {
+                        console.error('❌ CDN fallback also failed to load');
+                        console.error('❌ CDN error details:', cdnError);
+                        updateLoadingProgress('Failed to load sphere viewer (both local and CDN failed)');
+                        showNotification('❌ Failed to load sphere viewer from local file and CDN', 'error');
+                    };
+                    
+                    document.head.appendChild(fallbackScript);
+                    console.log('📂 Fallback CDN script added to DOM...');
                 };
                 
                 document.head.appendChild(script);
