@@ -709,17 +709,28 @@
             // IMMEDIATELY load training movie...
             console.log('🎬 IMMEDIATELY loading training movie...');
             fetchTrainingMovie().then(() => {
+                console.log('✅ Training movie fetch completed successfully');
+                console.log('📊 Epoch projections loaded:', {
+                    epochCount: Object.keys(epochProjections || {}).length,
+                    firstFewKeys: Object.keys(epochProjections || {}).slice(0, 3)
+                });
+                
                 console.log('🎨 Setting to REAL initial epoch positions...');
                 updateEpochFromReal(0);  // Set to first epoch
-                console.log('🚀 Starting animation from real initial positions...');
-                playTraining(); // Start animation immediately  
+                
+                // Don't auto-start the animation - let user click the play button
+                console.log('⏸️ Training movie ready - click play button to start animation');
                 
                 // Mark initialization as complete
                 initializationInProgress = false;
                 console.log('✅ SAFE sphere initialization completed successfully!');
             }).catch(error => {
                 console.error('❌ Training movie failed to load:', error);
+                console.error('❌ Error details:', error.stack);
                 initializationInProgress = false; // Reset on error too
+                
+                // Show error to user
+                showNotification(`❌ Failed to load training data: ${error.message}`, 'error');
             });
         };
 
@@ -957,10 +968,116 @@
             });
         };
         
+        // DEBUG: Test training movie functionality
+        window.testTrainingMovie = function() {
+            console.log('🧪 TESTING TRAINING MOVIE FUNCTIONALITY...');
+            
+            console.log('1. Checking training data availability:');
+            checkTrainingData();
+            
+            console.log('2. Testing point creation:');
+            if (epochProjections && Object.keys(epochProjections).length > 0) {
+                const firstEpochKey = Object.keys(epochProjections)[0];
+                const firstEpochData = epochProjections[firstEpochKey];
+                console.log(`Testing with ${firstEpochKey}:`, firstEpochData);
+                
+                updateEpochFromReal(0);
+            } else {
+                console.log('❌ No epoch data available for testing');
+            }
+            
+            console.log('3. Checking sphere state:');
+            if (window.sphereViewerInstance?.sphereRef) {
+                const sphereData = window.sphereViewerInstance.sphereRef;
+                console.log('Sphere state:', {
+                    hasScene: !!sphereData.scene,
+                    sceneChildren: sphereData.scene?.children?.length || 0,
+                    pointMapSize: sphereData.pointObjectsByRecordID?.size || 0,
+                    recordMapSize: sphereData.pointRecordsByID?.size || 0
+                });
+            }
+        };
+        
+        // DEBUG: Check training data
+        window.checkTrainingData = function() {
+            console.log('📊 TRAINING DATA CHECK:');
+            console.log('Epoch projections:', {
+                exists: !!epochProjections,
+                count: Object.keys(epochProjections || {}).length,
+                keys: Object.keys(epochProjections || {}),
+                firstEpoch: epochProjections ? epochProjections[Object.keys(epochProjections)[0]] : null
+            });
+            
+            if (epochProjections && Object.keys(epochProjections).length > 0) {
+                const firstKey = Object.keys(epochProjections)[0];
+                const firstData = epochProjections[firstKey];
+                console.log(`Sample data from ${firstKey}:`, {
+                    hasCoords: !!firstData?.coords,
+                    coordsLength: firstData?.coords?.length || 0,
+                    firstCoord: firstData?.coords?.[0],
+                    sampleCoords: firstData?.coords?.slice(0, 3)
+                });
+            }
+        };
+        
+        // DEBUG: Test point creation directly
+        window.debugPointCreation = function() {
+            console.log('🔧 DEBUGGING POINT CREATION...');
+            
+            if (!window.sphereViewerInstance?.sphereRef) {
+                console.error('❌ No sphere reference available');
+                return;
+            }
+            
+            const sphereData = window.sphereViewerInstance.sphereRef;
+            console.log('Sphere data:', {
+                hasScene: !!sphereData.scene,
+                hasPointSize: !!sphereData.pointSize,
+                hasPointOpacity: !!sphereData.pointOpacity,
+                pointSize: sphereData.pointSize,
+                pointOpacity: sphereData.pointOpacity
+            });
+            
+            console.log('THREE.js check:', {
+                hasThree: !!window.THREE,
+                hasSphereGeometry: !!window.THREE?.SphereGeometry,
+                hasMeshBasicMaterial: !!window.THREE?.MeshBasicMaterial,
+                hasMesh: !!window.THREE?.Mesh
+            });
+            
+            // Try creating a test point
+            try {
+                const testGeometry = new THREE.SphereGeometry(0.1, 16, 16);
+                const testMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000, opacity: 0.8, transparent: true });
+                const testMesh = new THREE.Mesh(testGeometry, testMaterial);
+                testMesh.position.set(0, 0, 0);
+                
+                sphereData.scene.add(testMesh);
+                console.log('✅ Test point created successfully at origin');
+                
+                // Render the scene
+                if (sphereData.renderer && sphereData.camera) {
+                    sphereData.renderer.render(sphereData.scene, sphereData.camera);
+                    console.log('✅ Scene rendered');
+                }
+                
+                // Remove test point after 2 seconds
+                setTimeout(() => {
+                    sphereData.scene.remove(testMesh);
+                    sphereData.renderer.render(sphereData.scene, sphereData.camera);
+                    console.log('🗑️ Test point removed');
+                }, 2000);
+                
+            } catch (error) {
+                console.error('❌ Error creating test point:', error);
+            }
+        };
+        
         // Force browser to use fresh copy (cache busting)
         console.log('🔄 Script loaded at:', new Date().toISOString());
         console.log('💡 Smart initialization + surgical X protection for gap-4 divs');
         console.log('💡 Debug functions: findSuspiciousElements(), watchGap4Changes(), killOverlaysNow()');
+        console.log('💡 Training debug: testTrainingMovie(), checkTrainingData(), debugPointCreation()');
         console.log('💡 Emergency: Press Ctrl+K to kill overlays');
         
         // Keyboard shortcut to kill overlays
@@ -1699,11 +1816,33 @@
         
         // Update sphere with REAL epoch data
         function updateEpochFromReal(epochIndex) {
+            console.log(`🎯 updateEpochFromReal(${epochIndex}) called`);
             const epochKey = `epoch_${epochIndex + 1}`; // API uses epoch_1, epoch_2, etc.
-            if (!epochProjections || !epochProjections[epochKey]) return;
+            
+            console.log('📊 Epoch lookup:', {
+                epochIndex: epochIndex,
+                epochKey: epochKey,
+                hasEpochProjections: !!epochProjections,
+                availableKeys: Object.keys(epochProjections || {}).slice(0, 5),
+                hasEpochData: !!epochProjections?.[epochKey]
+            });
+            
+            if (!epochProjections || !epochProjections[epochKey]) {
+                console.error(`❌ No epoch data for ${epochKey}. Available keys:`, Object.keys(epochProjections || {}));
+                return;
+            }
             
             const epochData = epochProjections[epochKey];
-            if (!epochData || !epochData.coords) return;
+            if (!epochData || !epochData.coords) {
+                console.error(`❌ Invalid epoch data for ${epochKey}:`, epochData);
+                return;
+            }
+            
+            console.log(`📍 Found epoch data for ${epochKey}:`, {
+                coordsLength: epochData.coords.length,
+                firstCoord: epochData.coords[0],
+                hasClusterData: epochData.coords[0]?.cluster !== undefined
+            });
             
             // Update the sphere directly with REAL epoch positions
             movePointsToRealEpoch(epochData, epochIndex);
@@ -1757,6 +1896,24 @@
             if (!hasExistingPoints) {
                 // CREATE NEW POINTS from scratch (after nuclear clear)
                 console.log('🆕 Creating new points from scratch (scene was cleared)');
+                console.log('📊 Epoch data check:', {
+                    hasEpochData: !!epochData,
+                    hasCoords: !!epochData?.coords,
+                    coordsLength: epochData?.coords?.length || 0,
+                    firstCoord: epochData?.coords?.[0],
+                    hasThreeJS: !!window.THREE,
+                    sphereDataKeys: Object.keys(sphereData)
+                });
+                
+                if (!epochData?.coords || epochData.coords.length === 0) {
+                    console.error('❌ No coordinates in epoch data:', epochData);
+                    return;
+                }
+                
+                if (!window.THREE) {
+                    console.error('❌ THREE.js not available!');
+                    return;
+                }
                 
                 // Initialize maps if they don't exist
                 if (!sphereData.pointObjectsByRecordID) {
@@ -1766,46 +1923,78 @@
                     sphereData.pointRecordsByID = new Map();
                 }
                 
+                let createdCount = 0;
+                
                 // Create new meshes for each coordinate
                 epochData.coords.forEach((coord, index) => {
-                    const recordId = `epoch_${epochIndex + 1}_point_${index}`;
-                    
-                    // Create geometry and material
-                    const geometry = new THREE.SphereGeometry(sphereData.pointSize || 0.05, 16, 16);
-                    
-                    // Determine cluster color
-                    let finalCluster = coord.cluster || 0;
-                    if (animateClustersEnabled && currentMaxClusters !== null && coord.cluster !== undefined) {
-                        finalCluster = coord.cluster < currentMaxClusters ? coord.cluster : 0;
+                    try {
+                        const recordId = `epoch_${epochIndex + 1}_point_${index}`;
+                        
+                        // Validate coordinate data
+                        if (!coord || typeof coord.x !== 'number' || typeof coord.y !== 'number' || typeof coord.z !== 'number') {
+                            console.warn(`⚠️ Invalid coordinate at index ${index}:`, coord);
+                            return;
+                        }
+                        
+                        // Create geometry and material
+                        const geometry = new THREE.SphereGeometry(sphereData.pointSize || 0.05, 16, 16);
+                        
+                        // Determine cluster color
+                        let finalCluster = coord.cluster || 0;
+                        if (animateClustersEnabled && currentMaxClusters !== null && coord.cluster !== undefined) {
+                            finalCluster = coord.cluster < currentMaxClusters ? coord.cluster : 0;
+                        }
+                        
+                        let color;
+                        try {
+                            color = getClusterColor(finalCluster);
+                        } catch (e) {
+                            console.warn(`⚠️ Error getting cluster color for cluster ${finalCluster}, using default`);
+                            color = 0xcccccc; // Default gray
+                        }
+                        
+                        const material = new THREE.MeshBasicMaterial({ 
+                            color: color, 
+                            opacity: sphereData.pointOpacity || 0.5, 
+                            transparent: true 
+                        });
+                        
+                        // Create mesh
+                        const mesh = new THREE.Mesh(geometry, material);
+                        mesh.position.set(coord.x, coord.y, coord.z);
+                        mesh.userData.record_id = recordId;
+                        
+                        // Add to scene and maps
+                        sphereData.scene.add(mesh);
+                        sphereData.pointObjectsByRecordID.set(recordId, mesh);
+                        
+                        // Create a fake record entry for consistency
+                        const fakeRecord = {
+                            id: recordId,
+                            coords: { x: coord.x, y: coord.y, z: coord.z },
+                            cluster: finalCluster,
+                            featrix_meta: { webgl_id: mesh.uuid }
+                        };
+                        sphereData.pointRecordsByID.set(recordId, fakeRecord);
+                        
+                        createdCount++;
+                        
+                        // Log first few points for debugging
+                        if (index < 3) {
+                            console.log(`📍 Created point ${index + 1}: pos(${coord.x.toFixed(3)}, ${coord.y.toFixed(3)}, ${coord.z.toFixed(3)}) cluster:${finalCluster} color:${color.toString(16)}`);
+                        }
+                        
+                    } catch (error) {
+                        console.error(`❌ Error creating mesh for point ${index}:`, error, coord);
                     }
-                    const color = getClusterColor(finalCluster);
-                    
-                    const material = new THREE.MeshBasicMaterial({ 
-                        color: color, 
-                        opacity: sphereData.pointOpacity || 0.5, 
-                        transparent: true 
-                    });
-                    
-                    // Create mesh
-                    const mesh = new THREE.Mesh(geometry, material);
-                    mesh.position.set(coord.x, coord.y, coord.z);
-                    mesh.userData.record_id = recordId;
-                    
-                    // Add to scene and maps
-                    sphereData.scene.add(mesh);
-                    sphereData.pointObjectsByRecordID.set(recordId, mesh);
-                    
-                    // Create a fake record entry for consistency
-                    const fakeRecord = {
-                        id: recordId,
-                        coords: { x: coord.x, y: coord.y, z: coord.z },
-                        cluster: finalCluster,
-                        featrix_meta: { webgl_id: mesh.uuid }
-                    };
-                    sphereData.pointRecordsByID.set(recordId, fakeRecord);
                 });
                 
-                console.log(`✅ Created ${epochData.coords.length} new points for epoch ${epochIndex + 1}`);
+                console.log(`✅ Successfully created ${createdCount}/${epochData.coords.length} points for epoch ${epochIndex + 1}`);
+                console.log(`📈 Scene now has ${sphereData.scene.children.length} total children`);
+                
+                if (createdCount === 0) {
+                    console.error('❌ No points were created! Check coordinate data and THREE.js availability');
+                }
                 
             } else {
                 // UPDATE EXISTING POINTS (normal case)
@@ -1857,8 +2046,17 @@
         
         // Simple play function using pre-calculated frames
         function playTraining() {
+            console.log('🎬 playTraining() called');
+            console.log('📊 Training data check:', {
+                hasEpochProjections: !!epochProjections,
+                epochCount: Object.keys(epochProjections || {}).length,
+                epochKeys: Object.keys(epochProjections || {}).slice(0, 5),
+                hasSphereRef: !!window.sphereViewerInstance?.sphereRef
+            });
+            
             if (!epochProjections || Object.keys(epochProjections).length === 0) {
-                showNotification('⚠️ No real training movie data loaded', 'error');
+                console.error('❌ No epoch projections data available!');
+                showNotification('⚠️ No real training movie data loaded - run fetchTrainingMovie() first', 'error');
                 return;
             }
             
@@ -1871,6 +2069,12 @@
             // NUCLEAR CLEAR - COMPLETELY WIPE THE SCENE BEFORE STARTING
             console.log('🧹 NUCLEAR CLEAR: Removing ALL existing points from scene...');
             clearAllPointsFromScene();
+            
+            // Wait a bit for the clear to complete, then start creating points
+            setTimeout(() => {
+                console.log('🎬 Starting training animation after clear...');
+                updateEpochFromReal(0); // Create first frame
+            }, 100);
             
             console.log(`🚀 Starting REAL training animation: ${Object.keys(epochProjections).length} epochs`);
             
