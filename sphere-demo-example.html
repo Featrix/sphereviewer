@@ -1897,6 +1897,7 @@
             
             // Check if we need to CREATE new points (after clearing) or UPDATE existing ones
             const hasExistingPoints = sphereData.pointObjectsByRecordID && sphereData.pointObjectsByRecordID.size > 0;
+            let pointIndex = 0; // Track number of points processed
             
             if (!hasExistingPoints) {
                 // CREATE NEW POINTS from scratch (after nuclear clear)
@@ -1983,6 +1984,7 @@
                         sphereData.pointRecordsByID.set(recordId, fakeRecord);
                         
                         createdCount++;
+                        pointIndex++; // Track total points processed
                         
                         // Log first few points for debugging
                         if (index < 3) {
@@ -2004,8 +2006,6 @@
             } else {
                 // UPDATE EXISTING POINTS (normal case)
                 console.log('🔄 Updating existing points with new positions');
-                
-                let pointIndex = 0;
                 sphereData.pointObjectsByRecordID.forEach((mesh) => {
                     if (pointIndex < epochData.coords.length) {
                         const coord = epochData.coords[pointIndex];
