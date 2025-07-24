@@ -248,64 +248,50 @@
             }
         }
         
-        // Manual sphere initialization - no auto-loading of final data
-        window.addEventListener('DOMContentLoaded', () => {
-            console.log('🎯 DOM ready - manually creating EMPTY sphere for training movie only...');
+        // CRITICAL: Define onSphereReady callback for proper sphere initialization
+        window.onSphereReady = function(sphereRef) {
+            console.log('🎯 onSphereReady called with sphereRef:', sphereRef);
             
-            if (window.FeatrixSphereViewer) {
-                try {
-                    const viewer = new window.FeatrixSphereViewer({
-                        containerId: 'sphere-viewer-container'
-                        // NO sessionId - we want an empty sphere
-                    });
-                    
-                    console.log('✅ Empty sphere created successfully');
-                    
-                    // Store the sphere reference
-                    window.sphereViewerInstance = { sphereRef: viewer.sphereRef };
-                    
-                    // Update loading immediately
-                    updateLoadingProgress('Empty sphere ready, loading training movie...');
-                    
-                    // Auto-fetch and play training movie
-                    console.log('🎯 AUTO-STARTING TRAINING MOVIE...');
-                    
-                    // Wait for functions to be defined, then start
-                    function startTrainingMovie() {
-                        if (typeof fetchTrainingMovie === 'function' && typeof playTraining === 'function') {
-                            fetchTrainingMovie(true).then(() => {
-                                updateLoadingProgress('Training movie ready!');
-                                
-                                // Hide loading and start training movie
-                                setTimeout(() => {
-                                    const loadingDiv = document.getElementById('loadingDiv');
-                                    if (loadingDiv) {
-                                        loadingDiv.style.display = 'none';
-                                    }
-                                    playTraining();
-                                }, 500);
-                            }).catch(error => {
-                                console.error('❌ Auto-training movie failed:', error);
-                                updateLoadingProgress('Failed to load training movie');
-                            });
-                        } else {
-                            console.log('⏳ Training functions not ready, retrying in 500ms...');
-                            setTimeout(startTrainingMovie, 500);
-                        }
+            if (sphereRef) {
+                // Store the sphere reference properly
+                window.sphereViewerInstance = { sphereRef: sphereRef };
+                
+                console.log('✅ Empty sphere ready, auto-starting training movie...');
+                updateLoadingProgress('Empty sphere ready, loading training movie...');
+                
+                // Auto-fetch and play training movie - NO CLEARING NEEDED since auto-load=false
+                function startTrainingMovie() {
+                    if (typeof fetchTrainingMovie === 'function' && typeof playTraining === 'function') {
+                        fetchTrainingMovie(true).then(() => {
+                            updateLoadingProgress('Training movie ready!');
+                            
+                            // Hide loading and start training movie
+                            setTimeout(() => {
+                                const loadingDiv = document.getElementById('loadingDiv');
+                                if (loadingDiv) {
+                                    loadingDiv.style.display = 'none';
+                                }
+                                playTraining();
+                            }, 500);
+                        }).catch(error => {
+                            console.error('❌ Auto-training movie failed:', error);
+                            updateLoadingProgress('Failed to load training movie');
+                        });
+                    } else {
+                        console.log('⏳ Training functions not ready, retrying in 500ms...');
+                        setTimeout(startTrainingMovie, 500);
                     }
-                    
-                    // Start the process
-                    setTimeout(startTrainingMovie, 100);
-                    
-                } catch (error) {
-                    console.error('❌ Failed to create sphere viewer:', error);
-                    updateLoadingProgress('Failed to initialize sphere');
                 }
+                
+                // Start the training movie immediately
+                setTimeout(startTrainingMovie, 100);
             } else {
-                console.error('❌ FeatrixSphereViewer not available');
-                updateLoadingProgress('Sphere viewer not loaded');
+                console.error('❌ onSphereReady called with null sphereRef');
+                updateLoadingProgress('Failed to initialize sphere');
             }
-        });
+        };
+        
+        console.log('✅ onSphereReady callback defined successfully');
         
         console.log('✅ Manual sphere initialization ready - will create empty sphere for training movie only');
     </script>
@@ -3055,8 +3041,14 @@
         }
     </script>
     
-    <!-- Load sphere-viewer.js with NO session data - training movie will load its own data -->
+    <!-- Load sphere-viewer.js - ALWAYS training movie, NO auto-load final data, NO rotation during training -->
     <script src="sphere-viewer.js" 
-            data-container-id="sphere-viewer-container"></script>
+            data-session-id="20250716-142858_653c60"
+            data-container-id="sphere-viewer-container"
+            data-training-movie="true"
+            data-auto-load="false"
+            data-is-rotating="false"
+            data-rotation-speed="0.1"
+            data-animate-clusters="true"></script>
 </body>
 </html> 
