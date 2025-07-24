@@ -5,99 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sphere Viewer Demo - 20250716-142858_653c60</title>
     <style>
-        /* KILL ALL OVERLAYS AND PSEUDO-ELEMENTS */
-        *:before, *:after {
-            display: none !important;
-            content: none !important;
-            visibility: hidden !important;
-        }
-        
-        /* KILL ANY FIXED POSITION OVERLAYS */
-        div[style*="position: fixed"],
-        div[style*="z-index"],
-        .overlay,
-        .modal,
-        .popup {
-            display: none !important;
-            visibility: hidden !important;
-            pointer-events: none !important;
-        }
-        
-        /* FORCE CLEAN INTERFACE */
+        /* Clean, minimal CSS for proper sphere display */
         body {
-            position: relative !important;
-            overflow: visible !important;
+            position: relative;
+            overflow: visible;
         }
         
-        /* ENSURE BUTTONS ARE CLICKABLE */
+        /* Ensure buttons work properly */
         button {
-            pointer-events: auto !important;
-            z-index: 999999 !important;
-            position: relative !important;
+            pointer-events: auto;
+            position: relative;
         }
-        
-        /* KILL BROWSER DEV TOOLS OVERLAYS */
-        [data-testid*="overlay"],
-        [class*="overlay"],
-        [id*="overlay"] {
-            display: none !important;
-        }
-        
-        /* KILL FEEDBACK/CONTACT MESSAGES */
-        .feedback-section,
-        .contact-section,
-        [class*="feedback"],
-        [class*="contact"] {
-            display: none !important;
-            visibility: hidden !important;
-        }
-
-        /* KILL WEBGL ERROR OVERLAYS AND ANY GIANT X - AGGRESSIVE */
-        canvas + div,
-        canvas ~ div,
-        [class*="webgl"],
-        [class*="error"],
-        div[style*="z-index: 999"],
-        div[style*="z-index: 1000"],
-        div[style*="position: absolute"][style*="top"],
-        div[style*="position: fixed"][style*="top"] {
-            display: none !important;
-            visibility: hidden !important;
-            opacity: 0 !important;
-        }
-
-        /* FORCE HIDE ANYTHING THAT LOOKS LIKE AN ERROR OVERLAY */
-        div[style*="background: black"],
-        div[style*="background:#000"],
-        div[style*="background-color:black"],
-        div[style*="font-size:24px"],
-        div[style*="font-size: 24px"],
-        div[style*="color: white"][style*="background"],
-        *[style*="pointer-events: none"][style*="position: absolute"] {
-            display: none !important;
-            visibility: hidden !important;
-        }
-
-        /* NUCLEAR CSS - KILL ANYTHING THAT COULD BE THE GIANT X */
-        *:not(.container):not(.controls):not([id*="sphere"]):not([id*="epoch"]):not([id*="play"]):not([id*="progress"]) {
-            content: none !important;
-        }
-        
-        /* Kill WebGL error overlays */
-        div:not([id]):not([class])[style*="position"] {
-            display: none !important;
-        }
-        
-        /* Kill anything with X or × content that's not a button */
-        *:not(button):not(.btn):not(.controls *) {
-            &::before,
-            &::after {
-                content: none !important;
-            }
-        }
-        
-        /* Kill divs with no ID/class that are positioned */
-        div:not([id]):not([class])[style*="absolute"],
         div:not([id]):not([class])[style*="fixed"] {
             display: none !important;
             visibility: hidden !important;
@@ -330,64 +248,66 @@
             }
         }
         
-        // Define the callback that sphere-viewer.js will capture during auto-init
-        window.onSphereReady = function(sphereRef) {
-            console.log('🎉 onSphereReady CALLED! sphereRef:', !!sphereRef);
-            console.log('🎉 SUCCESS: Sphere viewer has initialized!!');
+        // Manual sphere initialization - no auto-loading of final data
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log('🎯 DOM ready - manually creating EMPTY sphere for training movie only...');
             
-            // Store the sphere reference
-            window.sphereViewerInstance = { sphereRef: sphereRef };
-            
-            // Update loading immediately
-            updateLoadingProgress('Sphere ready, preparing training movie...');
-            
-            // KILL ANY X OVERLAYS IMMEDIATELY
-            console.log('🔥 NUCLEAR X KILLER - Destroying any overlays...');
-            if (typeof killAllOverlays === 'function') {
-                killAllOverlays();
-            }
-            
-            // Clear any existing points - show nothing until training ready
-            console.log('🧹 CLEARING ALL POINTS - Show nothing until training movie ready');
-            if (sphereRef.clearPoints) {
-                sphereRef.clearPoints();
-                console.log('✅ All initial points cleared - sphere is now empty');
-            }
-            
-            updateLoadingProgress('Clearing sphere data...');
-            
-            // Auto-fetch and play training movie
-            console.log('🎯 AUTO-STARTING TRAINING MOVIE...');
-            
-            // Wait for functions to be defined, then start
-            function startTrainingMovie() {
-                if (typeof fetchTrainingMovie === 'function' && typeof playTraining === 'function') {
-                    fetchTrainingMovie(true).then(() => {
-                        updateLoadingProgress('Training movie ready!');
-                        
-                        // Hide loading and start training movie
-                        setTimeout(() => {
-                            const loadingDiv = document.getElementById('loadingDiv');
-                            if (loadingDiv) {
-                                loadingDiv.style.display = 'none';
-                            }
-                            playTraining();
-                        }, 500);
-                    }).catch(error => {
-                        console.error('❌ Auto-training movie failed:', error);
-                        updateLoadingProgress('Failed to load training movie');
+            if (window.FeatrixSphereViewer) {
+                try {
+                    const viewer = new window.FeatrixSphereViewer({
+                        containerId: 'sphere-viewer-container'
+                        // NO sessionId - we want an empty sphere
                     });
-                } else {
-                    console.log('⏳ Training functions not ready, retrying in 500ms...');
-                    setTimeout(startTrainingMovie, 500);
+                    
+                    console.log('✅ Empty sphere created successfully');
+                    
+                    // Store the sphere reference
+                    window.sphereViewerInstance = { sphereRef: viewer.sphereRef };
+                    
+                    // Update loading immediately
+                    updateLoadingProgress('Empty sphere ready, loading training movie...');
+                    
+                    // Auto-fetch and play training movie
+                    console.log('🎯 AUTO-STARTING TRAINING MOVIE...');
+                    
+                    // Wait for functions to be defined, then start
+                    function startTrainingMovie() {
+                        if (typeof fetchTrainingMovie === 'function' && typeof playTraining === 'function') {
+                            fetchTrainingMovie(true).then(() => {
+                                updateLoadingProgress('Training movie ready!');
+                                
+                                // Hide loading and start training movie
+                                setTimeout(() => {
+                                    const loadingDiv = document.getElementById('loadingDiv');
+                                    if (loadingDiv) {
+                                        loadingDiv.style.display = 'none';
+                                    }
+                                    playTraining();
+                                }, 500);
+                            }).catch(error => {
+                                console.error('❌ Auto-training movie failed:', error);
+                                updateLoadingProgress('Failed to load training movie');
+                            });
+                        } else {
+                            console.log('⏳ Training functions not ready, retrying in 500ms...');
+                            setTimeout(startTrainingMovie, 500);
+                        }
+                    }
+                    
+                    // Start the process
+                    setTimeout(startTrainingMovie, 100);
+                    
+                } catch (error) {
+                    console.error('❌ Failed to create sphere viewer:', error);
+                    updateLoadingProgress('Failed to initialize sphere');
                 }
+            } else {
+                console.error('❌ FeatrixSphereViewer not available');
+                updateLoadingProgress('Sphere viewer not loaded');
             }
-            
-            // Start the process
-            setTimeout(startTrainingMovie, 100);
-        };
+        });
         
-        console.log('✅ onSphereReady defined and ready for sphere-viewer.js capture');
+        console.log('✅ Manual sphere initialization ready - will create empty sphere for training movie only');
     </script>
     
     <!-- sphere-viewer.js will be loaded at the bottom after DOM is ready -->
@@ -834,7 +754,7 @@
         }
 
         // Run overlay killer every 50ms - MORE AGGRESSIVE
-        setInterval(killAllOverlays, 50);
+        // Removed nuclear overlay killer
         
         // Also kill overlays on DOM changes
         if (window.MutationObserver) {
@@ -3135,9 +3055,8 @@
         }
     </script>
     
-    <!-- Load sphere-viewer.js AFTER DOM is ready so container exists -->
+    <!-- Load sphere-viewer.js with NO session data - training movie will load its own data -->
     <script src="sphere-viewer.js" 
-            data-container-id="sphere-viewer-container"
-            data-session-id="20250716-142858_653c60"></script>
+            data-container-id="sphere-viewer-container"></script>
 </body>
 </html> 
