@@ -300,8 +300,8 @@
 
     <div class="container">
         <div class="header">
-            <h1>🌟 Interactive Sphere Demo with Animation Controls</h1>
-            <p class="subtitle">Explore and control real-time 3D data visualization with 8,049 transportation companies</p>
+            <h1>🎬 Training Movie</h1>
+            <p class="subtitle">Watching AI training progress automatically</p>
             
             <!-- Loading indicator -->
             <div id="initial-loading" class="loading-indicator" style="display: none;">
@@ -316,61 +316,11 @@
             </div>
         </div>
 
-        <div class="info-section">
-            <p><strong>Session ID:</strong> <span class="session-info">20250716-142858_653c60</span></p>
-            <p><small>This demo uses the specified session ID from Featrix platform.</small></p>
-            
-            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e2e8f0;">
-                <h4 style="margin: 0 0 10px 0; color: #374151;">Animation Controls</h4>
-                <div style="display: flex; flex-direction: column; gap: 12px;">
-                    <div>
-                        <label style="display: flex; align-items: center; gap: 8px; color: #374151;">
-                            <input type="checkbox" id="trainingMovie" checked style="accent-color: #3b82f6;">
-                            <span>Training Movie Mode</span>
-                        </label>
-                        <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">Load first epoch instead of final sphere</div>
-                    </div>
-                    <div>
-                        <label style="display: flex; align-items: center; gap: 8px; color: #374151;">
-                            <input type="checkbox" id="isRotating" checked style="accent-color: #3b82f6;">
-                            <span>Enable Rotation</span>
-                        </label>
-                    </div>
-                    <div>
-                        <label style="display: flex; align-items: center; gap: 8px; color: #374151;">
-                            <span style="min-width: 100px;">Rotation Speed:</span>
-                            <input type="range" id="rotationSpeed" min="0.01" max="0.5" step="0.01" value="0.1" style="flex: 1;">
-                            <span id="speedValue" style="min-width: 40px; font-family: monospace; color: #1f2937; font-weight: 600;">0.1</span>
-                        </label>
-                    </div>
-                    <div>
-                        <label style="display: flex; align-items: center; gap: 8px; color: #374151;">
-                            <input type="checkbox" id="animateClusters" style="accent-color: #3b82f6;">
-                            <span>Animate Clusters (2-12)</span>
-                        </label>
-                    </div>
-                    <div>
-                        <label style="display: flex; align-items: center; gap: 8px; color: #374151;">
-                            <span style="min-width: 100px;">Point Size:</span>
-                            <input type="range" id="pointSize" min="0.01" max="0.2" step="0.005" value="0.05" style="flex: 1;">
-                            <span id="sizeValue" style="min-width: 50px; font-family: monospace; color: #1f2937; font-weight: 600;">0.05</span>
-                        </label>
-                    </div>
-                    <div>
-                        <label style="display: flex; align-items: center; gap: 8px; color: #374151;">
-                            <span style="min-width: 100px;">Point Opacity:</span>
-                            <input type="range" id="pointOpacity" min="0.1" max="1.0" step="0.05" value="0.5" style="flex: 1;">
-                            <span id="opacityValue" style="min-width: 50px; font-family: monospace; color: #1f2937; font-weight: 600;">0.5</span>
-                        </label>
-                    </div>
-                </div>
-            </div>
-        </div>
 
-        <!-- Main content with side-by-side layout -->
+
+        <!-- Simplified single column layout -->
         <div class="main-content">
-            <!-- Left column: Sphere viewer -->
-            <div class="sphere-column">
+            <div style="display: flex; justify-content: center; width: 100%;">
                 <div id="sphere-viewer-container" class="sphere-container">
                     <div class="loading">
                         <div class="spinner"></div>
@@ -379,19 +329,29 @@
                     </div>
                 </div>
             </div>
+            
+            <!-- Hidden elements needed by JavaScript - NO VISIBLE CONTROLS -->
+            <div style="display: none;">
+                <input type="checkbox" id="trainingMovie" checked>
+                <input type="checkbox" id="isRotating">
+                <input type="checkbox" id="animateClusters" checked>
+                <input type="range" id="rotationSpeed" value="0.1">
+                <input type="range" id="pointSize" value="0.05">
+                <input type="range" id="pointOpacity" value="0.5">
+                <input type="range" id="epochSlider" min="0" max="76" value="0">
+                <span id="epochDisplay">0</span>
+                <span id="progressText">Ready</span>
+                <span id="speedValue">0.1</span>
+                <span id="sizeValue">0.05</span>
+                <span id="opacityValue">0.5</span>
+                <div id="progressBar"></div>
+                <button id="playBtn"></button>
+                <button id="movieBtn"></button>
+                <div id="epochSliderSection"></div>
+            </div>
+        </div>
 
-            <!-- Right column: Controls -->
-            <div class="controls-column">
-                <div class="controls">
-                    <button class="btn" onclick="reloadViewer()" id="reloadBtn">🔄 Reload Viewer</button>
-                    <button class="btn" onclick="updateSession()" id="updateBtn">Update Session</button>
-                    <button class="btn" onclick="copyEmbedCode()" id="copyBtn">📋 Copy Embed Code</button>
-                    <button class="btn" onclick="fetchTrainingMovie()" id="movieBtn">🎬 Training Movie</button>
-                </div>
-                
-                <!-- Training Movie Controls -->
-                <div id="epochSliderSection" style="display: none; background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; margin-top: 20px;">
-                    <h3 style="margin-bottom: 20px; font-size: 18px;">🎬 Training Animation</h3>
+    <!-- JavaScript Section -->
                     
                     <!-- Big Simple Play Button -->
                     <div style="margin-bottom: 20px;">
