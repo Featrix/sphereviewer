@@ -283,53 +283,45 @@
                             const loadingDiv = document.getElementById('loadingDiv');
                             if (loadingDiv) loadingDiv.style.display = 'none';
                             
-                            // Ensure THREE.js is available before starting training
-                            if (window.THREE) {
-                                console.log('✅ THREE.js available, starting training...');
-                                console.log('🔍 Debug before training:', {
-                                    hasEpochProjections: !!epochProjections,
-                                    epochCount: Object.keys(epochProjections || {}).length,
-                                    sphereRef: !!window.sphereViewerInstance?.sphereRef,
-                                    scene: !!window.sphereViewerInstance?.sphereRef?.scene,
-                                    sceneChildren: window.sphereViewerInstance?.sphereRef?.scene?.children?.length
+                            console.log('✅ Training data loaded - using sphere viewer built-in training movie');
+                            console.log('🔍 Debug:', {
+                                hasEpochProjections: !!epochProjections,
+                                epochCount: Object.keys(epochProjections || {}).length,
+                                sphereRef: !!window.sphereViewerInstance?.sphereRef
+                            });
+                            
+                            // Tell the sphere viewer to display the training movie using its built-in capabilities
+                            const sphereRef = window.sphereViewerInstance?.sphereRef;
+                            if (sphereRef && epochProjections) {
+                                console.log('🎬 Using sphere viewer built-in training movie capabilities...');
+                                
+                                // Set the training data on the sphere viewer
+                                sphereRef.epochProjections = epochProjections;
+                                sphereRef.movieMetadata = movieMetadata;
+                                sphereRef.isTrainingMovieMode = true;
+                                
+                                // Configure for automatic looping training movie
+                                sphereRef.updateAnimationSettings({
+                                    isRotating: false, // No rotation during training
+                                    trainingMovie: true,
+                                    trainingDuration: 10000, // 10 seconds
+                                    loop: true
                                 });
                                 
-                                // Try to create a test point first to verify scene is working
-                                try {
-                                    const sphereRef = window.sphereViewerInstance.sphereRef;
-                                    if (sphereRef && sphereRef.scene) {
-                                        console.log('🧪 Creating test point to verify scene...');
-                                        const geometry = new window.THREE.BoxGeometry(0.5, 0.5, 0.5);
-                                        const material = new window.THREE.MeshBasicMaterial({ color: 0xff0000 });
-                                        const mesh = new window.THREE.Mesh(geometry, material);
-                                        mesh.position.set(0, 0, 0);
-                                        mesh.userData.isTestPoint = true;
-                                        sphereRef.scene.add(mesh);
-                                        
-                                        if (sphereRef.renderer && sphereRef.camera) {
-                                            sphereRef.renderer.render(sphereRef.scene, sphereRef.camera);
-                                        }
-                                        
-                                        console.log('✅ Test red cube created at origin - should be visible');
-                                    }
-                                } catch (error) {
-                                    console.error('❌ Failed to create test point:', error);
+                                // Start the training movie animation
+                                if (typeof sphereRef.playTrainingMovie === 'function') {
+                                    console.log('✅ Using sphereRef.playTrainingMovie()');
+                                    sphereRef.playTrainingMovie();
+                                } else {
+                                    console.log('✅ Using automatic training progression');
+                                    // The sphere viewer should automatically show training progression
+                                    // with the epochProjections data we've provided
+                                    playTraining(); // Fallback only if needed
                                 }
-                                
-                                playTraining();
                             } else {
-                                console.error('❌ THREE.js still not available for training');
-                                // Try again after longer delay
-                                setTimeout(() => {
-                                    if (window.THREE) {
-                                        console.log('✅ THREE.js finally available, starting training...');
-                                        playTraining();
-                                    } else {
-                                        console.error('❌ THREE.js unavailable - training failed');
-                                    }
-                                }, 2000);
+                                console.error('❌ No sphere viewer or epoch data available');
                             }
-                        }, 1500);
+                        }, 1000);
                         
                     }).catch(error => {
                         console.error('❌ Training movie failed:', error);
@@ -914,88 +906,13 @@
             });
         }
         
-        // LIGHT BACKGROUND PROTECTION - Only run occasionally since we prevent the problem at source
-        setInterval(emergencyXKiller, 1000); // Much less frequent now
-
-        console.log('🛡️ SURGICAL X PROTECTION - Targeting gap-4 divs where X appears!');
+        // Removed overlay protection - not needed for embeddable version
         
-        // Manual trigger for emergency overlay killing
-        window.killOverlaysNow = function() {
-            console.log('🚨 MANUAL OVERLAY KILL TRIGGERED');
-            killAllOverlays();
-            emergencyXKiller();
-        };
+        // Removed manual overlay killing - not needed
         
-        // Debug function to map gap-4 div structure where X appears
-        window.findSuspiciousElements = function() {
-            console.log('🔍 SCANNING GAP-4 DIVS FOR X ELEMENTS...');
-            const gapDivs = document.querySelectorAll('div[class*="gap-4"]');
-            console.log(`Found ${gapDivs.length} gap-4 divs`);
-            
-            gapDivs.forEach((gapDiv, index) => {
-                console.log(`\n🔍 GAP-4 DIV ${index + 1}:`, {
-                    className: gapDiv.className,
-                    id: gapDiv.id,
-                    childCount: gapDiv.children.length
-                });
-                
-                // Map all children
-                Array.from(gapDiv.children).forEach((child, childIndex) => {
-                    const text = child.textContent?.trim() || '';
-                    const computedStyle = window.getComputedStyle(child);
-                    
-                    console.log(`  Child ${childIndex + 1}:`, {
-                        tag: child.tagName,
-                        className: child.className,
-                        id: child.id,
-                        text: text.substring(0, 50),
-                        position: computedStyle.position,
-                        zIndex: computedStyle.zIndex,
-                        hasXContent: text === '×' || text === 'X'
-                    });
-                    
-                    // Check grandchildren if text is exactly X
-                    if (text === '×' || text === 'X') {
-                        console.log(`    🚨 FOUND X ELEMENT:`, {
-                            fullText: text,
-                            innerHTML: child.innerHTML,
-                            style: child.style.cssText,
-                            computedPosition: computedStyle.position,
-                            computedZIndex: computedStyle.zIndex
-                        });
-                    }
-                });
-            });
-        };
+        // Debug functions removed for embeddable version
         
-        // Debug function to monitor gap-4 div changes in real-time
-        window.watchGap4Changes = function() {
-            console.log('👁️ Starting real-time gap-4 div monitoring...');
-            const gapDivs = document.querySelectorAll('div[class*="gap-4"]');
-            gapDivs.forEach((gapDiv, index) => {
-                console.log(`👁️ Watching gap-4 div ${index + 1}:`, gapDiv.className);
-                
-                const observer = new MutationObserver((mutations) => {
-                    mutations.forEach(mutation => {
-                        if (mutation.addedNodes.length > 0) {
-                            console.log(`🔄 Changes detected in gap-4 div ${index + 1}:`);
-                            mutation.addedNodes.forEach(node => {
-                                if (node.nodeType === 1) {
-                                    console.log('  Added element:', {
-                                        tag: node.tagName,
-                                        className: node.className,
-                                        text: node.textContent?.trim() || '',
-                                        innerHTML: node.innerHTML
-                                    });
-                                }
-                            });
-                        }
-                    });
-                });
-                
-                observer.observe(gapDiv, { childList: true, subtree: true });
-            });
-        };
+        // Removed gap-4 monitoring - not needed for embedded version
         
         // DEBUG: Test training movie functionality
         window.testTrainingMovie = function() {
@@ -1103,11 +1020,7 @@
         };
         
         // Force browser to use fresh copy (cache busting)
-        console.log('🔄 Script loaded at:', new Date().toISOString());
-        console.log('💡 Smart initialization + surgical X protection for gap-4 divs');
-        console.log('💡 Debug functions: findSuspiciousElements(), watchGap4Changes(), killOverlaysNow()');
-        console.log('💡 Training debug: testTrainingMovie(), checkTrainingData(), debugPointCreation()');
-        console.log('💡 Emergency: Press Ctrl+K to kill overlays');
+        console.log('🔄 Training movie demo loaded at:', new Date().toISOString());
         
         // Keyboard shortcut to kill overlays
         document.addEventListener('keydown', function(event) {
