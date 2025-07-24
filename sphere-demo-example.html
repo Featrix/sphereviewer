@@ -675,11 +675,12 @@
                     firstFewKeys: Object.keys(epochProjections || {}).slice(0, 3)
                 });
                 
-                console.log('🎨 Setting to REAL initial epoch positions...');
-                updateEpochFromReal(0);  // Set to first epoch
-                
-                // Don't auto-start the animation - let user click the play button
-                console.log('⏸️ Training movie ready - click play button to start animation');
+                console.log('🎨 Starting AUTO-PLAY training movie...');
+                // AUTO-PLAY: Start training movie immediately
+                setTimeout(() => {
+                    playTraining();
+                    console.log('🚀 AUTO-PLAY: Training movie started automatically');
+                }, 500); // Small delay to ensure everything is ready
                 
                 // Mark initialization as complete
                 initializationInProgress = false;
@@ -2140,27 +2141,34 @@
                 return;
             }
             
-            // SMART UPDATE - Update existing points instead of clearing and recreating
-            console.log('🎬 Starting training animation by updating existing points...');
-            updateEpochFromReal(0); // Update first frame
+            // CLEAR FINAL SPHERE - Ensure no overlap between final and training positions
+            console.log('🎬 Clearing final sphere before training animation...');
+            if (window.sphereViewerInstance?.sphereRef?.clearPoints) {
+                window.sphereViewerInstance.sphereRef.clearPoints();
+                console.log('✅ Final sphere points cleared');
+            }
+            
+            // Wait a moment then start with first epoch
+            setTimeout(() => {
+                updateEpochFromReal(0); // Start with first epoch
+                console.log('🎬 Training animation started with first epoch');
+            }, 100);
             
             const totalEpochs = Object.keys(epochProjections).length;
             console.log(`🚀 Starting REAL training animation: ${totalEpochs} epochs`);
             
             let currentFrame = 0;
-            const frameInterval = 1000 / 30; // 33.33ms for 30fps
+            // Use the animation duration set by speed buttons
+            const totalDurationMs = (animationDurationSeconds || 3) * 1000;
+            const frameInterval = totalDurationMs / totalEpochs; // Distribute total time across all epochs
+            console.log(`⏱️ Using ${animationDurationSeconds || 3}s total duration, ${frameInterval.toFixed(1)}ms per frame`);
             
             autoPlayInterval = setInterval(() => {
                 if (currentFrame >= totalEpochs) {
-                    pauseTraining();
-                    console.log('🎬 Real training animation completed!');
-                    
-                    // Slow down rotation after animation
-                    if (window.sphereViewerInstance?.sphereRef?.updateAnimationSettings) {
-                        window.sphereViewerInstance.sphereRef.updateAnimationSettings({
-                            rotationSpeed: 0.1
-                        });
-                    }
+                    // LOOP: Restart the animation instead of pausing
+                    console.log('🔄 Training animation completed - LOOPING back to start');
+                    currentFrame = 0; // Reset to beginning
+                    updateEpochFromReal(0); // Go back to first epoch
                     return;
                 }
                 
@@ -2242,9 +2250,15 @@
                 // Show confirmation
                 showNotification(`⚡ Speed set to ${seconds} seconds`, 'success');
                 
-                // Restart if playing
+                // Restart if playing to apply new speed immediately
                 if (autoPlayInterval) {
-                    playTraining();
+                    console.log('🔄 Restarting training with new speed...');
+                    clearInterval(autoPlayInterval);
+                    autoPlayInterval = null;
+                    // Restart after a brief moment
+                    setTimeout(() => {
+                        playTraining();
+                    }, 100);
                 }
             } catch (error) {
                 console.error('❌ Error in updateAnimationDuration:', error);
