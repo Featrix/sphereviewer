@@ -2297,20 +2297,11 @@
                     const fromCoord = fromEpochData.coords[index];
                     const toCoord = toEpochData.coords[index];
                     
-                    // Smooth position interpolation using THREE.Vector3.lerp
-                    if (!window.THREE || !window.THREE.Vector3) {
-                        console.warn('⚠️ THREE.js Vector3 not available, using direct positioning');
-                        // Fallback to manual interpolation
+                                            // Direct position interpolation (more efficient than THREE.Vector3.lerp)
                         const x = fromCoord.x + (toCoord.x - fromCoord.x) * progress;
                         const y = fromCoord.y + (toCoord.y - fromCoord.y) * progress;
                         const z = fromCoord.z + (toCoord.z - fromCoord.z) * progress;
                         mesh.position.set(x, y, z);
-                    } else {
-                        const fromPos = new THREE.Vector3(fromCoord.x, fromCoord.y, fromCoord.z);
-                        const toPos = new THREE.Vector3(toCoord.x, toCoord.y, toCoord.z);
-                        const interpolatedPos = fromPos.lerp(toPos, progress);
-                        mesh.position.copy(interpolatedPos);
-                    }
                     
                     // Interpolate cluster color if needed
                     if (fromCoord.cluster !== undefined && toCoord.cluster !== undefined) {
@@ -3132,7 +3123,10 @@
                 progressText.textContent = `${currentEpochKey} (${epochIndex + 1}/${totalEpochs}) ${progress}%`;
             }
             
-            console.log(`📊 Frame ${epochIndex + 1}/${totalEpochs} (${progress}%)`);
+            // Reduced logging to prevent console spam
+            if (epochIndex % 10 === 0) {
+                console.log(`📊 Frame ${epochIndex + 1}/${totalEpochs} (${progress}%)`);
+            }
         }
     </script>
 </body>
