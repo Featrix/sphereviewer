@@ -5,6 +5,44 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sphere Viewer Demo - 20250716-142858_653c60</title>
     <style>
+        /* KILL ALL OVERLAYS AND PSEUDO-ELEMENTS */
+        *:before, *:after {
+            display: none !important;
+            content: none !important;
+            visibility: hidden !important;
+        }
+        
+        /* KILL ANY FIXED POSITION OVERLAYS */
+        div[style*="position: fixed"],
+        div[style*="z-index"],
+        .overlay,
+        .modal,
+        .popup {
+            display: none !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+        }
+        
+        /* FORCE CLEAN INTERFACE */
+        body {
+            position: relative !important;
+            overflow: visible !important;
+        }
+        
+        /* ENSURE BUTTONS ARE CLICKABLE */
+        button {
+            pointer-events: auto !important;
+            z-index: 999999 !important;
+            position: relative !important;
+        }
+        
+        /* KILL BROWSER DEV TOOLS OVERLAYS */
+        [data-testid*="overlay"],
+        [class*="overlay"],
+        [id*="overlay"] {
+            display: none !important;
+        }
+        
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             margin: 0;
@@ -106,15 +144,44 @@
             cursor: pointer;
             font-size: 14px;
             font-weight: 500;
+            transition: all 0.2s ease;
+            user-select: none;
         }
         
         .btn:hover {
             background: #2563eb;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
+        }
+        
+        .btn:active {
+            background: #1d4ed8;
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(59, 130, 246, 0.4);
         }
         
         .btn:disabled {
             background: #9ca3af;
             cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .code-block {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 15px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            overflow-x: auto;
+            margin: 10px 0;
+        }
+        
+        .code-block:hover {
+            background: #f1f5f9;
+            border-color: #3b82f6;
+            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+            transition: all 0.2s ease;
         }
     </style>
 </head>
@@ -125,13 +192,64 @@
 
     <div class="container">
         <div class="header">
-            <h1>🌐 Sphere Viewer Demo</h1>
-            <p>Interactive 3D Data Visualization</p>
+            <h1>🌟 Interactive Sphere Demo with Animation Controls</h1>
+            <p class="subtitle">Explore and control real-time 3D data visualization with 8,049 transportation companies</p>
+            
+            <!-- Loading indicator -->
+            <div id="initial-loading" class="loading-indicator" style="display: none;">
+                <div class="spinner"></div>
+                <p><strong>Loading 3D visualization...</strong></p>
+                <p style="font-size: 0.9rem; color: #666; margin-top: 8px;">
+                    📊 Downloading 8,049 data points (~6MB) - This may take 5-15 seconds
+                </p>
+                <div style="margin-top: 12px; font-size: 0.85rem; color: #888;">
+                    💡 Large datasets provide rich, detailed visualizations but require patience to load
+                </div>
+            </div>
         </div>
 
         <div class="info-section">
             <p><strong>Session ID:</strong> <span class="session-info">20250716-142858_653c60</span></p>
             <p><small>This demo uses the specified session ID from Featrix platform.</small></p>
+            
+            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e2e8f0;">
+                <h4 style="margin: 0 0 10px 0; color: #374151;">Animation Controls</h4>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                    <div>
+                        <label style="display: flex; align-items: center; gap: 8px; color: #374151;">
+                            <input type="checkbox" id="isRotating" checked style="accent-color: #3b82f6;">
+                            <span>Enable Rotation</span>
+                        </label>
+                    </div>
+                    <div>
+                        <label style="display: flex; align-items: center; gap: 8px; color: #374151;">
+                            <span style="min-width: 100px;">Rotation Speed:</span>
+                            <input type="range" id="rotationSpeed" min="0.01" max="0.5" step="0.01" value="0.1" style="flex: 1;">
+                            <span id="speedValue" style="min-width: 40px; font-family: monospace; color: #1f2937; font-weight: 600;">0.1</span>
+                        </label>
+                    </div>
+                    <div>
+                        <label style="display: flex; align-items: center; gap: 8px; color: #374151;">
+                            <input type="checkbox" id="animateClusters" style="accent-color: #3b82f6;">
+                            <span>Animate Clusters (2-12)</span>
+                        </label>
+                    </div>
+                    <div>
+                        <label style="display: flex; align-items: center; gap: 8px; color: #374151;">
+                            <span style="min-width: 100px;">Point Size:</span>
+                            <input type="range" id="pointSize" min="0.01" max="0.2" step="0.005" value="0.05" style="flex: 1;">
+                            <span id="sizeValue" style="min-width: 50px; font-family: monospace; color: #1f2937; font-weight: 600;">0.05</span>
+                        </label>
+                    </div>
+                    <div>
+                        <label style="display: flex; align-items: center; gap: 8px; color: #374151;">
+                            <span style="min-width: 100px;">Point Opacity:</span>
+                            <input type="range" id="pointOpacity" min="0.1" max="1.0" step="0.05" value="0.5" style="flex: 1;">
+                            <span id="opacityValue" style="min-width: 50px; font-family: monospace; color: #1f2937; font-weight: 600;">0.5</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Sphere viewer will be rendered here -->
@@ -144,41 +262,257 @@
         </div>
 
         <div class="controls">
-            <button class="btn" onclick="reloadViewer()" id="reloadBtn">Reload Viewer</button>
+            <button class="btn" onclick="reloadViewer()" id="reloadBtn">🔄 Reload Viewer</button>
             <button class="btn" onclick="updateSession()" id="updateBtn">Update Session</button>
+            <button class="btn" onclick="copyEmbedCode()" id="copyBtn">📋 Copy Embed Code</button>
+            <button class="btn" onclick="fetchTrainingMovie()" id="movieBtn">🎬 Training Movie</button>
+        </div>
+
+        <!-- Training Movie Epoch Slider -->
+        <div id="epochSliderSection" style="display: none; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); margin-top: 20px;">
+            <h3 style="margin-bottom: 20px;">🎬 Training Animation</h3>
+            
+            <!-- Big Simple Play Button -->
+            <div style="text-align: center; margin-bottom: 25px;">
+                <button id="playBtn" onclick="playTraining()" 
+                        style="background: #10b981; color: white; border: none; padding: 15px 30px; border-radius: 12px; cursor: pointer; font-weight: 700; font-size: 18px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                    ▶️ Watch Training (10 seconds)
+                </button>
+            </div>
+            
+            <!-- Simple Speed Buttons -->
+            <div style="text-align: center; margin-bottom: 25px;">
+                <div style="font-size: 14px; color: #6b7280; margin-bottom: 10px;">Animation Speed:</div>
+                <div style="display: flex; gap: 10px; justify-content: center;">
+                    <button onclick="updateAnimationDuration(15)" style="padding: 8px 16px; background: #f59e0b; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">
+                        🐌 Slow (15s)
+                    </button>
+                    <button onclick="updateAnimationDuration(10)" style="padding: 8px 16px; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; border: 3px solid #059669;">
+                        🏃 Normal (10s)
+                    </button>
+                    <button onclick="updateAnimationDuration(5)" style="padding: 8px 16px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">
+                        ⚡ Fast (5s)
+                    </button>
+                    <button onclick="updateAnimationDuration(3)" style="padding: 8px 16px; background: #8b5cf6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">
+                        🚀 Turbo (3s)
+                    </button>
+                    <button onclick="updateAnimationDuration(1)" style="padding: 8px 16px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">
+                        ⚡ Warp (1s)
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Progress Bar -->
+            <div style="margin-bottom: 15px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span style="font-size: 14px; font-weight: 600;">Progress:</span>
+                    <span id="progressText" style="font-size: 14px; color: #6b7280;">Epoch 1 of 461</span>
+                </div>
+                <input type="range" id="epochSlider" min="0" max="460" value="0" 
+                       style="width: 100%; height: 12px; background: #e5e7eb; border-radius: 6px; cursor: pointer;"
+                       oninput="updateEpoch(parseInt(this.value))">
+            </div>
+            
+            <!-- Simple Controls -->
+            <div style="display: flex; gap: 10px; justify-content: center;">
+                <button onclick="pauseTraining()" 
+                        style="background: #f59e0b; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                    ⏸️ Pause
+                </button>
+                <button onclick="resetTraining()" 
+                        style="background: #6b7280; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                    ⏮️ Reset
+                </button>
+            </div>
+            
+            <!-- Simple Info -->
+            <div id="epochInfo" style="text-align: center; font-size: 12px; color: #6b7280; margin-top: 15px;">
+                Press SPACE to play/pause • Click progress bar to jump
+            </div>
+        </div>
+
+        <!-- Embed Code Section -->
+        <div class="container" style="margin-top: 20px;">
+            <div class="header" style="background: #047857;">
+                <h2 style="margin: 0; font-size: 1.5em;"> Copy & Paste Embed Code</h2>
+                <p style="margin: 5px 0 0 0; opacity: 0.9;">Use this HTML to embed the sphere viewer in your website</p>
+            </div>
+
+            <div style="padding: 20px; background: #f8fafc;">
+                <h3 style="color: #374151; margin: 0 0 15px 0;">Current Settings:</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 20px; font-size: 14px;">
+                    <div><strong>Session ID:</strong> <span id="currentSessionId">20250716-142858_653c60</span></div>
+                    <div><strong>Rotation:</strong> <span id="currentRotation">Enabled</span></div>
+                    <div><strong>Speed:</strong> <span id="currentSpeed">0.1</span></div>
+                    <div><strong>Animate Clusters:</strong> <span id="currentClusters">Disabled</span></div>
+                    <div><strong>Point Size:</strong> <span id="currentPointSize">0.05</span></div>
+                    <div><strong>Point Opacity:</strong> <span id="currentPointOpacity">0.5</span></div>
+                </div>
+
+                <h4 style="color: #374151; margin: 20px 0 10px 0;">HTML Code (click to copy):</h4>
+                <div class="code-block" id="embedCode" onclick="copyCodeToClipboard()" style="cursor: pointer; position: relative;">
+                    <div style="position: absolute; top: 10px; right: 10px; background: #3b82f6; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px;">Click to Copy</div>
+<pre style="margin: 0; white-space: pre-wrap; font-size: 13px;"><!-- Load React dependencies -->
+&lt;script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"&gt;&lt;/script&gt;
+&lt;script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"&gt;&lt;/script&gt;
+
+&lt;!-- Load Sphere Viewer --&gt;
+&lt;script src="https://unpkg.com/@featrix/sphere-viewer@latest/dist/sphere-viewer.js" 
+        data-session-id="<span id="codeSessionId">20250716-142858_653c60</span>"
+        data-is-rotating="<span id="codeRotating">true</span>"
+        data-rotation-speed="<span id="codeSpeed">0.1</span>"
+        data-animate-clusters="<span id="codeClusters">false</span>"
+        data-point-size="<span id="codePointSize">0.05</span>"
+        data-point-opacity="<span id="codePointOpacity">0.5</span>"&gt;&lt;/script&gt;</pre>
+                </div>
+
+                <div style="margin-top: 15px; padding: 15px; background: #e0f2fe; border-left: 4px solid #0284c7; border-radius: 4px;">
+                    <h4 style="margin: 0 0 10px 0; color: #0284c7;">💡 Customization Options:</h4>
+                    <ul style="margin: 0; color: #374151; font-size: 14px;">
+                        <li><code>data-session-id</code> - Your Featrix session ID</li>
+                        <li><code>data-is-rotating</code> - Enable/disable sphere rotation (true/false)</li>
+                        <li><code>data-rotation-speed</code> - Rotation speed (0.01 to 0.5)</li>
+                        <li><code>data-animate-clusters</code> - Auto-cycle through clusters (true/false)</li>
+                        <li><code>data-point-size</code> - Size of data points (0.01 to 0.2)</li>
+                        <li><code>data-point-opacity</code> - Transparency of points (0.1 to 1.0)</li>
+                        <li><code>data-container-id</code> - Target container ID (optional)</li>
+                        <li><code>data-api-base-url</code> - Custom API endpoint (optional)</li>
+                    </ul>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- Load the sphere viewer with auto-initialization -->
-    <script src="dist/sphere-viewer.js" 
+    <!-- Load the sphere viewer with auto-initialization and animation controls -->
+    <script>
+        // GLOBAL onSphereReady callback - will be called by auto-initialization
+        window.onSphereReady = function(sphereRef) {
+            console.log('🎯 GLOBAL onSphereReady called - AUTO-STARTING cluster animation!');
+            
+            // Store sphere reference
+            window.sphereViewerInstance = { sphereRef: sphereRef };
+            
+            // Set fast rotation speed during animation
+            if (sphereRef.updateAnimationSettings) {
+                sphereRef.updateAnimationSettings({
+                    isRotating: true,
+                    rotationSpeed: 0.25  // FAST rotation during training
+                });
+                console.log('🔄 Set FAST rotation (0.25) for training animation');
+            }
+            
+            // Auto-load training movie and start animation
+            setTimeout(() => {
+                console.log('🎬 Auto-loading training movie for cluster animation...');
+                fetchTrainingMovie().then(() => {
+                    console.log('🎨 Training movie loaded - starting automatic cluster animation');
+                    setTimeout(() => {
+                        playTraining(); // Auto-start the animation
+                    }, 1000);
+                });
+            }, 2000); // Wait 2 seconds for sphere to fully initialize
+        };
+    </script>
+    <script src="sphere-viewer.js" 
             data-session-id="20250716-142858_653c60"
-            data-container-id="sphere-viewer-container"></script>
+            data-container-id="sphere-viewer-container"
+            data-is-rotating="true"
+            data-rotation-speed="0.25"
+            data-animate-clusters="false"
+            data-point-size="0.05"
+            data-point-opacity="0.5"></script>
 
     <!-- Additional controls and debugging -->
     <script>
         let viewer = null;
         
-        // Initialize with manual control as backup
-        function initializeManualViewer() {
-            console.log('🔧 Initializing manual viewer...');
-            
-            if (window.SphereViewer) {
-                viewer = new window.SphereViewer();
-                viewer.init({
-                    sessionId: '20250716-142858_653c60',
-                    containerId: 'sphere-viewer-container',
-                    apiBaseUrl: 'https://sphere-api.featrix.com'
-                });
-                console.log('✅ Manual viewer initialized');
-            } else {
-                console.log('⏳ SphereViewer not ready yet, retrying...');
-                setTimeout(initializeManualViewer, 1000);
+        // Notification functions
+        function showUpdateNotification() {
+            showNotification('⚙️ Settings updated! Applying changes...', 'info');
+        }
+        
+        function showCopyNotification(message) {
+            showNotification(message, 'success');
+        }
+        
+        function showNotification(message, type = 'info') {
+            // Remove any existing notifications
+            const existing = document.querySelector('.notification');
+            if (existing) {
+                existing.remove();
             }
+            
+            // Create notification
+            const notification = document.createElement('div');
+            notification.className = 'notification';
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: 12px 20px;
+                border-radius: 6px;
+                color: white;
+                font-weight: 500;
+                z-index: 1000;
+                opacity: 0;
+                transition: opacity 0.3s ease;
+                max-width: 300px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            `;
+            
+            // Set color based on type
+            if (type === 'success') {
+                notification.style.background = '#10b981';
+            } else if (type === 'error') {
+                notification.style.background = '#ef4444';
+            } else {
+                notification.style.background = '#3b82f6';
+            }
+            
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            // Fade in
+            setTimeout(() => {
+                notification.style.opacity = '1';
+            }, 100);
+            
+            // Fade out and remove
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        notification.parentNode.removeChild(notification);
+                    }
+                }, 300);
+            }, 3000);
         }
         
         function reloadViewer() {
-            console.log('🔄 Reloading viewer...');
+            // Visual feedback that button was clicked
+            const button = document.getElementById('reloadBtn');
+            if (button) {
+                button.style.background = '#059669';
+                button.textContent = '⏳ Reloading...';
+                button.disabled = true;
+            }
+            
             const container = document.getElementById('sphere-viewer-container');
+            
+            // Clear the container completely
+            container.innerHTML = '';
+            
+            // Destroy existing viewer if it exists
+            if (viewer && viewer.destroy) {
+                try {
+                    viewer.destroy();
+                } catch (e) {
+                    // Expected if no viewer exists
+                }
+                viewer = null;
+            }
+            
+            // Show loading message
             container.innerHTML = `
                 <div class="loading">
                     <div class="spinner"></div>
@@ -187,46 +521,958 @@
                 </div>
             `;
             
+            // Try to initialize with a longer delay and better error handling
             setTimeout(() => {
-                if (viewer && viewer.destroy) {
-                    viewer.destroy();
+                try {
+                    
+                    // Check if the global viewer class exists
+                    if (window.FeatrixSphereViewer) {
+                        // Get current settings
+                        const isRotating = document.getElementById('isRotating').checked;
+                        const rotationSpeed = parseFloat(document.getElementById('rotationSpeed').value);
+                        const animateClusters = document.getElementById('animateClusters').checked;
+                        const pointSize = parseFloat(document.getElementById('pointSize').value);
+                        const pointOpacity = parseFloat(document.getElementById('pointOpacity').value);
+                        
+                        // Create new viewer instance
+                        viewer = new window.FeatrixSphereViewer();
+                        viewer.init({
+                            sessionId: '20250716-142858_653c60',
+                            containerId: 'sphere-viewer-container',
+                            apiBaseUrl: 'https://sphere-api.featrix.com',
+                            isRotating: isRotating,
+                            rotationSpeed: rotationSpeed,
+                            animateClusters: animateClusters,
+                            pointSize: pointSize,
+                            pointOpacity: pointOpacity
+                        });
+                        
+                        console.log('✅ Viewer reloaded successfully with settings:', {
+                            isRotating, rotationSpeed, animateClusters
+                        });
+                        
+                        // Reset button state on success
+                        const button = document.getElementById('reloadBtn');
+                        if (button) {
+                            button.style.background = '#3b82f6';
+                            button.textContent = '🔄 Reload Viewer';
+                            button.disabled = false;
+                        }
+                    } else {
+                        console.error('❌ FeatrixSphereViewer class not found');
+                        container.innerHTML = `
+                            <div style="padding: 20px; text-align: center; color: #dc2626;">
+                                <p><strong>Error:</strong> Sphere Viewer not loaded</p>
+                                <button onclick="location.reload()" style="padding: 8px 16px; margin-top: 10px;">Refresh Page</button>
+                            </div>
+                        `;
+                        
+                        // Reset button state on error
+                        const button = document.getElementById('reloadBtn');
+                        if (button) {
+                            button.style.background = '#dc2626';
+                            button.textContent = '❌ Not Loaded';
+                            setTimeout(() => {
+                                button.style.background = '#3b82f6';
+                                button.textContent = '🔄 Reload Viewer';
+                                button.disabled = false;
+                            }, 3000);
+                        }
+                    }
+                } catch (error) {
+                    console.error('❌ Error reinitializing viewer:', error);
+                    container.innerHTML = `
+                        <div style="padding: 20px; text-align: center; color: #dc2626;">
+                            <p><strong>Error:</strong> Failed to reload viewer</p>
+                            <p style="font-size: 0.9em; margin-top: 10px;">${error.message}</p>
+                            <button onclick="location.reload()" style="padding: 8px 16px; margin-top: 10px;">Refresh Page</button>
+                        </div>
+                    `;
+                    
+                    // Reset button state on error
+                    const button = document.getElementById('reloadBtn');
+                    if (button) {
+                        button.style.background = '#dc2626';
+                        button.textContent = '❌ Reload Failed';
+                        setTimeout(() => {
+                            button.style.background = '#3b82f6';
+                            button.textContent = '🔄 Reload Viewer';
+                            button.disabled = false;
+                        }, 3000);
+                    }
                 }
-                initializeManualViewer();
-            }, 1000);
+            }, 1500);
         }
         
         function updateSession() {
+            console.log('🔄 updateSession function called!');
             const newSessionId = prompt('Enter new session ID:', '20250716-142858_653c60');
-            if (newSessionId && viewer && viewer.update) {
-                console.log(`🔄 Updating to session: ${newSessionId}`);
-                viewer.update({ sessionId: newSessionId });
+            if (newSessionId) {
+                // Try to update via the global viewer instance
+                const globalViewer = window.sphereViewerInstance;
+                if (globalViewer && globalViewer.update) {
+                    try {
+                        globalViewer.update({ sessionId: newSessionId });
+                        showNotification('✅ Session updated successfully!', 'success');
+                    } catch (error) {
+                        console.error('❌ Error updating session:', error);
+                        showNotification('❌ Failed to update session: ' + error.message, 'error');
+                    }
+                } else {
+                    showNotification('⚠️ Viewer not ready. Please try again.', 'error');
+                }
                 
                 // Update the displayed session ID
                 document.querySelector('.session-info').textContent = newSessionId;
             }
         }
         
+        // Animation control handlers
+        function setupAnimationControls() {
+            const rotationSpeedSlider = document.getElementById('rotationSpeed');
+            const speedValue = document.getElementById('speedValue');
+            const isRotatingCheckbox = document.getElementById('isRotating');
+            const animateClustersCheckbox = document.getElementById('animateClusters');
+            
+            // Visual control elements
+            const pointSizeSlider = document.getElementById('pointSize');
+            const sizeValue = document.getElementById('sizeValue');
+            const pointOpacitySlider = document.getElementById('pointOpacity');
+            const opacityValue = document.getElementById('opacityValue');
+            
+            // Update speed display
+            rotationSpeedSlider.addEventListener('input', (e) => {
+                speedValue.textContent = e.target.value;
+                updateAnimationSettings();
+            });
+            
+            // Update size display
+            pointSizeSlider.addEventListener('input', (e) => {
+                sizeValue.textContent = e.target.value;
+                updateAnimationSettings();
+            });
+            
+            // Update opacity display
+            pointOpacitySlider.addEventListener('input', (e) => {
+                opacityValue.textContent = e.target.value;
+                updateAnimationSettings();
+            });
+            
+            // Handle rotation toggle
+            isRotatingCheckbox.addEventListener('change', updateAnimationSettings);
+            
+            // Handle cluster animation toggle
+            animateClustersCheckbox.addEventListener('change', updateAnimationSettings);
+            
+            // Initialize display with current values
+            const initialRotating = isRotatingCheckbox.checked;
+            const initialSpeed = parseFloat(rotationSpeedSlider.value);
+            const initialClusters = animateClustersCheckbox.checked;
+            const initialPointSize = parseFloat(pointSizeSlider.value);
+            const initialPointOpacity = parseFloat(pointOpacitySlider.value);
+            updateDisplayedSettings(initialRotating, initialSpeed, initialClusters, initialPointSize, initialPointOpacity);
+        }
+        
+        function updateAnimationSettings() {
+            const isRotating = document.getElementById('isRotating').checked;
+            const rotationSpeed = parseFloat(document.getElementById('rotationSpeed').value);
+            const animateClusters = document.getElementById('animateClusters').checked;
+            const pointSize = parseFloat(document.getElementById('pointSize').value);
+            const pointOpacity = parseFloat(document.getElementById('pointOpacity').value);
+            
+            // Update the script tag attributes for future auto-init
+            const script = document.querySelector('script[src*="sphere-viewer.js"]');
+            if (script) {
+                script.setAttribute('data-is-rotating', isRotating.toString());
+                script.setAttribute('data-rotation-speed', rotationSpeed.toString());
+                script.setAttribute('data-animate-clusters', animateClusters.toString());
+                script.setAttribute('data-point-size', pointSize.toString());
+                script.setAttribute('data-point-opacity', pointOpacity.toString());
+            }
+            
+            // Update the displayed current settings and embed code immediately
+            updateDisplayedSettings(isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity);
+            
+            // Show a brief notification
+            showUpdateNotification();
+            
+            // Try to update the existing viewer first, fallback to reload if needed
+            const globalViewer = window.sphereViewerInstance;
+            if (globalViewer && globalViewer.updateAnimationSettings) {
+                try {
+                    globalViewer.updateAnimationSettings({
+                        isRotating: isRotating,
+                        rotationSpeed: rotationSpeed,
+                        animateClusters: animateClusters,
+                        pointSize: pointSize,
+                        pointOpacity: pointOpacity
+                    });
+                    return;
+                } catch (e) {
+                    // Fallback to reload on error
+                }
+            }
+            
+            // Fallback to full reload if direct update isn't available
+            setTimeout(() => {
+                reloadViewer();
+            }, 800);
+        }
+        
+        function updateDisplayedSettings(isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity) {
+            // Update current settings display
+            document.getElementById('currentRotation').textContent = isRotating ? 'Enabled' : 'Disabled';
+            document.getElementById('currentSpeed').textContent = rotationSpeed.toString();
+            document.getElementById('currentClusters').textContent = animateClusters ? 'Enabled' : 'Disabled';
+            document.getElementById('currentPointSize').textContent = pointSize.toString();
+            document.getElementById('currentPointOpacity').textContent = pointOpacity.toString();
+            
+            // Update embed code
+            document.getElementById('codeRotating').textContent = isRotating.toString();
+            document.getElementById('codeSpeed').textContent = rotationSpeed.toString();
+            document.getElementById('codeClusters').textContent = animateClusters.toString();
+            document.getElementById('codePointSize').textContent = pointSize.toString();
+            document.getElementById('codePointOpacity').textContent = pointOpacity.toString();
+        }
+        
+        function copyEmbedCode() {
+            copyCodeToClipboard();
+        }
+        
+        function copyCodeToClipboard() {
+            const embedCode = document.getElementById('embedCode');
+            const codeText = embedCode.querySelector('pre').textContent;
+            
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(codeText).then(() => {
+                    showCopyNotification('✅ Embed code copied to clipboard!');
+                }).catch(err => {
+                    console.error('Failed to copy: ', err);
+                    fallbackCopyTextToClipboard(codeText);
+                });
+            } else {
+                fallbackCopyTextToClipboard(codeText);
+            }
+        }
+        
+        function fallbackCopyTextToClipboard(text) {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            textArea.style.top = "-9999px";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            
+            try {
+                document.execCommand('copy');
+                showCopyNotification('✅ Embed code copied to clipboard!');
+            } catch (err) {
+                showCopyNotification('❌ Failed to copy. Please copy manually.');
+            }
+            
+            document.body.removeChild(textArea);
+        }
+        
+        function showCopyNotification(message) {
+            const notice = document.createElement('div');
+            notice.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #10b981; color: white; padding: 12px 16px; border-radius: 8px; font-size: 14px; z-index: 9999; box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
+            notice.textContent = message;
+            document.body.appendChild(notice);
+            
+            setTimeout(() => {
+                if (notice.parentNode) {
+                    notice.parentNode.removeChild(notice);
+                }
+            }, 3000);
+        }
+        
+        function showUpdateNotification() {
+            const container = document.getElementById('sphere-viewer-container');
+            const notice = document.createElement('div');
+            notice.style.cssText = 'position: absolute; top: 10px; right: 10px; background: #10b981; color: white; padding: 8px 12px; border-radius: 6px; font-size: 12px; z-index: 1000; box-shadow: 0 2px 8px rgba(0,0,0,0.2);';
+            notice.textContent = '⚡ Updating animation settings...';
+            container.style.position = 'relative';
+            container.appendChild(notice);
+            
+            setTimeout(() => {
+                if (notice.parentNode) {
+                    notice.parentNode.removeChild(notice);
+                }
+            }, 2000);
+        }
+
+        // Training movie state
+        let trainingMovieData = null;
+        let finalPositions = null;
+        let initialPositions = null;
+        let trainingMovieMode = false;
+        let trainingMovieInterval = null;
+        let currentTrainingFrame = 0;
+
+        // Fetch and display training movie data
+        async function fetchTrainingMovie() {
+            try {
+                console.log('🎬 Training movie button clicked!');
+                console.log('🎬 Current trainingMovieMode:', trainingMovieMode);
+                console.log('🎬 Button element:', document.getElementById('movieBtn'));
+                
+                // Add visual feedback immediately
+                const movieBtn = document.getElementById('movieBtn');
+                if (movieBtn) {
+                    movieBtn.style.background = '#f59e0b';
+                    movieBtn.textContent = '🔄 Processing...';
+                    console.log('🎬 Button updated to processing state');
+                } else {
+                    console.error('🎬 ERROR: movieBtn element not found!');
+                    alert('ERROR: Movie button not found!');
+                    return;
+                }
+                
+                if (trainingMovieMode) {
+                    console.log('⏹️ Stopping training movie...');
+                    stopTrainingMovie();
+                    return;
+                } else {
+                    console.log('🎬 Starting training movie load...');
+                }
+                
+                // Show user we're starting to load
+                showNotification('🎬 Loading training movie data...', 'info');
+                
+                try {
+                    // Load training metrics (loss progression over epochs) 
+                    console.log('📊 Making network request: GET /training_metrics');
+                    const metricsResponse = await fetch('https://sphere-api.featrix.com/compute/session/20250716-142858_653c60/training_metrics');
+                    console.log('📊 Training metrics response:', {
+                        status: metricsResponse.status,
+                        size: metricsResponse.headers.get('content-length'),
+                        contentType: metricsResponse.headers.get('content-type')
+                    });
+                    
+                    if (!metricsResponse.ok) {
+                        throw new Error(`Training metrics request failed: ${metricsResponse.status} ${metricsResponse.statusText}`);
+                    }
+                    
+                    const metricsData = await metricsResponse.json();
+                    trainingMovieData = metricsData.training_metrics.training_info.loss_history;
+                    console.log('📊 Loaded training metrics:', trainingMovieData.length, 'frames, first: epoch', trainingMovieData[0].epoch, ', last: epoch', trainingMovieData[trainingMovieData.length - 1].epoch);
+                    
+                    // Load final positions (where points end up after training)
+                    console.log('📍 Making network request: GET /projections');
+                    const projectionsResponse = await fetch('https://sphere-api.featrix.com/compute/session/20250716-142858_653c60/projections');
+                    console.log('📍 Projections response:', {
+                        status: projectionsResponse.status,
+                        size: projectionsResponse.headers.get('content-length'),
+                        contentType: projectionsResponse.headers.get('content-type')
+                    });
+                    
+                    if (!projectionsResponse.ok) {
+                        throw new Error(`Projections request failed: ${projectionsResponse.status} ${projectionsResponse.statusText}`);
+                    }
+                    
+                    const projectionsData = await projectionsResponse.json();
+                    finalPositions = projectionsData.projections.coords;
+                    console.log('📍 Loaded final positions:', finalPositions.length, 'points, first point:', finalPositions[0]);
+                    
+                    // Store cluster data globally for the sphere viewer
+                    window.clusterResults = projectionsData.projections.entire_cluster_results || createFallbackClusterResults(finalPositions.length);
+                    
+                    // Generate initial random positions (epoch 1) - where the animation starts
+                    initialPositions = generateInitialPositions(finalPositions);
+                    console.log('🌟 Generated', initialPositions.length, 'initial random positions (radius 3)');
+                    console.log('🔍 First initial position:', initialPositions[0]);
+                    console.log('🔍 First final position:', finalPositions[0]);
+                    
+                    console.log('🎬 NETWORK LOADING COMPLETE - All training movie data loaded in 2 requests');
+                    console.log('🎬 Animation will be purely client-side interpolation (no more network requests)');
+                    
+                    showNotification(`✅ Training movie ready! ${trainingMovieData.length} epochs, ${finalPositions.length} points`, 'success');
+                    
+                    // Show the simplified training controls
+                    console.log('🎬 Showing simplified training controls...');
+                    
+                    // Show the epoch slider section
+                    document.getElementById('epochSliderSection').style.display = 'block';
+                    
+                    // Set up the epoch slider with correct max value
+                    document.getElementById('epochSlider').max = trainingMovieData.length - 1;
+                    
+                    // Update button to show it's ready
+                    movieBtn.textContent = '✅ Training Movie Ready';
+                    movieBtn.style.background = '#10b981';
+                    
+                    // Set to first epoch
+                    updateEpoch(0);
+                    
+                } catch (networkError) {
+                    console.error('❌ Network/data error in training movie:', networkError);
+                    console.error('❌ Error stack:', networkError.stack);
+                    showNotification('❌ Failed to load training movie: ' + networkError.message, 'error');
+                    
+                    // Reset button on error
+                    movieBtn.textContent = '🎬 Training Movie';
+                    movieBtn.style.background = '#3b82f6';
+                }
+                
+            } catch (topLevelError) {
+                console.error('❌ TOP-LEVEL ERROR in fetchTrainingMovie:', topLevelError);
+                console.error('❌ Top-level error stack:', topLevelError.stack);
+                alert('CRITICAL ERROR: ' + topLevelError.message);
+                
+                // Reset button
+                const movieBtn = document.getElementById('movieBtn');
+                if (movieBtn) {
+                    movieBtn.textContent = '❌ Error - Try Again';
+                    movieBtn.style.background = '#ef4444';
+                }
+            }
+        }
+
+        // Generate random initial positions for start of training
+        function generateInitialPositions(finalPositions) {
+            const positions = [];
+            const radius = 3; // Larger radius for more visible difference
+            
+            for (let i = 0; i < finalPositions.length; i++) {
+                // Random position in sphere - make them VERY different from final positions
+                const theta = Math.random() * 2 * Math.PI;
+                const phi = Math.acos(2 * Math.random() - 1);
+                const r = radius * (0.5 + Math.random() * 0.5); // Between 1.5 and 3 radius
+                
+                positions.push([
+                    r * Math.sin(phi) * Math.cos(theta),
+                    r * Math.sin(phi) * Math.sin(theta),
+                    r * Math.cos(phi)
+                ]);
+            }
+            
+            console.log(`🌟 Generated ${positions.length} initial random positions (radius ${radius})`);
+            console.log(`🔍 First initial position: [${positions[0][0].toFixed(3)}, ${positions[0][1].toFixed(3)}, ${positions[0][2].toFixed(3)}]`);
+            console.log(`🔍 First final position: [${finalPositions[0][0].toFixed(3)}, ${finalPositions[0][1].toFixed(3)}, ${finalPositions[0][2].toFixed(3)}]`);
+            return positions;
+        }
+
+        // Show epoch controls and set up training movie slider
+        function showEpochControls() {
+            // Show the slider section
+            document.getElementById('epochSliderSection').style.display = 'block';
+            
+            // Update max values
+            document.getElementById('maxEpoch').textContent = trainingMovieData[trainingMovieData.length - 1].epoch;
+            document.getElementById('epochSlider').max = trainingMovieData.length - 1;
+            
+            // Change main button to hide controls
+            const movieBtn = document.getElementById('movieBtn');
+            movieBtn.textContent = '❌ Hide Training Controls';
+            movieBtn.onclick = hideEpochControls;
+            
+            // Set to epoch 1 initially
+            updateEpoch(0);
+            
+            showNotification('🎬 Use the slider to control training epochs!', 'success');
+        }
+        
+        // Hide epoch controls
+        function hideEpochControls() {
+            document.getElementById('epochSliderSection').style.display = 'none';
+            
+            const movieBtn = document.getElementById('movieBtn');
+            movieBtn.textContent = '🎬 Training Movie';
+            movieBtn.onclick = fetchTrainingMovie;
+            
+            showNotification('🎬 Training controls hidden', 'info');
+        }
+        
+        // Simplified Training Movie Functions
+        let autoPlayInterval = null;
+        let animationDurationSeconds = 10; // DEFAULT: 10 seconds total
+        
+        // Simple play function
+        function playTraining() {
+            if (autoPlayInterval) clearInterval(autoPlayInterval);
+            
+            const totalEpochs = parseInt(document.getElementById('epochSlider').max);
+            const totalMs = animationDurationSeconds * 1000;
+            const startTime = Date.now();
+            
+            console.log(`🚀 Starting FRAME-DROPPING animation: ${totalEpochs} epochs in ${animationDurationSeconds}s`);
+            console.log(`⚡ Will skip frames as needed to maintain exact timing`);
+            
+            // Use faster interval but calculate which epoch we should be at based on elapsed time
+            autoPlayInterval = setInterval(() => {
+                const elapsedMs = Date.now() - startTime;
+                const progress = Math.min(1.0, elapsedMs / totalMs);
+                const targetEpoch = Math.floor(progress * totalEpochs);
+                
+                // Jump directly to the target epoch (skip intermediate frames)
+                const currentEpoch = parseInt(document.getElementById('epochSlider').value);
+                
+                if (targetEpoch >= totalEpochs) {
+                    // Animation complete
+                    document.getElementById('epochSlider').value = totalEpochs;
+                    updateEpoch(totalEpochs);
+                    pauseTraining();
+                    
+                    const actualDuration = (Date.now() - startTime) / 1000;
+                    console.log(`🎬 Training completed! Target: ${animationDurationSeconds}s, Actual: ${actualDuration.toFixed(2)}s`);
+                    return;
+                }
+                
+                // Only update if we need to jump to a new epoch (frame dropping)
+                if (targetEpoch !== currentEpoch) {
+                    document.getElementById('epochSlider').value = targetEpoch;
+                    updateEpoch(targetEpoch);
+                    
+                    // Log frame drops for debugging
+                    const framesDrop = targetEpoch - currentEpoch - 1;
+                    if (framesDrop > 0) {
+                        console.log(`⚡ Dropped ${framesDrop} frames, jumped to epoch ${targetEpoch}`);
+                    }
+                }
+                
+            }, 16); // ~60fps interval, but we'll skip frames as needed
+            
+            document.getElementById('playBtn').textContent = '⏸️ Playing...';
+            document.getElementById('playBtn').style.background = '#f59e0b';
+        }
+
+
+        
+        // Modified pauseTraining to slow down rotation when animation completes
+        function pauseTraining() {
+            if (autoPlayInterval) {
+                clearInterval(autoPlayInterval);
+                autoPlayInterval = null;
+            }
+            
+            // SLOW DOWN rotation after animation completes
+            const globalViewer = window.sphereViewerInstance;
+            if (globalViewer && globalViewer.sphereRef && globalViewer.sphereRef.updateAnimationSettings) {
+                globalViewer.sphereRef.updateAnimationSettings({
+                    isRotating: true,
+                    rotationSpeed: 0.1  // SLOW rotation after training
+                });
+                console.log('🔄 Set SLOW rotation (0.1) after training complete');
+            }
+            
+            document.getElementById('playBtn').textContent = '▶️ Watch Training (10 seconds)';
+            document.getElementById('playBtn').style.background = '#10b981';
+        }
+
+        function resetTraining() {
+            pauseTraining();
+            document.getElementById('epochSlider').value = 0;
+            updateEpoch(0);
+        }
+
+        // Simple duration update
+        function updateAnimationDuration(seconds) {
+            // CHECK: Make sure training movie is loaded first
+            if (!trainingMovieData || !finalPositions || !initialPositions) {
+                console.warn('⚠️ Training movie not loaded yet! Click "🎬 Training Movie" button first.');
+                showNotification('⚠️ Load training movie first!', 'error');
+                return;
+            }
+            
+            animationDurationSeconds = parseInt(seconds);
+            
+            // Update button text
+            document.getElementById('playBtn').textContent = `▶️ Watch Training (${seconds} seconds)`;
+            
+            console.log(`⏱️ Speed changed to ${seconds} seconds for ${trainingMovieData.length} epochs`);
+            
+            // Show confirmation
+            showNotification(`⚡ Speed set to ${seconds} seconds`, 'success');
+            
+            // Restart if playing
+            if (autoPlayInterval) {
+                playTraining();
+            }
+        }
+        
+        // Simple epoch update
+        function updateEpoch(frameIndex) {
+            if (!trainingMovieData || !finalPositions || !initialPositions) return;
+            
+            const clampedIndex = Math.max(0, Math.min(frameIndex, trainingMovieData.length - 1));
+            const frame = trainingMovieData[clampedIndex];
+            const progress = clampedIndex / (trainingMovieData.length - 1);
+            
+            // Update progress text
+            document.getElementById('progressText').textContent = `Epoch ${frame.epoch} of ${trainingMovieData[trainingMovieData.length - 1].epoch}`;
+            
+            // Move points
+            movePointsToEpoch(progress);
+        }
+        
+        // Simple point movement with CLUSTER ANIMATION
+        function movePointsToEpoch(progress) {
+            const globalViewer = window.sphereViewerInstance;
+            if (!globalViewer || !globalViewer.sphereRef || !finalPositions || !initialPositions) return;
+            
+            const sphereData = globalViewer.sphereRef;
+            if (!sphereData.pointObjectsByRecordID) return;
+            
+            const easeProgress = 1 - Math.pow(1 - progress, 2);
+            
+            // CLUSTER ANIMATION - gradually reveal clusters as training progresses
+            const maxClusters = getMaxClusters();
+            const totalFrames = trainingMovieData.length;
+            const framesPerCluster = Math.max(1, Math.floor(totalFrames / maxClusters));
+            const currentFrame = Math.floor(progress * totalFrames);
+            const currentMaxClusters = Math.min(maxClusters, Math.floor(currentFrame / framesPerCluster) + 1);
+            
+            console.log(`🎨 Frame ${currentFrame}: Showing ${currentMaxClusters}/${maxClusters} clusters (${framesPerCluster} frames per cluster)`);
+            
+            let pointIndex = 0;
+            sphereData.pointObjectsByRecordID.forEach((mesh, recordId) => {
+                if (pointIndex < finalPositions.length && pointIndex < initialPositions.length) {
+                    const initial = initialPositions[pointIndex];
+                    const final = finalPositions[pointIndex];
+                    
+                    // Animate position
+                    const x = initial[0] + (final[0] - initial[0]) * easeProgress;
+                    const y = initial[1] + (final[1] - initial[1]) * easeProgress;
+                    const z = initial[2] + (final[2] - initial[2]) * easeProgress;
+                    
+                    mesh.position.set(x, y, z);
+                    
+                    // Animate cluster colors - only show clusters up to currentMaxClusters
+                    if (finalPositions[pointIndex] && finalPositions[pointIndex].cluster_pre !== undefined) {
+                        const finalCluster = finalPositions[pointIndex].cluster_pre;
+                        
+                        // Map final cluster to current visible clusters
+                        const animatedCluster = finalCluster < currentMaxClusters ? finalCluster : 0;
+                        const color = getClusterColor(animatedCluster);
+                        
+                        if (mesh.material && mesh.material.color) {
+                            mesh.material.color.setHex(color);
+                        }
+                    }
+                    
+                    pointIndex++;
+                }
+            });
+            
+            // Update cluster info in UI
+            document.getElementById('progressText').textContent = 
+                `Epoch ${Math.floor(progress * (trainingMovieData[trainingMovieData.length - 1].epoch))} • ${currentMaxClusters}/${maxClusters} clusters`;
+            
+            if (sphereData.renderer && sphereData.scene && sphereData.camera) {
+                sphereData.renderer.render(sphereData.scene, sphereData.camera);
+            }
+        }
+        
+        // Get maximum number of clusters from the data
+        function getMaxClusters() {
+            if (!finalPositions || finalPositions.length === 0) return 2;
+            
+            const clusters = new Set();
+            finalPositions.forEach(point => {
+                if (point.cluster_pre !== undefined) {
+                    clusters.add(point.cluster_pre);
+                }
+            });
+            
+            const maxClusters = Math.max(2, clusters.size);
+            console.log(`🎨 Detected ${maxClusters} clusters in final data:`, Array.from(clusters).sort());
+            return maxClusters;
+        }
+
+        // Get color for cluster - ENHANCED PALETTE for cluster animation
+        function getClusterColor(cluster) {
+            const colors = [
+                0x3b82f6, // Blue - first cluster (always visible)
+                0xef4444, // Red - second cluster  
+                0x10b981, // Green - third cluster
+                0xf59e0b, // Orange - fourth cluster
+                0x8b5cf6, // Purple - fifth cluster
+                0x06b6d4, // Cyan - sixth cluster
+                0xf97316, // Deep orange - seventh cluster
+                0x84cc16, // Lime - eighth cluster
+                0xec4899, // Pink - ninth cluster
+                0x6b7280, // Gray - tenth cluster
+                0x14b8a6, // Teal
+                0xfbbf24, // Yellow
+                0xa855f7, // Violet
+                0x059669, // Emerald
+                0xdc2626, // Dark red
+            ];
+            
+            // Cycle through colors if we have more clusters than colors
+            return colors[cluster % colors.length];
+        }
+
         // Debug information
         window.addEventListener('load', () => {
-            console.log('🚀 Demo page loaded');
-            console.log('📦 Dependencies:', {
-                React: !!window.React,
-                ReactDOM: !!window.ReactDOM,
-                SphereViewer: !!window.SphereViewer
-            });
+            // Set up animation controls
+            setupAnimationControls();
             
             // Fallback to manual initialization if auto-init doesn't work
             setTimeout(() => {
                 if (!viewer && window.SphereViewer) {
-                    console.log('🔧 Auto-init may not have worked, trying manual...');
                     initializeManualViewer();
                 }
+                
+                // Ensure movie button stays active after any initialization
+                ensureMovieButtonActive();
             }, 3000);
         });
+
+        // Initialize everything when the page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            // First, sync controls with script tag attributes
+            syncControlsWithScriptTag();
+            
+            // Then set up the control handlers
+            setupAnimationControls();
+        });
+
+        // Sync UI controls with script tag attributes
+        function syncControlsWithScriptTag() {
+            const script = document.querySelector('script[src*="sphere-viewer.js"]');
+            if (script) {
+                // Get values from script tag attributes
+                const isRotating = script.getAttribute('data-is-rotating') !== 'false';
+                const rotationSpeed = parseFloat(script.getAttribute('data-rotation-speed') || '0.1');
+                const animateClusters = script.getAttribute('data-animate-clusters') === 'true';
+                const pointSize = parseFloat(script.getAttribute('data-point-size') || '0.05');
+                const pointOpacity = parseFloat(script.getAttribute('data-point-opacity') || '0.5');
+                
+                // Update UI controls to match
+                document.getElementById('isRotating').checked = isRotating;
+                document.getElementById('rotationSpeed').value = rotationSpeed;
+                document.getElementById('speedValue').textContent = rotationSpeed;
+                document.getElementById('animateClusters').checked = animateClusters;
+                document.getElementById('pointSize').value = pointSize;
+                document.getElementById('sizeValue').textContent = pointSize;
+                document.getElementById('pointOpacity').value = pointOpacity;
+                document.getElementById('opacityValue').textContent = pointOpacity;
+                
+                // Update the displayed settings immediately
+                updateDisplayedSettings(isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity);
+            }
+        }
         
         // Log any errors
         window.addEventListener('error', (e) => {
             console.error('❌ Page error:', e.error);
+        });
+
+        // Test basic JavaScript functionality
+        console.log('✅ sphere-demo-example.html loaded successfully');
+        
+        // Test training movie button function (accessible from console)
+        window.testTrainingMovieButton = function() {
+            console.log('🧪 Testing training movie button...');
+            try {
+                fetchTrainingMovie();
+                return 'Test successful - check console for logs';
+            } catch (error) {
+                console.error('❌ Test failed:', error);
+                return 'Test failed: ' + error.message;
+            }
+        };
+        
+        // Ensure movie button stays active after sphere loading
+        function ensureMovieButtonActive() {
+            const movieBtn = document.getElementById('movieBtn');
+            if (movieBtn) {
+                // FORCE the button to be active - override ANY disabling
+                movieBtn.disabled = false;
+                movieBtn.style.pointerEvents = 'auto';
+                movieBtn.style.opacity = '1';
+                movieBtn.style.cursor = 'pointer';
+                movieBtn.style.display = 'block';
+                movieBtn.style.visibility = 'visible';
+                
+                // Remove any disabled class or attributes
+                movieBtn.removeAttribute('disabled');
+                movieBtn.classList.remove('disabled');
+                
+                // Force the background color to show it's active
+                if (!movieBtn.textContent.includes('✅') && !movieBtn.textContent.includes('🔄')) {
+                    movieBtn.style.background = '#f59e0b'; // Orange to show it's ready
+                }
+                
+                console.log('✅ Movie button FORCE re-activated:', {
+                    disabled: movieBtn.disabled,
+                    pointerEvents: movieBtn.style.pointerEvents,
+                    opacity: movieBtn.style.opacity,
+                    display: movieBtn.style.display,
+                    textContent: movieBtn.textContent
+                });
+            } else {
+                console.error('❌ Movie button not found for activation');
+            }
+        }
+
+        // Check if button exists when page loads
+        window.addEventListener('load', () => {
+            const movieBtn = document.getElementById('movieBtn');
+            if (movieBtn) {
+                console.log('✅ Training movie button found:', movieBtn.textContent);
+            } else {
+                console.error('❌ Training movie button NOT found!');
+            }
+            
+            // IMMEDIATE activation
+            ensureMovieButtonActive();
+            
+            // Ensure movie button is active after page load - multiple times
+            setTimeout(ensureMovieButtonActive, 500);
+            setTimeout(ensureMovieButtonActive, 1000);
+            setTimeout(ensureMovieButtonActive, 2000);
+            setTimeout(ensureMovieButtonActive, 5000);
+            
+            // Periodic check to keep movie button active (in case something keeps disabling it)
+            setInterval(() => {
+                const movieBtn = document.getElementById('movieBtn');
+                if (movieBtn && (movieBtn.disabled || movieBtn.style.pointerEvents === 'none' || movieBtn.style.opacity === '0' || movieBtn.style.opacity === '0.5')) {
+                    console.log('🔧 Movie button was disabled, FORCE re-activating...', {
+                        disabled: movieBtn.disabled,
+                        pointerEvents: movieBtn.style.pointerEvents,
+                        opacity: movieBtn.style.opacity,
+                        textContent: movieBtn.textContent
+                    });
+                    ensureMovieButtonActive();
+                }
+            }, 1000); // Check every second
+        });
+
+        // DEBUG: Console function to check and fix movie button
+        window.debugMovieButton = function() {
+            const movieBtn = document.getElementById('movieBtn');
+            if (!movieBtn) {
+                console.error('❌ Movie button not found!');
+                return false;
+            }
+            
+            console.log('🔍 Movie Button Debug Info:', {
+                exists: !!movieBtn,
+                disabled: movieBtn.disabled,
+                pointerEvents: movieBtn.style.pointerEvents,
+                opacity: movieBtn.style.opacity,
+                display: movieBtn.style.display,
+                visibility: movieBtn.style.visibility,
+                textContent: movieBtn.textContent,
+                background: movieBtn.style.background,
+                classList: Array.from(movieBtn.classList),
+                attributes: Array.from(movieBtn.attributes).map(a => `${a.name}="${a.value}"`),
+                computed: window.getComputedStyle(movieBtn).pointerEvents
+            });
+            
+            // Force fix it
+            console.log('🔧 FORCE-FIXING movie button...');
+            ensureMovieButtonActive();
+            
+            return true;
+        };
+
+        // DEBUG: Test function to manually trigger training movie load
+        window.testTrainingMovie = function() {
+            console.log('🧪 Testing training movie function...');
+            console.log('🧪 Variables check:', {
+                trainingMovieMode: typeof trainingMovieMode !== 'undefined' ? trainingMovieMode : 'UNDEFINED',
+                trainingMovieData: typeof trainingMovieData !== 'undefined' ? !!trainingMovieData : 'UNDEFINED',
+                finalPositions: typeof finalPositions !== 'undefined' ? !!finalPositions : 'UNDEFINED',
+                initialPositions: typeof initialPositions !== 'undefined' ? !!initialPositions : 'UNDEFINED',
+                fetchTrainingMovie: typeof fetchTrainingMovie
+            });
+            
+            try {
+                fetchTrainingMovie();
+                console.log('✅ fetchTrainingMovie() called successfully');
+            } catch (error) {
+                console.error('❌ Error calling fetchTrainingMovie():', error);
+            }
+        };
+
+        // DEBUG: Test 10-second animation immediately
+        window.testSpeed = function(seconds = 10) {
+            console.log(`🧪 Testing ${seconds}-second animation...`);
+            
+            // Force set the duration
+            updateAnimationDuration(seconds);
+            
+            // Start playing immediately
+            setTimeout(() => {
+                playTraining();
+                console.log(`⏱️ Started ${seconds}s animation - should complete in exactly ${seconds} seconds!`);
+                if (seconds <= 3) {
+                    console.log(`⚡ FRAME-DROPPING MODE: Will skip many frames for speed!`);
+                }
+            }, 100);
+        };
+        
+        // DEBUG: Test ultra-fast warp speed
+        window.testWarp = function() {
+            console.log(`🚀 Testing WARP SPEED - 461 epochs in 1 second!`);
+            testSpeed(1);
+        };
+        
+        // DEBUG: Test cluster animation specifically
+        window.testClusters = function(seconds = 10) {
+            console.log(`🎨 Testing CLUSTER ANIMATION - watch colors emerge over ${seconds} seconds!`);
+            console.log('🎨 You should see:');
+            console.log('  1️⃣ Start: All points blue (1 cluster)');
+            console.log('  2️⃣ Early: Blue + Red (2 clusters)');  
+            console.log('  3️⃣ Mid: Blue + Red + Green (3 clusters)');
+            console.log('  4️⃣ Final: All clusters with distinct colors');
+            testSpeed(seconds);
+        };
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (event) => {
+            // Space bar - play/pause
+            if (event.code === 'Space') {
+                event.preventDefault();
+                if (autoPlayInterval) {
+                    pauseTraining();
+                } else {
+                    playTraining();
+                }
+            }
+            
+            // Number keys for duration control
+            if (event.code === 'Digit1') {
+                event.preventDefault();
+                updateAnimationDuration(15); // Slow: 15 seconds
+            }
+            if (event.code === 'Digit2') {
+                event.preventDefault();
+                updateAnimationDuration(10); // Normal: 10 seconds
+            }
+            if (event.code === 'Digit3') {
+                event.preventDefault();
+                updateAnimationDuration(5); // Fast: 5 seconds
+            }
+            if (event.code === 'Digit4') {
+                event.preventDefault();
+                updateAnimationDuration(3); // Turbo: 3 seconds
+            }
+            if (event.code === 'Digit5') {
+                event.preventDefault();
+                updateAnimationDuration(1); // Warp: 1 second
+            }
+            
+            // Arrow keys for manual epoch control
+            if (event.code === 'ArrowLeft') {
+                event.preventDefault();
+                const currentEpoch = parseInt(document.getElementById('epochSlider').value);
+                const newEpoch = Math.max(0, currentEpoch - 10);
+                document.getElementById('epochSlider').value = newEpoch;
+                updateEpoch(newEpoch);
+            }
+            if (event.code === 'ArrowRight') {
+                event.preventDefault();
+                const currentEpoch = parseInt(document.getElementById('epochSlider').value);
+                const maxEpoch = parseInt(document.getElementById('epochSlider').max);
+                const newEpoch = Math.min(maxEpoch, currentEpoch + 10);
+                document.getElementById('epochSlider').value = newEpoch;
+                updateEpoch(newEpoch);
+            }
         });
     </script>
 </body>
