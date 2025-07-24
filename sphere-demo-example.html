@@ -386,8 +386,8 @@
                 <div id="sphere-viewer-container" class="sphere-container">
                     <div class="loading">
                         <div class="spinner"></div>
-                        <p>Initializing 3D Sphere Viewer...</p>
-                        <small>Loading session: 20250716-142858_653c60</small>
+                        <p id="loadingMessage">Initializing 3D Sphere Viewer...</p>
+                        <small id="loadingDetails">Loading session: 20250716-142858_653c60</small>
                     </div>
                 </div>
             </div>
@@ -674,6 +674,7 @@
             
             // IMMEDIATELY load training movie...
             console.log('🎬 IMMEDIATELY loading training movie...');
+            updateLoadingProgress('Loading training movie...');
             fetchTrainingMovie().then(() => {
                 console.log('✅ Training movie fetch completed successfully');
                 console.log('📊 Epoch projections loaded:', {
@@ -1666,10 +1667,34 @@
         // Legacy variables (deprecated - use epochProjections instead)
         // Note: These are already declared at top of script to prevent ReferenceError
 
+        // Loading progress function
+        function updateLoadingProgress(message, frameNum = null, totalFrames = null) {
+            const loadingMessageEl = document.getElementById('loadingMessage');
+            const loadingDetailsEl = document.getElementById('loadingDetails');
+            
+            if (loadingMessageEl) {
+                if (frameNum !== null && totalFrames !== null) {
+                    loadingMessageEl.textContent = `Loading frame ${frameNum} of ${totalFrames}`;
+                } else {
+                    loadingMessageEl.textContent = message;
+                }
+            }
+            
+            if (loadingDetailsEl && frameNum !== null && totalFrames !== null) {
+                const progress = Math.round((frameNum / totalFrames) * 100);
+                loadingDetailsEl.textContent = `Training movie data: ${progress}% complete`;
+            }
+            
+            console.log(`📊 Loading progress: ${message}${frameNum !== null ? ` (${frameNum}/${totalFrames})` : ''}`);
+        }
+
         // Fetch REAL training movie frames from server
         async function fetchTrainingMovie() {
             try {
                 console.log('🎬 Fetching REAL epoch projections from training movie API...');
+                
+                // Update loading progress 
+                updateLoadingProgress('Fetching training movie data...');
                 
                 const movieBtn = document.getElementById('movieBtn');
                 if (movieBtn) {
@@ -1692,8 +1717,12 @@
                 epochProjections = epochData.epoch_projections;
                 movieMetadata = epochData.movie_metadata;
                 
-                console.log(`✅ Loaded REAL epoch projections:`, Object.keys(epochProjections).length, 'epochs');
+                const totalFrames = Object.keys(epochProjections).length;
+                console.log(`✅ Loaded REAL epoch projections:`, totalFrames, 'epochs');
                 console.log(`📊 Movie metadata:`, movieMetadata);
+                
+                // Show frame loading progress
+                updateLoadingProgress('Processing training frames...', 1, totalFrames);
                 
                 // Also get training metrics for timeline
                 const metricsResponse = await fetch(`https://sphere-api.featrix.com/compute/session/20250716-142858_653c60/training_metrics`);
@@ -1702,7 +1731,18 @@
                     trainingMovieData = metricsData.training_metrics?.progress_info?.loss_history || [];
                 }
                 
-                showNotification(`✅ Real training movie loaded! ${Object.keys(epochProjections).length} epochs`, 'success');
+                // Simulate frame processing progress
+                const frameKeys = Object.keys(epochProjections);
+                for (let i = 0; i < frameKeys.length; i++) {
+                    // Small delay to show frame progress
+                    if (i % 5 === 0 || i === frameKeys.length - 1) { // Update every 5 frames or last frame
+                        updateLoadingProgress('Processing training frames...', i + 1, totalFrames);
+                        await new Promise(resolve => setTimeout(resolve, 50)); // Brief pause for visual feedback
+                    }
+                }
+                
+                updateLoadingProgress('Training movie ready!');
+                showNotification(`✅ Real training movie loaded! ${totalFrames} epochs`, 'success');
                 
                 // Show controls and update button
                 document.getElementById('epochSliderSection').style.display = 'block';
