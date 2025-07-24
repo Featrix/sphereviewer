@@ -1665,7 +1665,9 @@
                 document.getElementById('epochSliderSection').style.display = 'block';
                 const epochSlider = document.getElementById('epochSlider');
                 if (epochSlider) {
-                    epochSlider.max = Object.keys(epochProjections).length - 1;
+                    const availableEpochs = Object.keys(epochProjections).length;
+                    epochSlider.max = availableEpochs - 1;
+                    console.log(`🎚️ Set slider max to ${availableEpochs - 1} (${availableEpochs} total epochs)`);
                 }
                 
                 movieBtn.textContent = '✅ Real Training Movie Ready';
@@ -1817,18 +1819,21 @@
         // Update sphere with REAL epoch data
         function updateEpochFromReal(epochIndex) {
             console.log(`🎯 updateEpochFromReal(${epochIndex}) called`);
-            const epochKey = `epoch_${epochIndex + 1}`; // API uses epoch_1, epoch_2, etc.
+            
+            // Get the actual epoch keys (they don't start from 1 and have gaps)
+            const availableEpochKeys = Object.keys(epochProjections || {}).sort();
+            const epochKey = availableEpochKeys[epochIndex]; // Use the actual epoch key at this index
             
             console.log('📊 Epoch lookup:', {
                 epochIndex: epochIndex,
                 epochKey: epochKey,
-                hasEpochProjections: !!epochProjections,
-                availableKeys: Object.keys(epochProjections || {}).slice(0, 5),
+                totalAvailableEpochs: availableEpochKeys.length,
+                availableKeys: availableEpochKeys.slice(0, 5),
                 hasEpochData: !!epochProjections?.[epochKey]
             });
             
-            if (!epochProjections || !epochProjections[epochKey]) {
-                console.error(`❌ No epoch data for ${epochKey}. Available keys:`, Object.keys(epochProjections || {}));
+            if (!epochProjections || !epochKey || !epochProjections[epochKey]) {
+                console.error(`❌ No epoch data at index ${epochIndex}. Available keys:`, availableEpochKeys);
                 return;
             }
             
@@ -2030,7 +2035,20 @@
             // Force render
             if (sphereData.renderer && sphereData.scene && sphereData.camera) {
                 sphereData.renderer.render(sphereData.scene, sphereData.camera);
+                console.log(`🎨 Rendered scene with ${sphereData.scene.children.length} children`);
+            } else {
+                console.error('❌ Missing renderer, scene, or camera for rendering');
             }
+            
+            // Debug: Check what's actually in the scene
+            console.log('🔍 Scene children after update:', sphereData.scene.children.map(child => ({
+                type: child.type,
+                geometry: child.geometry?.type,
+                material: child.material?.type,
+                position: {x: child.position.x.toFixed(3), y: child.position.y.toFixed(3), z: child.position.z.toFixed(3)},
+                visible: child.visible,
+                scale: child.scale
+            })));
             
             // Restore animation state
             sphereData.isAnimating = wasAnimating;
@@ -2076,13 +2094,14 @@
                 updateEpochFromReal(0); // Create first frame
             }, 100);
             
-            console.log(`🚀 Starting REAL training animation: ${Object.keys(epochProjections).length} epochs`);
+            const totalEpochs = Object.keys(epochProjections).length;
+            console.log(`🚀 Starting REAL training animation: ${totalEpochs} epochs`);
             
             let currentFrame = 0;
             const frameInterval = 1000 / 30; // 33.33ms for 30fps
             
             autoPlayInterval = setInterval(() => {
-                if (currentFrame >= Object.keys(epochProjections).length) {
+                if (currentFrame >= totalEpochs) {
                     pauseTraining();
                     console.log('🎬 Real training animation completed!');
                     
@@ -2100,7 +2119,7 @@
                 // Update progress bar
                 const progressBar = document.getElementById('progressBar');
                 if (progressBar) {
-                    const progress = (currentFrame / Object.keys(epochProjections).length) * 100;
+                    const progress = (currentFrame / totalEpochs) * 100;
                     progressBar.style.width = `${progress}%`;
                 }
                 
@@ -2611,12 +2630,14 @@
             if (!epochProjections || Object.keys(epochProjections).length === 0) return;
             
             const totalEpochs = Object.keys(epochProjections).length;
+            const availableEpochKeys = Object.keys(epochProjections).sort();
+            const currentEpochKey = availableEpochKeys[epochIndex];
             const progress = ((epochIndex / (totalEpochs - 1)) * 100).toFixed(1);
             
             // Update progress text
             const progressText = document.getElementById('progressText');
             if (progressText) {
-                progressText.textContent = `Epoch ${epochIndex + 1}/${totalEpochs} (${progress}%)`;
+                progressText.textContent = `${currentEpochKey} (${epochIndex + 1}/${totalEpochs}) ${progress}%`;
             }
             
             console.log(`📊 Frame ${epochIndex + 1}/${totalEpochs} (${progress}%)`);
