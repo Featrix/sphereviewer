@@ -258,22 +258,47 @@
                     try {
                         console.log('🆕 Creating completely empty sphere...');
                         
-                        // Create empty sphere with no session data
-                        const viewer = new window.FeatrixSphereViewer({
-                            containerId: 'sphere-viewer-container'
-                            // NO sessionId - completely empty sphere
-                        });
+                        // Create empty sphere - try different initialization approaches
+                        let viewer, sphereRef;
                         
-                        if (viewer && viewer.sphereRef) {
+                        try {
+                            // Method 1: Try with minimal session config
+                            viewer = new window.FeatrixSphereViewer({
+                                containerId: 'sphere-viewer-container',
+                                sessionId: null,  // Explicitly null
+                                autoLoad: false
+                            });
+                            sphereRef = viewer.sphereRef;
+                        } catch (e) {
+                            console.log('🔄 Method 1 failed, trying method 2...');
+                            try {
+                                // Method 2: Try with session ID but no auto-load
+                                viewer = new window.FeatrixSphereViewer({
+                                    containerId: 'sphere-viewer-container',
+                                    sessionId: '20250716-142858_653c60',
+                                    autoLoad: false
+                                });
+                                sphereRef = viewer.sphereRef;
+                                
+                                // Immediately clear any auto-loaded data
+                                if (sphereRef && sphereRef.clearPoints) {
+                                    sphereRef.clearPoints();
+                                }
+                            } catch (e2) {
+                                console.error('❌ Both initialization methods failed:', e2);
+                            }
+                        }
+                        
+                        if (viewer && sphereRef) {
                             // Store the sphere reference properly
-                            window.sphereViewerInstance = { sphereRef: viewer.sphereRef };
+                            window.sphereViewerInstance = { sphereRef: sphereRef };
                             
                             console.log('✅ Empty sphere created, auto-starting training movie...');
                             updateLoadingProgress('Empty sphere ready, loading training movie...');
                             
-                            // Add watermark to WebGL scene
-                            function addWatermark() {
-                                const sphereRef = viewer.sphereRef;
+                            // Add epoch display and watermark to WebGL scene
+                            function addWatermarkAndEpochDisplay() {
+                                const sphereRef = window.sphereViewerInstance.sphereRef;
                                 if (sphereRef && sphereRef.scene) {
                                     try {
                                         console.log('🎨 Adding Featrix.ai watermark to WebGL scene...');
@@ -374,8 +399,91 @@
                                         
                                         console.log('✅ Featrix.ai watermark added to WebGL scene (clickable)');
                                         
+                                        // ADD EPOCH DISPLAY
+                                        console.log('🎯 Adding epoch display to WebGL scene...');
+                                        
+                                        // Create epoch display canvas
+                                        const epochCanvas = document.createElement('canvas');
+                                        const epochContext = epochCanvas.getContext('2d');
+                                        epochCanvas.width = 300;
+                                        epochCanvas.height = 100;
+                                        
+                                        // Create epoch display texture and material
+                                        const epochTexture = new THREE.CanvasTexture(epochCanvas);
+                                        epochTexture.needsUpdate = true;
+                                        
+                                        const epochMaterial = new THREE.MeshBasicMaterial({
+                                            map: epochTexture,
+                                            transparent: true,
+                                            opacity: 0.9,
+                                            side: THREE.DoubleSide,
+                                            depthTest: false,
+                                            depthWrite: false
+                                        });
+                                        
+                                        const epochGeometry = new THREE.PlaneGeometry(3, 1);
+                                        const epochMesh = new THREE.Mesh(epochGeometry, epochMaterial);
+                                        
+                                        // Position epoch display at top-left
+                                        epochMesh.position.set(-3, 3, 2);
+                                        epochMesh.userData.isEpochDisplay = true;
+                                        
+                                        // Add to scene
+                                        sphereRef.scene.add(epochMesh);
+                                        
+                                        // Store references for updating
+                                        window.epochDisplay = {
+                                            canvas: epochCanvas,
+                                            context: epochContext,
+                                            texture: epochTexture,
+                                            mesh: epochMesh
+                                        };
+                                        
+                                        // Function to update epoch display
+                                        window.updateEpochDisplay = function(epochNumber, isTrainingComplete = false) {
+                                            const ctx = window.epochDisplay.context;
+                                            const canvas = window.epochDisplay.canvas;
+                                            
+                                            // Clear canvas
+                                            ctx.clearRect(0, 0, canvas.width, canvas.height);
+                                            
+                                            // Set text style
+                                            ctx.font = 'bold 32px Arial, sans-serif';
+                                            ctx.textAlign = 'left';
+                                            ctx.textBaseline = 'middle';
+                                            
+                                            if (isTrainingComplete) {
+                                                // Show "TRAINED" message
+                                                ctx.fillStyle = 'rgba(16, 185, 129, 0.9)'; // Green background
+                                                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                                                ctx.fillStyle = 'white';
+                                                ctx.font = 'bold 40px Arial, sans-serif';
+                                                ctx.textAlign = 'center';
+                                                ctx.fillText('TRAINED', canvas.width / 2, canvas.height / 2);
+                                            } else {
+                                                // Show epoch number
+                                                ctx.fillStyle = 'rgba(59, 130, 246, 0.8)'; // Blue background
+                                                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                                                ctx.fillStyle = 'white';
+                                                ctx.fillText(`Epoch ${epochNumber}`, 10, canvas.height / 2);
+                                            }
+                                            
+                                            // Update texture
+                                            window.epochDisplay.texture.needsUpdate = true;
+                                            
+                                            // Force render
+                                            if (sphereRef.renderer && sphereRef.camera) {
+                                                sphereRef.renderer.render(sphereRef.scene, sphereRef.camera);
+                                            }
+                                        };
+                                        
+                                        // Initialize with Epoch 1
+                                        window.updateEpochDisplay(1);
+                                        
+                                        console.log('✅ Epoch display added to WebGL scene');
+                                        
                                     } catch (error) {
-                                        console.warn('⚠️ Could not add watermark:', error);
+                                        console.warn('⚠️ Could not add watermark and epoch display:', error);
                                     }
                                 }
                             }
@@ -386,22 +494,22 @@
                                     fetchTrainingMovie(true).then(() => {
                                         updateLoadingProgress('Training movie ready!');
                                         
-                                                                    // Add watermark once sphere is ready and THREE.js is available
-                            setTimeout(() => {
-                                if (window.THREE) {
-                                    addWatermark();
-                                } else {
-                                    console.warn('⚠️ THREE.js not available for watermark');
-                                    // Try again after a longer delay
-                                    setTimeout(() => {
-                                        if (window.THREE) {
-                                            addWatermark();
-                                        } else {
-                                            console.error('❌ THREE.js still not available - watermark skipped');
-                                        }
-                                    }, 1000);
-                                }
-                            }, 500);
+                                                                                                    // Add watermark and epoch display once sphere is ready and THREE.js is available
+                                setTimeout(() => {
+                                    if (window.THREE) {
+                                        addWatermarkAndEpochDisplay();
+                                    } else {
+                                        console.warn('⚠️ THREE.js not available for watermark and epoch display');
+                                        // Try again after a longer delay
+                                        setTimeout(() => {
+                                            if (window.THREE) {
+                                                addWatermarkAndEpochDisplay();
+                                            } else {
+                                                console.error('❌ THREE.js still not available - watermark and epoch display skipped');
+                                            }
+                                        }, 1000);
+                                    }
+                                }, 500);
                                         
                                         // Hide loading and start training movie
                                         setTimeout(() => {
@@ -2431,13 +2539,13 @@
             let currentEpochIndex = 0;
             let interpolationStep = 0;
             
-            // Use fixed 3-second duration for automatic training movie
-            const totalDurationMs = 3 * 1000;
+            // Use fixed 10-second duration for training - PERIOD
+            const totalDurationMs = 10 * 1000;
             const stepsPerEpoch = 10; // 10 interpolation steps between each epoch for smooth movement
             const totalSteps = totalEpochs * stepsPerEpoch;
             const stepInterval = totalDurationMs / totalSteps;
             
-            console.log(`⏱️ Automatic continuous animation: 3s per loop, ${stepsPerEpoch} steps per epoch, ${stepInterval.toFixed(1)}ms per step`);
+            console.log(`⏱️ Automatic training animation: 10s per loop, ${stepsPerEpoch} steps per epoch, ${stepInterval.toFixed(1)}ms per step`);
             
             autoPlayInterval = setInterval(() => {
                 // Calculate current and next epoch indices
@@ -2462,8 +2570,29 @@
                     interpolationStep = 0;
                     currentEpochIndex = (currentEpochIndex + 1) % totalEpochs;
                     
+                    // Update epoch display
+                    if (window.updateEpochDisplay) {
+                        const epochNumber = currentEpochIndex + 1;
+                        window.updateEpochDisplay(epochNumber);
+                    }
+                    
                     if (currentEpochIndex === 0) {
-                        console.log('🔄 Training loop completed - enabling rotation until next loop');
+                        console.log('🔄 Training completed - showing TRAINED message');
+                        
+                        // Show "TRAINED" message
+                        if (window.updateEpochDisplay) {
+                            window.updateEpochDisplay(0, true); // true = show "TRAINED"
+                        }
+                        
+                        // Wait 2 seconds showing "TRAINED", then restart
+                        setTimeout(() => {
+                            console.log('🔄 Restarting training loop...');
+                            
+                            // Reset to epoch 1 and continue
+                            if (window.updateEpochDisplay) {
+                                window.updateEpochDisplay(1);
+                            }
+                        }, 2000);
                         
                         // Enable slow rotation after training loop completes
                         const globalViewer = window.sphereViewerInstance;
@@ -2502,49 +2631,7 @@
             updateEpochFromReal(0);
         }
 
-        // Simple duration update
-        function updateAnimationDuration(seconds) {
-            try {
-                console.log('🎯 updateAnimationDuration called with:', seconds);
-                
-                // CHECK: Make sure training movie is loaded first
-                if (!epochProjections || Object.keys(epochProjections).length === 0) {
-                    console.warn('⚠️ Training movie not loaded yet! Click "🎬 Training Movie" button first.');
-                    showNotification('⚠️ Load training movie first!', 'error');
-                    return;
-                }
-                
-                animationDurationSeconds = parseInt(seconds);
-                
-                // Update button text
-                const playBtn = document.getElementById('playBtn');
-                if (playBtn) {
-                    playBtn.textContent = `▶️ Watch Training (${seconds} seconds)`;
-                }
-                
-                console.log(`⏱️ Speed changed to ${seconds} seconds for ${Object.keys(epochProjections).length} epochs`);
-                
-                // Show confirmation
-                showNotification(`⚡ Speed set to ${seconds} seconds`, 'success');
-                
-                // Restart if playing to apply new speed immediately
-                if (autoPlayInterval) {
-                    console.log('🔄 Restarting training with new speed...');
-                    clearInterval(autoPlayInterval);
-                    autoPlayInterval = null;
-                    // Restart after a brief moment
-                    setTimeout(() => {
-                        playTraining();
-                    }, 100);
-                }
-            } catch (error) {
-                console.error('❌ Error in updateAnimationDuration:', error);
-                showNotification('❌ Error updating animation speed', 'error');
-            }
-        }
-        
-        // Confirm function is properly defined
-        console.log('✅ updateAnimationDuration function defined successfully');
+        // Training runs at fixed 10-second duration - no speed controls needed
         
         // Legacy epoch update function - use updateEpochFromReal instead
         function updateEpoch(epochIndex) {
@@ -3093,97 +3180,9 @@
             }
         };
 
-        // DEBUG: Test 10-second animation immediately
-        window.testSpeed = function(seconds = 10) {
-            console.log(`🧪 Testing ${seconds}-second animation...`);
-            
-            // Force set the duration
-            updateAnimationDuration(seconds);
-            
-            // Start playing immediately
-            setTimeout(() => {
-                playTraining();
-                console.log(`⏱️ Started ${seconds}s animation - should complete in exactly ${seconds} seconds!`);
-                if (seconds <= 3) {
-                    console.log(`⚡ FRAME-DROPPING MODE: Will skip many frames for speed!`);
-                }
-            }, 100);
-        };
-        
-        // DEBUG: Test ultra-fast warp speed
-        window.testWarp = function() {
-            console.log(`🚀 Testing WARP SPEED - 461 epochs in 1 second!`);
-            testSpeed(1);
-        };
-        
-        // DEBUG: Test cluster animation specifically
-        window.testClusters = function(seconds = 10) {
-            console.log(`🎨 Testing CLUSTER ANIMATION - watch colors emerge over ${seconds} seconds!`);
-            console.log('🎨 You should see:');
-            console.log('  1️⃣ Start: All points blue (1 cluster)');
-            console.log('  2️⃣ Early: Blue + Red (2 clusters)');  
-            console.log('  3️⃣ Mid: Blue + Red + Green (3 clusters)');
-            console.log('  4️⃣ Final: All clusters with distinct colors');
-            testSpeed(seconds);
-        };
+        // Training runs automatically at 10 seconds - no speed testing needed
 
-        // Keyboard shortcuts
-        document.addEventListener('keydown', (event) => {
-            // Space bar - play/pause
-            if (event.code === 'Space') {
-                event.preventDefault();
-                if (autoPlayInterval) {
-                    pauseTraining();
-                } else {
-                    playTraining();
-                }
-            }
-            
-            // Number keys for duration control
-            if (event.code === 'Digit1') {
-                event.preventDefault();
-                updateAnimationDuration(15); // Slow: 15 seconds
-            }
-            if (event.code === 'Digit2') {
-                event.preventDefault();
-                updateAnimationDuration(3); // Normal: 3 seconds
-            }
-            if (event.code === 'Digit3') {
-                event.preventDefault();
-                updateAnimationDuration(5); // Fast: 5 seconds
-            }
-            if (event.code === 'Digit4') {
-                event.preventDefault();
-                updateAnimationDuration(3); // Turbo: 3 seconds
-            }
-            if (event.code === 'Digit5') {
-                event.preventDefault();
-                updateAnimationDuration(1); // Warp: 1 second
-            }
-            
-            // Arrow keys for manual epoch control
-            if (event.code === 'ArrowLeft') {
-                event.preventDefault();
-                const epochSlider = document.getElementById('epochSlider');
-                if (epochSlider) {
-                    const currentEpoch = parseInt(epochSlider.value);
-                    const newEpoch = Math.max(0, currentEpoch - 10);
-                    epochSlider.value = newEpoch;
-                    updateEpochFromReal(newEpoch);
-                }
-            }
-            if (event.code === 'ArrowRight') {
-                event.preventDefault();
-                const epochSlider = document.getElementById('epochSlider');
-                if (epochSlider) {
-                    const currentEpoch = parseInt(epochSlider.value);
-                    const maxEpoch = parseInt(epochSlider.max);
-                    const newEpoch = Math.min(maxEpoch, currentEpoch + 10);
-                    epochSlider.value = newEpoch;
-                    updateEpochFromReal(newEpoch);
-                }
-            }
-        });
+        // Training runs automatically - no keyboard controls needed
 
         // Update progress display for epoch frames
         function updateProgressDisplay(epochIndex) {
