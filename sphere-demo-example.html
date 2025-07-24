@@ -259,11 +259,107 @@
                 console.log('✅ Empty sphere ready, auto-starting training movie...');
                 updateLoadingProgress('Empty sphere ready, loading training movie...');
                 
+                // Add watermark to WebGL scene
+                function addWatermark() {
+                    if (sphereRef && sphereRef.scene) {
+                        try {
+                            console.log('🎨 Adding Featrix.ai watermark to WebGL scene...');
+                            
+                            // Create watermark text using canvas texture
+                            const canvas = document.createElement('canvas');
+                            const context = canvas.getContext('2d');
+                            canvas.width = 512;
+                            canvas.height = 128;
+                            
+                            // Clear canvas
+                            context.clearRect(0, 0, canvas.width, canvas.height);
+                            
+                            // Style the text
+                            context.font = 'bold 36px Arial, sans-serif';
+                            context.fillStyle = 'rgba(255, 255, 255, 0.3)'; // Semi-transparent white
+                            context.strokeStyle = 'rgba(0, 0, 0, 0.2)'; // Semi-transparent black outline
+                            context.lineWidth = 2;
+                            context.textAlign = 'center';
+                            context.textBaseline = 'middle';
+                            
+                            // Draw text with outline
+                            const text = 'Featrix.ai';
+                            context.strokeText(text, canvas.width / 2, canvas.height / 2);
+                            context.fillText(text, canvas.width / 2, canvas.height / 2);
+                            
+                            // Create texture from canvas
+                            const texture = new THREE.CanvasTexture(canvas);
+                            texture.needsUpdate = true;
+                            
+                            // Create material and geometry for watermark
+                            const material = new THREE.MeshBasicMaterial({
+                                map: texture,
+                                transparent: true,
+                                opacity: 0.6,
+                                side: THREE.DoubleSide
+                            });
+                            
+                            const geometry = new THREE.PlaneGeometry(3, 0.75); // Adjust size as needed
+                            const watermarkMesh = new THREE.Mesh(geometry, material);
+                            
+                            // Position watermark in bottom-right corner (camera-relative)
+                            watermarkMesh.position.set(3.5, -2.5, -1);
+                            watermarkMesh.userData.isWatermark = true;
+                            watermarkMesh.userData.isClickable = true;
+                            
+                            // Add to scene
+                            sphereRef.scene.add(watermarkMesh);
+                            
+                            // Add click detection and hover feedback for watermark
+                            if (sphereRef.renderer && sphereRef.renderer.domElement) {
+                                const canvas = sphereRef.renderer.domElement;
+                                
+                                // Function to check if mouse is over watermark area
+                                function isOverWatermark(event) {
+                                    const rect = canvas.getBoundingClientRect();
+                                    const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                                    const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+                                    return x > 0.4 && y < -0.6;
+                                }
+                                
+                                // Click handler
+                                canvas.addEventListener('click', (event) => {
+                                    if (isOverWatermark(event)) {
+                                        console.log('🔗 Watermark clicked - opening Featrix.ai');
+                                        window.open('https://featrix.ai', '_blank');
+                                    }
+                                });
+                                
+                                // Hover feedback
+                                canvas.addEventListener('mousemove', (event) => {
+                                    if (isOverWatermark(event)) {
+                                        canvas.style.cursor = 'pointer';
+                                        canvas.title = 'Click to visit Featrix.ai';
+                                    } else {
+                                        canvas.style.cursor = 'default';
+                                        canvas.title = '';
+                                    }
+                                });
+                            }
+                            
+                            console.log('✅ Featrix.ai watermark added to WebGL scene (clickable)');
+                            
+                        } catch (error) {
+                            console.warn('⚠️ Could not add watermark:', error);
+                        }
+                    }
+                }
+                
                 // Auto-fetch and play training movie - NO CLEARING NEEDED since auto-load=false
                 function startTrainingMovie() {
                     if (typeof fetchTrainingMovie === 'function' && typeof playTraining === 'function') {
                         fetchTrainingMovie(true).then(() => {
                             updateLoadingProgress('Training movie ready!');
+                            
+                            // Add watermark once sphere is ready
+                            setTimeout(() => {
+                                addWatermark();
+                            }, 100);
                             
                             // Hide loading and start training movie
                             setTimeout(() => {
@@ -1754,18 +1850,18 @@
                 sphereData.pointRecordsByID.clear();
             }
             
-            // Method 3: NUCLEAR - Remove ALL sphere geometry from scene
+            // Method 3: NUCLEAR - Remove ALL sphere geometry from scene (but preserve watermark)
             if (sphereData.scene && sphereData.scene.children) {
                 console.log(`🔧 Scanning ${sphereData.scene.children.length} scene children for sphere geometries...`);
                 const objectsToRemove = [];
                 sphereData.scene.children.forEach(child => {
-                    // Only remove sphere geometries (our points), not floor/grid
-                    if (child.geometry && child.geometry.type === 'SphereGeometry') {
+                    // Only remove sphere geometries (our points), not floor/grid/watermark
+                    if (child.geometry && child.geometry.type === 'SphereGeometry' && !child.userData.isWatermark) {
                         objectsToRemove.push(child);
                     }
                 });
                 
-                console.log(`🧹 NUCLEAR: Removing ${objectsToRemove.length} sphere geometries from scene...`);
+                console.log(`🧹 NUCLEAR: Removing ${objectsToRemove.length} sphere geometries from scene (preserving watermark)...`);
                 objectsToRemove.forEach(obj => {
                     sphereData.scene.remove(obj);
                     if (obj.geometry) obj.geometry.dispose();
