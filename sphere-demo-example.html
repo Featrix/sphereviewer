@@ -2230,6 +2230,15 @@
             // NO CLEARING - Keep existing points and smoothly interpolate them
             console.log('🎬 Starting smooth interpolation training animation...');
             
+            // Disable rotation during training animation
+            const globalViewer = window.sphereViewerInstance;
+            if (globalViewer && globalViewer.sphereRef && globalViewer.sphereRef.updateAnimationSettings) {
+                globalViewer.sphereRef.updateAnimationSettings({
+                    isRotating: false
+                });
+                console.log('🔄 Rotation disabled during training animation');
+            }
+            
             // If no points exist yet, create them from first epoch
             const sphereData = window.sphereViewerInstance.sphereRef;
             const existingPoints = Array.from(sphereData.pointObjectsByRecordID?.values() || []);
@@ -2304,7 +2313,24 @@
                     currentEpochIndex = (currentEpochIndex + 1) % totalEpochs;
                     
                     if (currentEpochIndex === 0) {
-                        console.log('🔄 Training loop completed - continuing forever automatically');
+                        console.log('🔄 Training loop completed - enabling rotation until next loop');
+                        
+                        // Enable slow rotation after training loop completes
+                        const globalViewer = window.sphereViewerInstance;
+                        if (globalViewer && globalViewer.sphereRef && globalViewer.sphereRef.updateAnimationSettings) {
+                            globalViewer.sphereRef.updateAnimationSettings({
+                                isRotating: true,
+                                rotationSpeed: 0.1  // Slow rotation between loops
+                            });
+                        }
+                    } else {
+                        // Disable rotation during active training animation
+                        const globalViewer = window.sphereViewerInstance;
+                        if (globalViewer && globalViewer.sphereRef && globalViewer.sphereRef.updateAnimationSettings) {
+                            globalViewer.sphereRef.updateAnimationSettings({
+                                isRotating: false
+                            });
+                        }
                     }
                 }
             }, stepInterval);
@@ -2315,29 +2341,7 @@
 
 
         
-        // Modified pauseTraining to slow down rotation when animation completes
-        function pauseTraining() {
-            if (autoPlayInterval) {
-                clearInterval(autoPlayInterval);
-                autoPlayInterval = null;
-            }
-            
-            // SLOW DOWN rotation after animation completes
-            const globalViewer = window.sphereViewerInstance;
-            if (globalViewer && globalViewer.sphereRef && globalViewer.sphereRef.updateAnimationSettings) {
-                globalViewer.sphereRef.updateAnimationSettings({
-                    isRotating: true,
-                    rotationSpeed: 0.1  // SLOW rotation after training
-                });
-                console.log('🔄 Set SLOW rotation (0.1) after training complete');
-            }
-            
-            const playBtn = document.getElementById('playBtn');
-            playBtn.textContent = '🔒 LOCKED - Click to Resume Training';
-            playBtn.style.background = '#ef4444'; // Red to show it's locked
-            playBtn.style.fontWeight = 'bold';
-            console.log('🔒 Training movie paused/locked - you can now look at the current frame');
-        }
+        // Training runs automatically - no pause function needed
 
         function resetTraining() {
             pauseTraining();
