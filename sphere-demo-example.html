@@ -248,53 +248,27 @@
             }
         }
         
-        // Manual initialization since no session ID = no automatic onSphereReady callback
-        window.addEventListener('DOMContentLoaded', () => {
-            console.log('🎯 DOM ready - manually creating EMPTY sphere for training movie only...');
+        // Use onSphereReady callback since we have session ID - but immediately clear final sphere data
+        window.onSphereReady = function(sphereRef) {
+            console.log('🎯 onSphereReady called - clearing final sphere data and loading training movie...');
             
-            // Wait for sphere-viewer.js to load
-            function initializeEmptySphere() {
-                if (window.FeatrixSphereViewer) {
-                    try {
-                        console.log('🆕 Creating completely empty sphere...');
-                        
-                        // Create empty sphere - try different initialization approaches
-                        let viewer, sphereRef;
-                        
-                        try {
-                            // Method 1: Try with minimal session config
-                            viewer = new window.FeatrixSphereViewer({
-                                containerId: 'sphere-viewer-container',
-                                sessionId: null,  // Explicitly null
-                                autoLoad: false
-                            });
-                            sphereRef = viewer.sphereRef;
-                        } catch (e) {
-                            console.log('🔄 Method 1 failed, trying method 2...');
-                            try {
-                                // Method 2: Try with session ID but no auto-load
-                                viewer = new window.FeatrixSphereViewer({
-                                    containerId: 'sphere-viewer-container',
-                                    sessionId: '20250716-142858_653c60',
-                                    autoLoad: false
-                                });
-                                sphereRef = viewer.sphereRef;
-                                
-                                // Immediately clear any auto-loaded data
-                                if (sphereRef && sphereRef.clearPoints) {
-                                    sphereRef.clearPoints();
-                                }
-                            } catch (e2) {
-                                console.error('❌ Both initialization methods failed:', e2);
-                            }
-                        }
-                        
-                        if (viewer && sphereRef) {
-                            // Store the sphere reference properly
-                            window.sphereViewerInstance = { sphereRef: sphereRef };
-                            
-                            console.log('✅ Empty sphere created, auto-starting training movie...');
-                            updateLoadingProgress('Empty sphere ready, loading training movie...');
+            if (sphereRef) {
+                // Store the sphere reference properly
+                window.sphereViewerInstance = { sphereRef: sphereRef };
+                
+                // IMMEDIATELY clear any auto-loaded final sphere data
+                console.log('🧹 Clearing auto-loaded final sphere data...');
+                try {
+                    if (typeof clearAllPointsFromScene === 'function') {
+                        clearAllPointsFromScene();
+                        console.log('✅ Final sphere data cleared');
+                    }
+                } catch (error) {
+                    console.warn('⚠️ Error clearing final sphere data:', error);
+                }
+                
+                console.log('✅ Sphere ready, auto-starting training movie...');
+                updateLoadingProgress('Sphere ready, loading training movie...');
                             
                             // Add epoch display and watermark to WebGL scene
                             function addWatermarkAndEpochDisplay() {
@@ -531,27 +505,19 @@
                             
                             // Start the training movie immediately
                             setTimeout(startTrainingMovie, 100);
-                            
-                        } else {
-                            console.error('❌ Failed to get sphereRef from viewer');
-                            updateLoadingProgress('Failed to initialize sphere');
                         }
                         
                     } catch (error) {
-                        console.error('❌ Failed to create empty sphere:', error);
-                        updateLoadingProgress('Failed to create sphere');
+                        console.error('❌ Error in onSphereReady:', error);
+                        updateLoadingProgress('Failed to initialize sphere');
                     }
                 } else {
-                    console.log('⏳ FeatrixSphereViewer not ready, retrying in 500ms...');
-                    setTimeout(initializeEmptySphere, 500);
+                    console.error('❌ onSphereReady called with null sphereRef');
+                    updateLoadingProgress('Failed to initialize sphere');
                 }
-            }
+            };
             
-            // Start initialization
-            setTimeout(initializeEmptySphere, 100);
-        });
-        
-        console.log('✅ Manual empty sphere initialization ready - will load ONLY training movie data');
+            console.log('✅ onSphereReady callback defined - will auto-load training movie when sphere loads');
     </script>
     
     <!-- sphere-viewer.js will be loaded at the bottom after DOM is ready -->
@@ -3206,8 +3172,9 @@
         }
     </script>
     
-    <!-- Load sphere-viewer.js with NO session ID - creates completely empty sphere for training movie only -->
+    <!-- Load sphere-viewer.js with session ID to trigger onSphereReady, then clear data -->
     <script src="sphere-viewer.js" 
+            data-session-id="20250716-142858_653c60"
             data-container-id="sphere-viewer-container"
             data-training-movie="true"
             data-is-rotating="false"
