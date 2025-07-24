@@ -578,14 +578,59 @@
         // DISABLED: Real-time monitor was too aggressive
         // Will use targeted interval-based approach instead
         
-        // GLOBAL onSphereReady callback - SINGLE EXECUTION ONLY
+        // SMART INITIALIZATION - Wait until EVERYTHING is ready before WebGL
         let sphereReadyExecuted = false;
-        window.onSphereReady = function(sphereRef) {
+        let initializationInProgress = false;
+        
+        function waitForEverythingReady() {
+            return new Promise((resolve) => {
+                function checkReadiness() {
+                    const checks = {
+                        domReady: document.readyState === 'complete',
+                        containerExists: !!document.getElementById('sphere-viewer-container'),
+                        containerSized: (() => {
+                            const container = document.getElementById('sphere-viewer-container');
+                            return container && container.clientWidth > 0 && container.clientHeight > 0;
+                        })(),
+                        dependenciesLoaded: !!(window.React && window.ReactDOM && window.FeatrixSphereViewer),
+                        noExistingCanvas: !document.querySelector('canvas')
+                    };
+                    
+                    console.log('🔍 Readiness check:', checks);
+                    
+                    if (Object.values(checks).every(check => check === true)) {
+                        console.log('✅ Everything is ready for WebGL context creation!');
+                        resolve();
+                    } else {
+                        console.log('⏳ Still waiting for readiness...');
+                        setTimeout(checkReadiness, 100);
+                    }
+                }
+                checkReadiness();
+            });
+        }
+        
+        window.onSphereReady = async function(sphereRef) {
             // PREVENT MULTIPLE EXECUTIONS - CRITICAL FOR PREVENTING GIANT X
-            if (sphereReadyExecuted) {
-                console.log('🚫 onSphereReady already executed, skipping to prevent multiple spheres...');
+            if (sphereReadyExecuted || initializationInProgress) {
+                console.log('🚫 Sphere initialization already handled, skipping...');
                 return;
             }
+            
+            initializationInProgress = true;
+            console.log('🎯 Starting SAFE sphere initialization...');
+            
+            // Wait for everything to be properly ready
+            await waitForEverythingReady();
+            
+            // Double-check no other WebGL context exists
+            const existingCanvas = document.querySelector('canvas');
+            if (existingCanvas) {
+                console.log('🚫 WebGL canvas already exists, aborting to prevent context conflict');
+                initializationInProgress = false;
+                return;
+            }
+            
             sphereReadyExecuted = true;
             
             console.log('🎯 SPHERE READY - IMMEDIATELY SETTING TO INITIAL POSITIONS!');
@@ -609,8 +654,13 @@
                 updateEpochFromReal(0);  // Set to first epoch
                 console.log('🚀 Starting animation from real initial positions...');
                 playTraining(); // Start animation immediately  
+                
+                // Mark initialization as complete
+                initializationInProgress = false;
+                console.log('✅ SAFE sphere initialization completed successfully!');
             }).catch(error => {
                 console.error('❌ Training movie failed to load:', error);
+                initializationInProgress = false; // Reset on error too
             });
         };
 
@@ -765,33 +815,10 @@
             });
         }
         
-        // Run emergency killer more frequently
-        setInterval(emergencyXKiller, 25);
-        
-        // TARGETED X KILLER - Only elements that are EXACTLY × or X and positioned
-        setInterval(() => {
-            const suspiciousElements = document.querySelectorAll('div, span');
-            suspiciousElements.forEach(el => {
-                const text = el.textContent?.trim() || '';
-                const style = el.style.cssText || '';
-                
-                // Only kill if it's EXACTLY × or X AND has positioning
-                if ((text === '×' || text === 'X') && 
-                    (style.includes('position:') || style.includes('z-index:')) &&
-                    !el.closest('.container') && !el.closest('.controls')) {
-                    console.log('🎯 TARGETED KILLER: Removing positioned X element:', {
-                        tag: el.tagName,
-                        text: text,
-                        style: style.substring(0, 100),
-                        id: el.id,
-                        className: el.className
-                    });
-                    el.remove();
-                }
-            });
-        }, 100);
+        // LIGHT BACKGROUND PROTECTION - Only run occasionally since we prevent the problem at source
+        setInterval(emergencyXKiller, 1000); // Much less frequent now
 
-        console.log('🛡️ NUCLEAR OVERLAY KILLER ACTIVATED - Giant X will be DESTROYED!');
+        console.log('🛡️ SMART WEBGL PROTECTION - Preventing context conflicts at source!');
         
         // Manual trigger for emergency overlay killing
         window.killOverlaysNow = function() {
@@ -826,8 +853,8 @@
         
         // Force browser to use fresh copy (cache busting)
         console.log('🔄 Script loaded at:', new Date().toISOString());
-        console.log('💡 Run killOverlaysNow() or findSuspiciousElements() in console if giant X appears');
-        console.log('💡 Press Ctrl+K to manually kill overlays');
+        console.log('💡 Smart initialization should prevent WebGL context conflicts');
+        console.log('💡 If issues occur, run killOverlaysNow() or press Ctrl+K');
         
         // Keyboard shortcut to kill overlays
         document.addEventListener('keydown', function(event) {
@@ -841,44 +868,56 @@
         // DISABLED: createElement override was too aggressive and broke the sphere viewer
         // console.log('🚫 createElement override disabled to allow sphere viewer to work');
         
-        // GENTLE CANVAS PROTECTION - Only remove obvious X overlays near canvas
+        // MINIMAL CANVAS PROTECTION - Only run occasionally since we prevent at source
         setInterval(() => {
             const canvas = document.querySelector('canvas');
-            if (canvas) {
-                const parent = canvas.parentElement;
-                if (parent) {
-                    const siblings = Array.from(parent.children);
-                    siblings.forEach(sibling => {
-                        if (sibling !== canvas) {
-                            const text = sibling.textContent?.trim() || '';
-                            const style = sibling.style.cssText || '';
-                            
-                            // Only remove if it's EXACTLY × or X with positioning
-                            if ((text === '×' || text === 'X') && 
-                                (style.includes('position: absolute') || style.includes('position: fixed')) &&
-                                style.includes('z-index')) {
-                                console.log('🔫 CANVAS PROTECTION: Removing X overlay near canvas:', {
-                                    tag: sibling.tagName,
-                                    text: text,
-                                    style: style.substring(0, 50)
-                                });
-                                sibling.remove();
-                            }
+            if (canvas && canvas.parentElement) {
+                const siblings = Array.from(canvas.parentElement.children);
+                siblings.forEach(sibling => {
+                    if (sibling !== canvas) {
+                        const text = sibling.textContent?.trim() || '';
+                        // Only remove EXACT × or X with high z-index
+                        if ((text === '×' || text === 'X') && 
+                            sibling.style.zIndex && parseInt(sibling.style.zIndex) > 1000) {
+                            console.log('🔫 Removing high z-index X near canvas');
+                            sibling.remove();
                         }
-                    });
-                }
+                    }
+                });
             }
-        }, 200);
+        }, 2000); // Much less frequent
+        
+        // SMART SCRIPT LOADING - Only load sphere-viewer.js when DOM is completely ready
+        function loadSphereViewerWhenReady() {
+            if (document.readyState === 'complete' && 
+                document.getElementById('sphere-viewer-container') &&
+                document.getElementById('sphere-viewer-container').clientWidth > 0) {
+                
+                console.log('🚀 DOM ready, loading sphere-viewer.js safely...');
+                
+                const script = document.createElement('script');
+                script.src = 'sphere-viewer.js';
+                script.setAttribute('data-session-id', '20250716-142858_653c60');
+                script.setAttribute('data-container-id', 'sphere-viewer-container');
+                script.setAttribute('data-is-rotating', 'true');
+                script.setAttribute('data-rotation-speed', '0.25');
+                script.setAttribute('data-animate-clusters', 'true');
+                script.setAttribute('data-point-size', '0.05');
+                script.setAttribute('data-point-opacity', '0.5');
+                script.setAttribute('data-training-movie', 'true');
+                
+                document.head.appendChild(script);
+                console.log('✅ sphere-viewer.js loaded safely after DOM ready');
+                
+            } else {
+                console.log('⏳ Waiting for DOM to be completely ready...');
+                setTimeout(loadSphereViewerWhenReady, 100);
+            }
+        }
+        
+        // Start the safe loading process
+        loadSphereViewerWhenReady();
     </script>
-    <script src="sphere-viewer.js" 
-            data-session-id="20250716-142858_653c60"
-            data-container-id="sphere-viewer-container"
-            data-is-rotating="true"
-            data-rotation-speed="0.25"
-            data-animate-clusters="true"
-            data-point-size="0.05"
-            data-point-opacity="0.5"
-            data-training-movie="true"></script>
 
     <!-- Additional controls and debugging -->
     <script>
