@@ -341,6 +341,12 @@
             // Update loading immediately
             updateLoadingProgress('Sphere ready, preparing training movie...');
             
+            // KILL ANY X OVERLAYS IMMEDIATELY
+            console.log('🔥 NUCLEAR X KILLER - Destroying any overlays...');
+            if (typeof killAllOverlays === 'function') {
+                killAllOverlays();
+            }
+            
             // Clear any existing points - show nothing until training ready
             console.log('🧹 CLEARING ALL POINTS - Show nothing until training movie ready');
             if (sphereRef.clearPoints) {
@@ -350,10 +356,12 @@
             
             updateLoadingProgress('Clearing sphere data...');
             
-            // Auto-fetch and play training movie (will be defined later in main script)
+            // Auto-fetch and play training movie
             console.log('🎯 AUTO-STARTING TRAINING MOVIE...');
-            setTimeout(() => {
-                if (typeof fetchTrainingMovie === 'function') {
+            
+            // Wait for functions to be defined, then start
+            function startTrainingMovie() {
+                if (typeof fetchTrainingMovie === 'function' && typeof playTraining === 'function') {
                     fetchTrainingMovie(true).then(() => {
                         updateLoadingProgress('Training movie ready!');
                         
@@ -363,29 +371,26 @@
                             if (loadingDiv) {
                                 loadingDiv.style.display = 'none';
                             }
-                            if (typeof playTraining === 'function') {
-                                playTraining();
-                            }
+                            playTraining();
                         }, 500);
                     }).catch(error => {
                         console.error('❌ Auto-training movie failed:', error);
                         updateLoadingProgress('Failed to load training movie');
                     });
                 } else {
-                    console.log('⏳ fetchTrainingMovie not yet defined, will retry...');
-                    // Retry in 1 second
-                    setTimeout(() => window.onSphereReady(sphereRef), 1000);
+                    console.log('⏳ Training functions not ready, retrying in 500ms...');
+                    setTimeout(startTrainingMovie, 500);
                 }
-            }, 100);
+            }
+            
+            // Start the process
+            setTimeout(startTrainingMovie, 100);
         };
         
         console.log('✅ onSphereReady defined and ready for sphere-viewer.js capture');
     </script>
     
-    <!-- Load sphere-viewer.js - it will auto-initialize with onSphereReady -->
-    <script src="sphere-viewer.js" 
-            data-container-id="sphere-viewer-container"
-            data-session-id="20250716-142858_653c60"></script>
+    <!-- sphere-viewer.js will be loaded at the bottom after DOM is ready -->
 
     <div class="container">
         <div class="header">
@@ -3129,5 +3134,10 @@
             }
         }
     </script>
+    
+    <!-- Load sphere-viewer.js AFTER DOM is ready so container exists -->
+    <script src="sphere-viewer.js" 
+            data-container-id="sphere-viewer-container"
+            data-session-id="20250716-142858_653c60"></script>
 </body>
 </html> 
