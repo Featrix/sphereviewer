@@ -2218,11 +2218,7 @@
                 return;
             }
             
-            // Check if already playing - if so, pause instead
-            if (autoPlayInterval) {
-                pauseTraining();
-                return;
-            }
+            // Auto-play continuously - no pause functionality
             
             // ENSURE LOADING SCREEN IS HIDDEN
             const loadingDiv = document.querySelector('.loading');
@@ -2276,13 +2272,13 @@
             let currentEpochIndex = 0;
             let interpolationStep = 0;
             
-            // Use animation duration and create smooth steps between epochs
-            const totalDurationMs = (animationDurationSeconds || 3) * 1000;
+            // Use fixed 3-second duration for automatic training movie
+            const totalDurationMs = 3 * 1000;
             const stepsPerEpoch = 10; // 10 interpolation steps between each epoch for smooth movement
             const totalSteps = totalEpochs * stepsPerEpoch;
             const stepInterval = totalDurationMs / totalSteps;
             
-            console.log(`⏱️ Smooth animation: ${animationDurationSeconds || 3}s total, ${stepsPerEpoch} steps per epoch, ${stepInterval.toFixed(1)}ms per step`);
+            console.log(`⏱️ Automatic continuous animation: 3s per loop, ${stepsPerEpoch} steps per epoch, ${stepInterval.toFixed(1)}ms per step`);
             
             autoPlayInterval = setInterval(() => {
                 // Calculate current and next epoch indices
@@ -2299,13 +2295,6 @@
                     interpolatePointsBetweenEpochs(fromEpochIndex, toEpochIndex, progress);
                 }
                 
-                // Update progress bar (based on overall progress through all epochs)
-                const progressBar = document.getElementById('progressBar');
-                if (progressBar) {
-                    const overallProgress = ((currentEpochIndex * stepsPerEpoch + interpolationStep) / totalSteps) * 100;
-                    progressBar.style.width = `${overallProgress}%`;
-                }
-                
                 // Move to next step
                 interpolationStep++;
                 
@@ -2315,15 +2304,13 @@
                     currentEpochIndex = (currentEpochIndex + 1) % totalEpochs;
                     
                     if (currentEpochIndex === 0) {
-                        console.log('🔄 Training animation completed one loop - continuing to next loop');
+                        console.log('🔄 Training loop completed - continuing forever automatically');
                     }
                 }
             }, stepInterval);
             
-            const playBtn = document.getElementById('playBtn');
-            playBtn.textContent = '⏸️ PLAYING - Click to Lock Training';
-            playBtn.style.background = '#10b981'; // Green when playing
-            playBtn.style.fontWeight = 'bold';
+            // Training movie playing automatically - no user controls needed
+            console.log('🎬 Training movie playing automatically in continuous loop');
         }
 
 
