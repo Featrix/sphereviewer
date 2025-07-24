@@ -287,11 +287,11 @@
                                         // Clear canvas
                                         context.clearRect(0, 0, canvas.width, canvas.height);
                                         
-                                        // Style the text
-                                        context.font = 'bold 36px Arial, sans-serif';
-                                        context.fillStyle = 'rgba(255, 255, 255, 0.3)'; // Semi-transparent white
-                                        context.strokeStyle = 'rgba(0, 0, 0, 0.2)'; // Semi-transparent black outline
-                                        context.lineWidth = 2;
+                                        // Style the text - make it MORE VISIBLE for testing
+                                        context.font = 'bold 48px Arial, sans-serif';
+                                        context.fillStyle = 'rgba(255, 255, 255, 0.8)'; // More opaque white
+                                        context.strokeStyle = 'rgba(0, 0, 0, 0.5)'; // More opaque black outline
+                                        context.lineWidth = 3;
                                         context.textAlign = 'center';
                                         context.textBaseline = 'middle';
                                         
@@ -299,6 +299,8 @@
                                         const text = 'Featrix.ai';
                                         context.strokeText(text, canvas.width / 2, canvas.height / 2);
                                         context.fillText(text, canvas.width / 2, canvas.height / 2);
+                                        
+                                        console.log('🎨 Canvas watermark created:', canvas.width + 'x' + canvas.height);
                                         
                                         // Create texture from canvas
                                         const texture = new THREE.CanvasTexture(canvas);
@@ -308,20 +310,29 @@
                                         const material = new THREE.MeshBasicMaterial({
                                             map: texture,
                                             transparent: true,
-                                            opacity: 0.6,
-                                            side: THREE.DoubleSide
+                                            opacity: 0.9,  // More opaque for testing
+                                            side: THREE.DoubleSide,
+                                            depthTest: false,  // Always render on top
+                                            depthWrite: false
                                         });
                                         
-                                        const geometry = new THREE.PlaneGeometry(3, 0.75); // Adjust size as needed
+                                        const geometry = new THREE.PlaneGeometry(4, 1); // Bigger size for testing
                                         const watermarkMesh = new THREE.Mesh(geometry, material);
                                         
-                                        // Position watermark in bottom-right corner (camera-relative)
-                                        watermarkMesh.position.set(3.5, -2.5, -1);
+                                        // Position watermark more centrally for testing (bottom-center)
+                                        watermarkMesh.position.set(0, -3, 2);  // Closer to camera, centered
                                         watermarkMesh.userData.isWatermark = true;
                                         watermarkMesh.userData.isClickable = true;
                                         
+                                        console.log('🎨 Watermark mesh created:', {
+                                            position: watermarkMesh.position,
+                                            geometry: geometry.parameters,
+                                            material: material.type
+                                        });
+                                        
                                         // Add to scene
                                         sphereRef.scene.add(watermarkMesh);
+                                        console.log('✅ Watermark added to scene. Scene children count:', sphereRef.scene.children.length);
                                         
                                         // Add click detection and hover feedback for watermark
                                         if (sphereRef.renderer && sphereRef.renderer.domElement) {
@@ -355,6 +366,12 @@
                                             });
                                         }
                                         
+                                        // Force a render to make sure watermark appears
+                                        if (sphereRef.renderer && sphereRef.camera) {
+                                            sphereRef.renderer.render(sphereRef.scene, sphereRef.camera);
+                                            console.log('🎨 Forced render after watermark addition');
+                                        }
+                                        
                                         console.log('✅ Featrix.ai watermark added to WebGL scene (clickable)');
                                         
                                     } catch (error) {
@@ -369,10 +386,22 @@
                                     fetchTrainingMovie(true).then(() => {
                                         updateLoadingProgress('Training movie ready!');
                                         
-                                        // Add watermark once sphere is ready
-                                        setTimeout(() => {
+                                                                    // Add watermark once sphere is ready and THREE.js is available
+                            setTimeout(() => {
+                                if (window.THREE) {
+                                    addWatermark();
+                                } else {
+                                    console.warn('⚠️ THREE.js not available for watermark');
+                                    // Try again after a longer delay
+                                    setTimeout(() => {
+                                        if (window.THREE) {
                                             addWatermark();
-                                        }, 100);
+                                        } else {
+                                            console.error('❌ THREE.js still not available - watermark skipped');
+                                        }
+                                    }, 1000);
+                                }
+                            }, 500);
                                         
                                         // Hide loading and start training movie
                                         setTimeout(() => {
@@ -2818,6 +2847,71 @@
                 return 'Manual rotation stopped';
             }
             return 'No manual rotation was running';
+        };
+        
+        // DEBUG: Check if watermark exists and add it if missing
+        window.debugWatermark = function() {
+            const sphereRef = window.sphereViewerInstance?.sphereRef;
+            if (!sphereRef || !sphereRef.scene) {
+                console.error('❌ No sphere scene available');
+                return 'No sphere scene';
+            }
+            
+            console.log('🔍 Scene children:', sphereRef.scene.children.length);
+            console.log('🔍 Scene children types:', sphereRef.scene.children.map(c => c.type || c.constructor.name));
+            
+            // Look for existing watermark
+            const existingWatermark = sphereRef.scene.children.find(child => child.userData.isWatermark);
+            if (existingWatermark) {
+                console.log('✅ Watermark found:', {
+                    position: existingWatermark.position,
+                    visible: existingWatermark.visible,
+                    material: existingWatermark.material.type
+                });
+                return 'Watermark exists';
+            } else {
+                console.log('❌ No watermark found - attempting to add one...');
+                
+                if (window.THREE) {
+                    try {
+                        // Create simple test watermark
+                        const canvas = document.createElement('canvas');
+                        const context = canvas.getContext('2d');
+                        canvas.width = 256;
+                        canvas.height = 64;
+                        
+                        context.fillStyle = 'white';
+                        context.fillRect(0, 0, canvas.width, canvas.height);
+                        context.fillStyle = 'black';
+                        context.font = 'bold 24px Arial';
+                        context.textAlign = 'center';
+                        context.fillText('Featrix.ai', canvas.width / 2, canvas.height / 2 + 8);
+                        
+                        const texture = new THREE.CanvasTexture(canvas);
+                        const material = new THREE.MeshBasicMaterial({ map: texture });
+                        const geometry = new THREE.PlaneGeometry(2, 0.5);
+                        const mesh = new THREE.Mesh(geometry, material);
+                        
+                        mesh.position.set(0, -2, 1);
+                        mesh.userData.isWatermark = true;
+                        
+                        sphereRef.scene.add(mesh);
+                        console.log('✅ Test watermark added');
+                        
+                        if (sphereRef.renderer && sphereRef.camera) {
+                            sphereRef.renderer.render(sphereRef.scene, sphereRef.camera);
+                        }
+                        
+                        return 'Test watermark added';
+                    } catch (error) {
+                        console.error('❌ Failed to add test watermark:', error);
+                        return 'Failed to add watermark: ' + error.message;
+                    }
+                } else {
+                    console.error('❌ THREE.js not available');
+                    return 'THREE.js not available';
+                }
+            }
         };
         
         // Ensure movie button stays active after sphere loading
