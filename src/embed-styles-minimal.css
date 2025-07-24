@@ -1,0 +1,94 @@
+/* Minimal embedded sphere viewer styles - NO TAILWIND */
+
+.sphere-viewer-container {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  line-height: 1.6;
+  color: #333;
+  background: #fff;
+  width: 100%;
+  height: 100%;
+  min-height: 400px;
+  box-sizing: border-box;
+  position: relative;
+}
+
+/* Reset any inherited styles */
+.sphere-viewer-container * {
+  box-sizing: border-box;
+}
+
+/* Canvas container for Three.js */
+.sphere-viewer-container canvas {
+  display: block;
+  outline: none;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Loading states */
+.sphere-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+  color: #666;
+}
+
+.sphere-spinner {
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #3498db;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  margin-bottom: 20px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Error states */
+.sphere-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+  color: #d32f2f;
+  padding: 20px;
+}
+
+/* Ensure no conflicts with parent page */
+.sphere-viewer-container h1,
+.sphere-viewer-container h2,
+.sphere-viewer-container h3,
+.sphere-viewer-container h4,
+.sphere-viewer-container h5,
+.sphere-viewer-container h6,
+.sphere-viewer-container p,
+.sphere-viewer-container div,
+.sphere-viewer-container span,
+.sphere-viewer-container button,
+.sphere-viewer-container input,
+.sphere-viewer-container select,
+.sphere-viewer-container textarea {
+  font-family: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Make sure the sphere viewer takes full container space */
+.sphere-embedded-container {
+  width: 100%;
+  height: 100%;
+  min-height: 400px;
+  display: block;
+} 

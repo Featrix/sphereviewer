@@ -43,6 +43,41 @@
             display: none !important;
         }
         
+        /* KILL FEEDBACK/CONTACT MESSAGES */
+        .feedback-section,
+        .contact-section,
+        [class*="feedback"],
+        [class*="contact"] {
+            display: none !important;
+            visibility: hidden !important;
+        }
+
+        /* KILL WEBGL ERROR OVERLAYS AND ANY GIANT X - AGGRESSIVE */
+        canvas + div,
+        canvas ~ div,
+        [class*="webgl"],
+        [class*="error"],
+        div[style*="z-index: 999"],
+        div[style*="z-index: 1000"],
+        div[style*="position: absolute"][style*="top"],
+        div[style*="position: fixed"][style*="top"] {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+        }
+
+        /* FORCE HIDE ANYTHING THAT LOOKS LIKE AN ERROR OVERLAY */
+        div[style*="background: black"],
+        div[style*="background:#000"],
+        div[style*="background-color:black"],
+        div[style*="font-size:24px"],
+        div[style*="font-size: 24px"],
+        div[style*="color: white"][style*="background"],
+        *[style*="pointer-events: none"][style*="position: absolute"] {
+            display: none !important;
+            visibility: hidden !important;
+        }
+        
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             margin: 0;
@@ -52,12 +87,45 @@
         }
         
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
             background: white;
             border-radius: 12px;
             box-shadow: 0 8px 32px rgba(0,0,0,0.1);
             overflow: hidden;
+        }
+
+        .main-content {
+            display: flex;
+            gap: 20px;
+            padding: 20px;
+            align-items: flex-start;
+        }
+
+        .sphere-column {
+            flex: 0 0 600px; /* Fixed width for 1:1 aspect ratio */
+        }
+
+        .controls-column {
+            flex: 1;
+            min-width: 300px;
+        }
+
+        /* Responsive layout for smaller screens */
+        @media (max-width: 1024px) {
+            .main-content {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .sphere-column {
+                flex: none;
+            }
+            
+            .controls-column {
+                width: 100%;
+                max-width: 600px;
+            }
         }
         
         .header {
@@ -95,10 +163,10 @@
         }
         
         .sphere-container {
+            width: 600px;
             height: 600px;
             background: #f9fafb;
             border: 2px solid #e5e7eb;
-            margin: 20px;
             border-radius: 8px;
             display: flex;
             align-items: center;
@@ -129,10 +197,11 @@
         .controls {
             padding: 20px;
             background: #f8fafc;
-            border-top: 1px solid #e2e8f0;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
             display: flex;
+            flex-direction: column;
             gap: 10px;
-            justify-content: center;
         }
         
         .btn {
@@ -214,7 +283,14 @@
             
             <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e2e8f0;">
                 <h4 style="margin: 0 0 10px 0; color: #374151;">Animation Controls</h4>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                    <div>
+                        <label style="display: flex; align-items: center; gap: 8px; color: #374151;">
+                            <input type="checkbox" id="trainingMovie" checked style="accent-color: #3b82f6;">
+                            <span>Training Movie Mode</span>
+                        </label>
+                        <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">Load first epoch instead of final sphere</div>
+                    </div>
                     <div>
                         <label style="display: flex; align-items: center; gap: 8px; color: #374151;">
                             <input type="checkbox" id="isRotating" checked style="accent-color: #3b82f6;">
@@ -252,82 +328,99 @@
             </div>
         </div>
 
-        <!-- Sphere viewer will be rendered here -->
-        <div id="sphere-viewer-container" class="sphere-container">
-            <div class="loading">
-                <div class="spinner"></div>
-                <p>Initializing 3D Sphere Viewer...</p>
-                <small>Loading session: 20250716-142858_653c60</small>
-            </div>
-        </div>
-
-        <div class="controls">
-            <button class="btn" onclick="reloadViewer()" id="reloadBtn">🔄 Reload Viewer</button>
-            <button class="btn" onclick="updateSession()" id="updateBtn">Update Session</button>
-            <button class="btn" onclick="copyEmbedCode()" id="copyBtn">📋 Copy Embed Code</button>
-            <button class="btn" onclick="fetchTrainingMovie()" id="movieBtn">🎬 Training Movie</button>
-        </div>
-
-        <!-- Training Movie Epoch Slider -->
-        <div id="epochSliderSection" style="display: none; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); margin-top: 20px;">
-            <h3 style="margin-bottom: 20px;">🎬 Training Animation</h3>
-            
-            <!-- Big Simple Play Button -->
-            <div style="text-align: center; margin-bottom: 25px;">
-                <button id="playBtn" onclick="playTraining()" 
-                        style="background: #10b981; color: white; border: none; padding: 15px 30px; border-radius: 12px; cursor: pointer; font-weight: 700; font-size: 18px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                    ▶️ Watch Training (10 seconds)
-                </button>
-            </div>
-            
-            <!-- Simple Speed Buttons -->
-            <div style="text-align: center; margin-bottom: 25px;">
-                <div style="font-size: 14px; color: #6b7280; margin-bottom: 10px;">Animation Speed:</div>
-                <div style="display: flex; gap: 10px; justify-content: center;">
-                    <button onclick="updateAnimationDuration(15)" style="padding: 8px 16px; background: #f59e0b; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">
-                        🐌 Slow (15s)
-                    </button>
-                    <button onclick="updateAnimationDuration(10)" style="padding: 8px 16px; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; border: 3px solid #059669;">
-                        🏃 Normal (10s)
-                    </button>
-                    <button onclick="updateAnimationDuration(5)" style="padding: 8px 16px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">
-                        ⚡ Fast (5s)
-                    </button>
-                    <button onclick="updateAnimationDuration(3)" style="padding: 8px 16px; background: #8b5cf6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">
-                        🚀 Turbo (3s)
-                    </button>
-                    <button onclick="updateAnimationDuration(1)" style="padding: 8px 16px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">
-                        ⚡ Warp (1s)
-                    </button>
+        <!-- Main content with side-by-side layout -->
+        <div class="main-content">
+            <!-- Left column: Sphere viewer -->
+            <div class="sphere-column">
+                <div id="sphere-viewer-container" class="sphere-container">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <p>Initializing 3D Sphere Viewer...</p>
+                        <small>Loading session: 20250716-142858_653c60</small>
+                    </div>
                 </div>
             </div>
-            
-            <!-- Progress Bar -->
-            <div style="margin-bottom: 15px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                    <span style="font-size: 14px; font-weight: 600;">Progress:</span>
-                    <span id="progressText" style="font-size: 14px; color: #6b7280;">Epoch 1 of 461</span>
+
+            <!-- Right column: Controls -->
+            <div class="controls-column">
+                <div class="controls">
+                    <button class="btn" onclick="reloadViewer()" id="reloadBtn">🔄 Reload Viewer</button>
+                    <button class="btn" onclick="updateSession()" id="updateBtn">Update Session</button>
+                    <button class="btn" onclick="copyEmbedCode()" id="copyBtn">📋 Copy Embed Code</button>
+                    <button class="btn" onclick="fetchTrainingMovie()" id="movieBtn">🎬 Training Movie</button>
                 </div>
-                <input type="range" id="epochSlider" min="0" max="460" value="0" 
-                       style="width: 100%; height: 12px; background: #e5e7eb; border-radius: 6px; cursor: pointer;"
-                       oninput="updateEpoch(parseInt(this.value))">
-            </div>
-            
-            <!-- Simple Controls -->
-            <div style="display: flex; gap: 10px; justify-content: center;">
-                <button onclick="pauseTraining()" 
-                        style="background: #f59e0b; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">
-                    ⏸️ Pause
-                </button>
-                <button onclick="resetTraining()" 
-                        style="background: #6b7280; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">
-                    ⏮️ Reset
-                </button>
-            </div>
-            
-            <!-- Simple Info -->
-            <div id="epochInfo" style="text-align: center; font-size: 12px; color: #6b7280; margin-top: 15px;">
-                Press SPACE to play/pause • Click progress bar to jump
+                
+                <!-- Training Movie Controls -->
+                <div id="epochSliderSection" style="display: none; background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; margin-top: 20px;">
+                    <h3 style="margin-bottom: 20px; font-size: 18px;">🎬 Training Animation</h3>
+                    
+                    <!-- Big Simple Play Button -->
+                    <div style="margin-bottom: 20px;">
+                        <button id="playBtn" onclick="playTraining()" 
+                                style="background: #10b981; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 16px; width: 100%;">
+                            ▶️ Watch Training (3 seconds)
+                        </button>
+                    </div>
+                    
+                    <!-- Speed Buttons Grid -->
+                    <div style="margin-bottom: 20px;">
+                        <div style="font-size: 14px; color: #6b7280; margin-bottom: 10px; font-weight: 600;">Animation Speed:</div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                            <button onclick="updateAnimationDuration(15)" style="padding: 8px 12px; background: #6b7280; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px;">
+                                🐌 Slow (15s)
+                            </button>
+                            <button onclick="updateAnimationDuration(3)" 
+                                    style="padding: 8px 12px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px;">
+                                🏃 Normal (3s)
+                            </button>
+                            <button onclick="updateAnimationDuration(5)" style="padding: 8px 12px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px;">
+                                ⚡ Fast (5s)
+                            </button>
+                            <button onclick="updateAnimationDuration(1)" style="padding: 8px 12px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px;">
+                                🚀 Warp (1s)
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Progress Bar -->
+                    <div style="margin-bottom: 15px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                            <span style="font-size: 14px; font-weight: 600; color: #374151;">Training Progress:</span>
+                            <span id="progressText" style="font-size: 12px; color: #6b7280;">Ready to start</span>
+                        </div>
+                        <div style="background: #e5e7eb; height: 8px; border-radius: 4px; overflow: hidden;">
+                            <div id="progressBar" style="background: #10b981; height: 100%; width: 0%; transition: width 0.3s ease;"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Manual Epoch Slider -->
+                    <div style="margin-bottom: 20px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                            <label style="font-size: 14px; font-weight: 600; color: #374151;">Manual Epoch Control:</label>
+                            <span id="epochDisplay" style="font-size: 12px; color: #6b7280; font-family: monospace; background: #f3f4f6; padding: 2px 6px; border-radius: 4px;">0</span>
+                        </div>
+                        <input type="range" id="epochSlider" min="0" max="76" value="0" 
+                               style="width: 100%; height: 12px; background: #e5e7eb; border-radius: 6px; cursor: pointer;"
+                               oninput="updateEpochFromReal(parseInt(this.value))">
+                    </div>
+                    
+                    <!-- Control Buttons -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <button onclick="pauseTraining()" 
+                                style="background: #f59e0b; color: white; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                            ⏸️ Pause
+                        </button>
+                        <button onclick="resetTraining()" 
+                                style="background: #6b7280; color: white; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                            ⏮️ Reset
+                        </button>
+                    </div>
+                    
+                    <!-- Info -->
+                    <div id="epochInfo" style="text-align: center; font-size: 12px; color: #6b7280; margin-top: 15px;">
+                        Press SPACE to play/pause • Click progress bar to jump
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -359,6 +452,7 @@
 &lt;!-- Load Sphere Viewer --&gt;
 &lt;script src="https://unpkg.com/@featrix/sphere-viewer@latest/dist/sphere-viewer.js" 
         data-session-id="<span id="codeSessionId">20250716-142858_653c60</span>"
+        data-training-movie="<span id="codeTrainingMovie">true</span>"
         data-is-rotating="<span id="codeRotating">true</span>"
         data-rotation-speed="<span id="codeSpeed">0.1</span>"
         data-animate-clusters="<span id="codeClusters">false</span>"
@@ -370,6 +464,7 @@
                     <h4 style="margin: 0 0 10px 0; color: #0284c7;">💡 Customization Options:</h4>
                     <ul style="margin: 0; color: #374151; font-size: 14px;">
                         <li><code>data-session-id</code> - Your Featrix session ID</li>
+                        <li><code>data-training-movie</code> - Load first epoch instead of final sphere (true/false)</li>
                         <li><code>data-is-rotating</code> - Enable/disable sphere rotation (true/false)</li>
                         <li><code>data-rotation-speed</code> - Rotation speed (0.01 to 0.5)</li>
                         <li><code>data-animate-clusters</code> - Auto-cycle through clusters (true/false)</li>
@@ -385,9 +480,22 @@
 
     <!-- Load the sphere viewer with auto-initialization and animation controls -->
     <script>
-        // GLOBAL onSphereReady callback - will be called by auto-initialization
+        // Global variables declaration at top to prevent ReferenceError
+        var finalPositions = null;
+        var initialPositions = null;
+        var animationDurationSeconds = 3;
+        
+        // GLOBAL onSphereReady callback - SINGLE EXECUTION ONLY
+        let sphereReadyExecuted = false;
         window.onSphereReady = function(sphereRef) {
-            console.log('🎯 GLOBAL onSphereReady called - AUTO-STARTING cluster animation!');
+            // PREVENT MULTIPLE EXECUTIONS - CRITICAL FOR PREVENTING GIANT X
+            if (sphereReadyExecuted) {
+                console.log('🚫 onSphereReady already executed, skipping to prevent multiple spheres...');
+                return;
+            }
+            sphereReadyExecuted = true;
+            
+            console.log('🎯 SPHERE READY - IMMEDIATELY SETTING TO INITIAL POSITIONS!');
             
             // Store sphere reference
             window.sphereViewerInstance = { sphereRef: sphereRef };
@@ -401,26 +509,75 @@
                 console.log('🔄 Set FAST rotation (0.25) for training animation');
             }
             
-            // Auto-load training movie and start animation
-            setTimeout(() => {
-                console.log('🎬 Auto-loading training movie for cluster animation...');
-                fetchTrainingMovie().then(() => {
-                    console.log('🎨 Training movie loaded - starting automatic cluster animation');
-                    setTimeout(() => {
-                        playTraining(); // Auto-start the animation
-                    }, 1000);
-                });
-            }, 2000); // Wait 2 seconds for sphere to fully initialize
+            // IMMEDIATELY load training movie...
+            console.log('🎬 IMMEDIATELY loading training movie...');
+            fetchTrainingMovie().then(() => {
+                console.log('🎨 Setting to REAL initial epoch positions...');
+                updateEpochFromReal(0);  // Set to first epoch
+                console.log('🚀 Starting animation from real initial positions...');
+                playTraining(); // Start animation immediately  
+            }).catch(error => {
+                console.error('❌ Training movie failed to load:', error);
+            });
         };
+
+        // AGGRESSIVE RUNTIME OVERLAY KILLER - PREVENT GIANT X FOREVER
+        function killAllOverlays() {
+            // Kill any potential error overlays
+            const overlaySelectors = [
+                'div[style*="position: absolute"]',
+                'div[style*="position: fixed"]',
+                'div[style*="z-index: 999"]',
+                'div[style*="z-index: 1000"]',
+                'div[style*="background: black"]',
+                'div[style*="background:#000"]',
+                'div[style*="font-size:24px"]',
+                'canvas + div',
+                'canvas ~ div',
+                '[class*="webgl"]',
+                '[class*="error"]',
+                '[class*="overlay"]'
+            ];
+            
+            overlaySelectors.forEach(selector => {
+                try {
+                    const elements = document.querySelectorAll(selector);
+                    elements.forEach(el => {
+                        if (el && el.style && !el.id && !el.classList.contains('controls') && !el.closest('.controls')) {
+                            el.style.display = 'none';
+                            el.style.visibility = 'hidden';
+                            el.style.opacity = '0';
+                        }
+                    });
+                } catch (e) {
+                    // Ignore errors
+                }
+            });
+        }
+
+        // Run overlay killer every 100ms to prevent giant X
+        setInterval(killAllOverlays, 100);
+        
+        // Also kill overlays on DOM changes
+        if (window.MutationObserver) {
+            const observer = new MutationObserver(killAllOverlays);
+            observer.observe(document.body, { childList: true, subtree: true });
+        }
+
+        console.log('🛡️ Overlay killer activated - Giant X will be eliminated!');
+        
+        // Force browser to use fresh copy (cache busting)
+        console.log('🔄 Script loaded at:', new Date().toISOString());
     </script>
     <script src="sphere-viewer.js" 
             data-session-id="20250716-142858_653c60"
             data-container-id="sphere-viewer-container"
             data-is-rotating="true"
             data-rotation-speed="0.25"
-            data-animate-clusters="false"
+            data-animate-clusters="true"
             data-point-size="0.05"
-            data-point-opacity="0.5"></script>
+            data-point-opacity="0.5"
+            data-training-movie="true"></script>
 
     <!-- Additional controls and debugging -->
     <script>
@@ -664,16 +821,31 @@
             // Handle cluster animation toggle
             animateClustersCheckbox.addEventListener('change', updateAnimationSettings);
             
+            // Handle training movie mode toggle
+            const trainingMovieCheckbox = document.getElementById('trainingMovie');
+            trainingMovieCheckbox.addEventListener('change', (e) => {
+                const script = document.querySelector('script[src*="sphere-viewer.js"]');
+                if (script) {
+                    script.setAttribute('data-training-movie', e.target.checked.toString());
+                    console.log('🎬 Training movie mode:', e.target.checked ? 'ENABLED' : 'DISABLED');
+                    
+                    // Notify user that page needs reload for this change
+                    showNotification(`🎬 Training movie mode ${e.target.checked ? 'enabled' : 'disabled'}. Reload page to apply.`, 'info');
+                }
+            });
+            
             // Initialize display with current values
+            const initialTrainingMovie = trainingMovieCheckbox.checked;
             const initialRotating = isRotatingCheckbox.checked;
             const initialSpeed = parseFloat(rotationSpeedSlider.value);
             const initialClusters = animateClustersCheckbox.checked;
             const initialPointSize = parseFloat(pointSizeSlider.value);
             const initialPointOpacity = parseFloat(pointOpacitySlider.value);
-            updateDisplayedSettings(initialRotating, initialSpeed, initialClusters, initialPointSize, initialPointOpacity);
+            updateDisplayedSettings(initialTrainingMovie, initialRotating, initialSpeed, initialClusters, initialPointSize, initialPointOpacity);
         }
         
         function updateAnimationSettings() {
+            const trainingMovie = document.getElementById('trainingMovie').checked;
             const isRotating = document.getElementById('isRotating').checked;
             const rotationSpeed = parseFloat(document.getElementById('rotationSpeed').value);
             const animateClusters = document.getElementById('animateClusters').checked;
@@ -683,6 +855,7 @@
             // Update the script tag attributes for future auto-init
             const script = document.querySelector('script[src*="sphere-viewer.js"]');
             if (script) {
+                script.setAttribute('data-training-movie', trainingMovie.toString());
                 script.setAttribute('data-is-rotating', isRotating.toString());
                 script.setAttribute('data-rotation-speed', rotationSpeed.toString());
                 script.setAttribute('data-animate-clusters', animateClusters.toString());
@@ -691,35 +864,77 @@
             }
             
             // Update the displayed current settings and embed code immediately
-            updateDisplayedSettings(isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity);
+            updateDisplayedSettings(trainingMovie, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity);
             
             // Show a brief notification
             showUpdateNotification();
             
-            // Try to update the existing viewer first, fallback to reload if needed
+            // DIRECTLY update point size and opacity without reloading
+            updatePointVisuals(pointSize, pointOpacity);
+            
+            // Try to update the existing viewer for rotation/animation settings only
             const globalViewer = window.sphereViewerInstance;
-            if (globalViewer && globalViewer.updateAnimationSettings) {
+            if (globalViewer && globalViewer.sphereRef && globalViewer.sphereRef.updateAnimationSettings) {
                 try {
-                    globalViewer.updateAnimationSettings({
+                    globalViewer.sphereRef.updateAnimationSettings({
                         isRotating: isRotating,
-                        rotationSpeed: rotationSpeed,
-                        animateClusters: animateClusters,
-                        pointSize: pointSize,
-                        pointOpacity: pointOpacity
+                        rotationSpeed: rotationSpeed
                     });
-                    return;
+                    console.log('✅ Updated rotation settings without reload');
                 } catch (e) {
-                    // Fallback to reload on error
+                    console.log('⚠️ Could not update rotation settings:', e);
                 }
             }
-            
-            // Fallback to full reload if direct update isn't available
-            setTimeout(() => {
-                reloadViewer();
-            }, 800);
         }
         
-        function updateDisplayedSettings(isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity) {
+        // Directly update point size and opacity in the Three.js scene
+        function updatePointVisuals(pointSize, pointOpacity) {
+            const globalViewer = window.sphereViewerInstance;
+            if (!globalViewer || !globalViewer.sphereRef) {
+                console.log('⚠️ No sphere data available for visual updates');
+                return;
+            }
+            
+            const sphereData = globalViewer.sphereRef;
+            if (!sphereData.pointObjectsByRecordID) {
+                console.log('⚠️ No point objects available for visual updates');
+                return;
+            }
+            
+            console.log(`🎨 Updating ${sphereData.pointObjectsByRecordID.size} points: size=${pointSize}, opacity=${pointOpacity}`);
+            
+            // Update each point's material properties directly
+            sphereData.pointObjectsByRecordID.forEach((mesh) => {
+                if (mesh.material) {
+                    // Update opacity
+                    mesh.material.opacity = pointOpacity;
+                    mesh.material.transparent = pointOpacity < 1.0;
+                    
+                    // Update point size (if it's a Points material)
+                    if (mesh.material.size !== undefined) {
+                        mesh.material.size = pointSize;
+                    }
+                    
+                    // For sphere/mesh materials, update scale
+                    if (mesh.scale) {
+                        const scale = pointSize * 10; // Adjust multiplier as needed
+                        mesh.scale.set(scale, scale, scale);
+                    }
+                    
+                    // Mark material for update
+                    mesh.material.needsUpdate = true;
+                }
+            });
+            
+            // Force re-render
+            if (sphereData.renderer && sphereData.scene && sphereData.camera) {
+                sphereData.renderer.render(sphereData.scene, sphereData.camera);
+            }
+            
+            console.log('✅ Point visuals updated without reload');
+        }
+        
+        function updateDisplayedSettings(trainingMovie, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity) {
             // Update current settings display
             document.getElementById('currentRotation').textContent = isRotating ? 'Enabled' : 'Disabled';
             document.getElementById('currentSpeed').textContent = rotationSpeed.toString();
@@ -728,6 +943,7 @@
             document.getElementById('currentPointOpacity').textContent = pointOpacity.toString();
             
             // Update embed code
+            document.getElementById('codeTrainingMovie').textContent = trainingMovie.toString();
             document.getElementById('codeRotating').textContent = isRotating.toString();
             document.getElementById('codeSpeed').textContent = rotationSpeed.toString();
             document.getElementById('codeClusters').textContent = animateClusters.toString();
@@ -802,125 +1018,72 @@
             }, 2000);
         }
 
-        // Training movie state
+        // Real training movie data from API
+        let epochProjections = {}; // Real epoch data from /epoch_projections
+        let movieMetadata = null;
         let trainingMovieData = null;
-        let finalPositions = null;
-        let initialPositions = null;
         let trainingMovieMode = false;
         let trainingMovieInterval = null;
         let currentTrainingFrame = 0;
+        
+        // Legacy variables (deprecated - use epochProjections instead)
+        // Note: These are already declared at top of script to prevent ReferenceError
 
-        // Fetch and display training movie data
+        // Fetch REAL training movie frames from server
         async function fetchTrainingMovie() {
             try {
-                console.log('🎬 Training movie button clicked!');
-                console.log('🎬 Current trainingMovieMode:', trainingMovieMode);
-                console.log('🎬 Button element:', document.getElementById('movieBtn'));
+                console.log('🎬 Fetching REAL epoch projections from training movie API...');
                 
-                // Add visual feedback immediately
                 const movieBtn = document.getElementById('movieBtn');
                 if (movieBtn) {
                     movieBtn.style.background = '#f59e0b';
-                    movieBtn.textContent = '🔄 Processing...';
-                    console.log('🎬 Button updated to processing state');
-                } else {
-                    console.error('🎬 ERROR: movieBtn element not found!');
-                    alert('ERROR: Movie button not found!');
-                    return;
+                    movieBtn.textContent = '🔄 Loading Real Training Movie...';
                 }
                 
-                if (trainingMovieMode) {
-                    console.log('⏹️ Stopping training movie...');
-                    stopTrainingMovie();
-                    return;
-                } else {
-                    console.log('🎬 Starting training movie load...');
+                showNotification('📊 Fetching real epoch projections...', 'info');
+                
+                // Get REAL epoch projections with actual intermediate sphere positions
+                const epochUrl = `https://sphere-api.featrix.com/compute/session/20250716-142858_653c60/epoch_projections`;
+                console.log('🌐 Requesting epoch projections:', epochUrl);
+                
+                const epochResponse = await fetch(epochUrl);
+                if (!epochResponse.ok) {
+                    throw new Error(`Epoch projections request failed: ${epochResponse.status} ${epochResponse.statusText}`);
                 }
                 
-                // Show user we're starting to load
-                showNotification('🎬 Loading training movie data...', 'info');
+                const epochData = await epochResponse.json();
+                epochProjections = epochData.epoch_projections;
+                movieMetadata = epochData.movie_metadata;
                 
-                try {
-                    // Load training metrics (loss progression over epochs) 
-                    console.log('📊 Making network request: GET /training_metrics');
-                    const metricsResponse = await fetch('https://sphere-api.featrix.com/compute/session/20250716-142858_653c60/training_metrics');
-                    console.log('📊 Training metrics response:', {
-                        status: metricsResponse.status,
-                        size: metricsResponse.headers.get('content-length'),
-                        contentType: metricsResponse.headers.get('content-type')
-                    });
-                    
-                    if (!metricsResponse.ok) {
-                        throw new Error(`Training metrics request failed: ${metricsResponse.status} ${metricsResponse.statusText}`);
-                    }
-                    
+                console.log(`✅ Loaded REAL epoch projections:`, Object.keys(epochProjections).length, 'epochs');
+                console.log(`📊 Movie metadata:`, movieMetadata);
+                
+                // Also get training metrics for timeline
+                const metricsResponse = await fetch(`https://sphere-api.featrix.com/compute/session/20250716-142858_653c60/training_metrics`);
+                if (metricsResponse.ok) {
                     const metricsData = await metricsResponse.json();
-                    trainingMovieData = metricsData.training_metrics.training_info.loss_history;
-                    console.log('📊 Loaded training metrics:', trainingMovieData.length, 'frames, first: epoch', trainingMovieData[0].epoch, ', last: epoch', trainingMovieData[trainingMovieData.length - 1].epoch);
-                    
-                    // Load final positions (where points end up after training)
-                    console.log('📍 Making network request: GET /projections');
-                    const projectionsResponse = await fetch('https://sphere-api.featrix.com/compute/session/20250716-142858_653c60/projections');
-                    console.log('📍 Projections response:', {
-                        status: projectionsResponse.status,
-                        size: projectionsResponse.headers.get('content-length'),
-                        contentType: projectionsResponse.headers.get('content-type')
-                    });
-                    
-                    if (!projectionsResponse.ok) {
-                        throw new Error(`Projections request failed: ${projectionsResponse.status} ${projectionsResponse.statusText}`);
-                    }
-                    
-                    const projectionsData = await projectionsResponse.json();
-                    finalPositions = projectionsData.projections.coords;
-                    console.log('📍 Loaded final positions:', finalPositions.length, 'points, first point:', finalPositions[0]);
-                    
-                    // Store cluster data globally for the sphere viewer
-                    window.clusterResults = projectionsData.projections.entire_cluster_results || createFallbackClusterResults(finalPositions.length);
-                    
-                    // Generate initial random positions (epoch 1) - where the animation starts
-                    initialPositions = generateInitialPositions(finalPositions);
-                    console.log('🌟 Generated', initialPositions.length, 'initial random positions (radius 3)');
-                    console.log('🔍 First initial position:', initialPositions[0]);
-                    console.log('🔍 First final position:', finalPositions[0]);
-                    
-                    console.log('🎬 NETWORK LOADING COMPLETE - All training movie data loaded in 2 requests');
-                    console.log('🎬 Animation will be purely client-side interpolation (no more network requests)');
-                    
-                    showNotification(`✅ Training movie ready! ${trainingMovieData.length} epochs, ${finalPositions.length} points`, 'success');
-                    
-                    // Show the simplified training controls
-                    console.log('🎬 Showing simplified training controls...');
-                    
-                    // Show the epoch slider section
-                    document.getElementById('epochSliderSection').style.display = 'block';
-                    
-                    // Set up the epoch slider with correct max value
-                    document.getElementById('epochSlider').max = trainingMovieData.length - 1;
-                    
-                    // Update button to show it's ready
-                    movieBtn.textContent = '✅ Training Movie Ready';
-                    movieBtn.style.background = '#10b981';
-                    
-                    // Set to first epoch
-                    updateEpoch(0);
-                    
-                } catch (networkError) {
-                    console.error('❌ Network/data error in training movie:', networkError);
-                    console.error('❌ Error stack:', networkError.stack);
-                    showNotification('❌ Failed to load training movie: ' + networkError.message, 'error');
-                    
-                    // Reset button on error
-                    movieBtn.textContent = '🎬 Training Movie';
-                    movieBtn.style.background = '#3b82f6';
+                    trainingMovieData = metricsData.training_metrics?.progress_info?.loss_history || [];
                 }
                 
-            } catch (topLevelError) {
-                console.error('❌ TOP-LEVEL ERROR in fetchTrainingMovie:', topLevelError);
-                console.error('❌ Top-level error stack:', topLevelError.stack);
-                alert('CRITICAL ERROR: ' + topLevelError.message);
+                showNotification(`✅ Real training movie loaded! ${Object.keys(epochProjections).length} epochs`, 'success');
                 
-                // Reset button
+                // Show controls and update button
+                document.getElementById('epochSliderSection').style.display = 'block';
+                const epochSlider = document.getElementById('epochSlider');
+                if (epochSlider) {
+                    epochSlider.max = Object.keys(epochProjections).length - 1;
+                }
+                
+                movieBtn.textContent = '✅ Real Training Movie Ready';
+                movieBtn.style.background = '#10b981';
+                
+                // Set to first epoch (real initial positions)
+                updateEpochFromReal(0);
+                
+            } catch (error) {
+                console.error('❌ Error loading real training movie:', error);
+                showNotification('❌ Failed to load real training movie: ' + error.message, 'error');
+                
                 const movieBtn = document.getElementById('movieBtn');
                 if (movieBtn) {
                     movieBtn.textContent = '❌ Error - Try Again';
@@ -959,8 +1122,14 @@
             document.getElementById('epochSliderSection').style.display = 'block';
             
             // Update max values
-            document.getElementById('maxEpoch').textContent = trainingMovieData[trainingMovieData.length - 1].epoch;
-            document.getElementById('epochSlider').max = trainingMovieData.length - 1;
+            const maxEpochElement = document.getElementById('maxEpoch');
+            if (maxEpochElement) {
+                maxEpochElement.textContent = trainingMovieData[trainingMovieData.length - 1].epoch;
+            }
+            const epochSlider = document.getElementById('epochSlider');
+            if (epochSlider) {
+                epochSlider.max = trainingMovieData.length - 1;
+            }
             
             // Change main button to hide controls
             const movieBtn = document.getElementById('movieBtn');
@@ -986,55 +1155,156 @@
         
         // Simplified Training Movie Functions
         let autoPlayInterval = null;
-        let animationDurationSeconds = 10; // DEFAULT: 10 seconds total
         
-        // Simple play function
-        function playTraining() {
-            if (autoPlayInterval) clearInterval(autoPlayInterval);
+        // Update sphere with REAL epoch data
+        function updateEpochFromReal(epochIndex) {
+            const epochKey = `epoch_${epochIndex + 1}`; // API uses epoch_1, epoch_2, etc.
+            if (!epochProjections || !epochProjections[epochKey]) return;
             
-            const totalEpochs = parseInt(document.getElementById('epochSlider').max);
-            const totalMs = animationDurationSeconds * 1000;
-            const startTime = Date.now();
+            const epochData = epochProjections[epochKey];
+            if (!epochData || !epochData.coords) return;
             
-            console.log(`🚀 Starting FRAME-DROPPING animation: ${totalEpochs} epochs in ${animationDurationSeconds}s`);
-            console.log(`⚡ Will skip frames as needed to maintain exact timing`);
+            // Update the sphere directly with REAL epoch positions
+            movePointsToRealEpoch(epochData, epochIndex);
             
-            // Use faster interval but calculate which epoch we should be at based on elapsed time
-            autoPlayInterval = setInterval(() => {
-                const elapsedMs = Date.now() - startTime;
-                const progress = Math.min(1.0, elapsedMs / totalMs);
-                const targetEpoch = Math.floor(progress * totalEpochs);
+            // Update UI
+            const epochSlider = document.getElementById('epochSlider');
+            if (epochSlider) {
+                epochSlider.value = epochIndex;
+            }
+            
+            const epochDisplay = document.getElementById('epochDisplay');
+            if (epochDisplay) {
+                epochDisplay.textContent = epochIndex;
+            }
+            
+            updateProgressDisplay(epochIndex);
+        }
+        
+        // Move points to REAL epoch positions WITH CLUSTER ANIMATION
+        function movePointsToRealEpoch(epochData, epochIndex) {
+            if (!window.sphereViewerInstance?.sphereRef) return;
+            
+            const sphereData = window.sphereViewerInstance.sphereRef;
+            if (!sphereData.pointObjectsByRecordID) return;
+            
+            // Disable any sphere viewer auto-updates during frame update
+            const wasAnimating = sphereData.isAnimating;
+            sphereData.isAnimating = false;
+            
+            console.log(`🎬 Setting points to REAL epoch ${epochIndex + 1} positions (${epochData.coords.length} points)`);
+            
+            // Check if cluster animation is enabled
+            const animateClustersEnabled = document.getElementById('animateClusters')?.checked || false;
+            let currentMaxClusters = null;
+            
+            if (animateClustersEnabled) {
+                // CLUSTER ANIMATION - gradually reveal clusters as training progresses
+                const totalEpochs = Object.keys(epochProjections).length;
+                const maxClusters = getMaxClusters();
+                const epochsPerCluster = Math.max(1, Math.floor(totalEpochs / maxClusters));
+                currentMaxClusters = Math.min(maxClusters, Math.floor(epochIndex / epochsPerCluster) + 1);
                 
-                // Jump directly to the target epoch (skip intermediate frames)
-                const currentEpoch = parseInt(document.getElementById('epochSlider').value);
-                
-                if (targetEpoch >= totalEpochs) {
-                    // Animation complete
-                    document.getElementById('epochSlider').value = totalEpochs;
-                    updateEpoch(totalEpochs);
-                    pauseTraining();
+                console.log(`🎨 Epoch ${epochIndex + 1}: Showing ${currentMaxClusters}/${maxClusters} clusters (${epochsPerCluster} epochs per cluster)`);
+            } else {
+                console.log(`🎨 Epoch ${epochIndex + 1}: Cluster animation disabled - showing all clusters`);
+            }
+            
+            // Update each point to REAL epoch position
+            let pointIndex = 0;
+            sphereData.pointObjectsByRecordID.forEach((mesh) => {
+                if (pointIndex < epochData.coords.length) {
+                    const coord = epochData.coords[pointIndex];
                     
-                    const actualDuration = (Date.now() - startTime) / 1000;
-                    console.log(`🎬 Training completed! Target: ${animationDurationSeconds}s, Actual: ${actualDuration.toFixed(2)}s`);
+                    // Use actual coordinates from the epoch
+                    mesh.position.set(coord.x, coord.y, coord.z);
+                    
+                    // Apply cluster coloring (animated or full)
+                    if (coord.cluster !== undefined) {
+                        let finalCluster = coord.cluster;
+                        
+                        // Apply cluster animation if enabled
+                        if (animateClustersEnabled && currentMaxClusters !== null) {
+                            // If cluster is beyond what should be visible, assign it to cluster 0
+                            finalCluster = coord.cluster < currentMaxClusters ? coord.cluster : 0;
+                        }
+                        
+                        const color = getClusterColor(finalCluster);
+                        mesh.material.color.setHex(color);
+                    }
+                    
+                    pointIndex++;
+                }
+            });
+            
+            // Force render
+            if (sphereData.renderer && sphereData.scene && sphereData.camera) {
+                sphereData.renderer.render(sphereData.scene, sphereData.camera);
+            }
+            
+            // Restore animation state
+            sphereData.isAnimating = wasAnimating;
+            
+            const statusMsg = animateClustersEnabled ? 
+                `with ${currentMaxClusters} visible clusters (animated)` : 
+                'with all clusters visible (no animation)';
+            console.log(`✅ Updated ${pointIndex} points to REAL epoch ${epochIndex + 1} positions ${statusMsg}`);
+        }
+        
+        // Simple play function using pre-calculated frames
+        function playTraining() {
+            if (!epochProjections || Object.keys(epochProjections).length === 0) {
+                showNotification('⚠️ No real training movie data loaded', 'error');
+                return;
+            }
+            
+            // Check if already playing - if so, pause instead
+            if (autoPlayInterval) {
+                pauseTraining();
+                return;
+            }
+            
+            // CLEAR EXISTING POINTS FIRST - CRITICAL FIX
+            console.log('🧹 Clearing existing points before starting training movie...');
+            if (window.sphereViewerInstance?.sphereRef?.clearPoints) {
+                window.sphereViewerInstance.sphereRef.clearPoints();
+            }
+            
+            console.log(`🚀 Starting REAL training animation: ${Object.keys(epochProjections).length} epochs`);
+            
+            let currentFrame = 0;
+            const frameInterval = 1000 / 30; // 33.33ms for 30fps
+            
+            autoPlayInterval = setInterval(() => {
+                if (currentFrame >= Object.keys(epochProjections).length) {
+                    pauseTraining();
+                    console.log('🎬 Real training animation completed!');
+                    
+                    // Slow down rotation after animation
+                    if (window.sphereViewerInstance?.sphereRef?.updateAnimationSettings) {
+                        window.sphereViewerInstance.sphereRef.updateAnimationSettings({
+                            rotationSpeed: 0.1
+                        });
+                    }
                     return;
                 }
                 
-                // Only update if we need to jump to a new epoch (frame dropping)
-                if (targetEpoch !== currentEpoch) {
-                    document.getElementById('epochSlider').value = targetEpoch;
-                    updateEpoch(targetEpoch);
-                    
-                    // Log frame drops for debugging
-                    const framesDrop = targetEpoch - currentEpoch - 1;
-                    if (framesDrop > 0) {
-                        console.log(`⚡ Dropped ${framesDrop} frames, jumped to epoch ${targetEpoch}`);
-                    }
+                updateEpochFromReal(currentFrame);
+                
+                // Update progress bar
+                const progressBar = document.getElementById('progressBar');
+                if (progressBar) {
+                    const progress = (currentFrame / Object.keys(epochProjections).length) * 100;
+                    progressBar.style.width = `${progress}%`;
                 }
                 
-            }, 16); // ~60fps interval, but we'll skip frames as needed
+                currentFrame++;
+            }, frameInterval);
             
-            document.getElementById('playBtn').textContent = '⏸️ Playing...';
-            document.getElementById('playBtn').style.background = '#f59e0b';
+            const playBtn = document.getElementById('playBtn');
+            playBtn.textContent = '⏸️ PLAYING - Click to Lock Training';
+            playBtn.style.background = '#10b981'; // Green when playing
+            playBtn.style.fontWeight = 'bold';
         }
 
 
@@ -1056,128 +1326,117 @@
                 console.log('🔄 Set SLOW rotation (0.1) after training complete');
             }
             
-            document.getElementById('playBtn').textContent = '▶️ Watch Training (10 seconds)';
-            document.getElementById('playBtn').style.background = '#10b981';
+            const playBtn = document.getElementById('playBtn');
+            playBtn.textContent = '🔒 LOCKED - Click to Resume Training';
+            playBtn.style.background = '#ef4444'; // Red to show it's locked
+            playBtn.style.fontWeight = 'bold';
+            console.log('🔒 Training movie paused/locked - you can now look at the current frame');
         }
 
         function resetTraining() {
             pauseTraining();
-            document.getElementById('epochSlider').value = 0;
-            updateEpoch(0);
+            const epochSlider = document.getElementById('epochSlider');
+            if (epochSlider) {
+                epochSlider.value = 0;
+            }
+            updateEpochFromReal(0);
         }
 
         // Simple duration update
         function updateAnimationDuration(seconds) {
-            // CHECK: Make sure training movie is loaded first
-            if (!trainingMovieData || !finalPositions || !initialPositions) {
-                console.warn('⚠️ Training movie not loaded yet! Click "🎬 Training Movie" button first.');
-                showNotification('⚠️ Load training movie first!', 'error');
-                return;
-            }
-            
-            animationDurationSeconds = parseInt(seconds);
-            
-            // Update button text
-            document.getElementById('playBtn').textContent = `▶️ Watch Training (${seconds} seconds)`;
-            
-            console.log(`⏱️ Speed changed to ${seconds} seconds for ${trainingMovieData.length} epochs`);
-            
-            // Show confirmation
-            showNotification(`⚡ Speed set to ${seconds} seconds`, 'success');
-            
-            // Restart if playing
-            if (autoPlayInterval) {
-                playTraining();
-            }
-        }
-        
-        // Simple epoch update
-        function updateEpoch(frameIndex) {
-            if (!trainingMovieData || !finalPositions || !initialPositions) return;
-            
-            const clampedIndex = Math.max(0, Math.min(frameIndex, trainingMovieData.length - 1));
-            const frame = trainingMovieData[clampedIndex];
-            const progress = clampedIndex / (trainingMovieData.length - 1);
-            
-            // Update progress text
-            document.getElementById('progressText').textContent = `Epoch ${frame.epoch} of ${trainingMovieData[trainingMovieData.length - 1].epoch}`;
-            
-            // Move points
-            movePointsToEpoch(progress);
-        }
-        
-        // Simple point movement with CLUSTER ANIMATION
-        function movePointsToEpoch(progress) {
-            const globalViewer = window.sphereViewerInstance;
-            if (!globalViewer || !globalViewer.sphereRef || !finalPositions || !initialPositions) return;
-            
-            const sphereData = globalViewer.sphereRef;
-            if (!sphereData.pointObjectsByRecordID) return;
-            
-            const easeProgress = 1 - Math.pow(1 - progress, 2);
-            
-            // CLUSTER ANIMATION - gradually reveal clusters as training progresses
-            const maxClusters = getMaxClusters();
-            const totalFrames = trainingMovieData.length;
-            const framesPerCluster = Math.max(1, Math.floor(totalFrames / maxClusters));
-            const currentFrame = Math.floor(progress * totalFrames);
-            const currentMaxClusters = Math.min(maxClusters, Math.floor(currentFrame / framesPerCluster) + 1);
-            
-            console.log(`🎨 Frame ${currentFrame}: Showing ${currentMaxClusters}/${maxClusters} clusters (${framesPerCluster} frames per cluster)`);
-            
-            let pointIndex = 0;
-            sphereData.pointObjectsByRecordID.forEach((mesh, recordId) => {
-                if (pointIndex < finalPositions.length && pointIndex < initialPositions.length) {
-                    const initial = initialPositions[pointIndex];
-                    const final = finalPositions[pointIndex];
-                    
-                    // Animate position
-                    const x = initial[0] + (final[0] - initial[0]) * easeProgress;
-                    const y = initial[1] + (final[1] - initial[1]) * easeProgress;
-                    const z = initial[2] + (final[2] - initial[2]) * easeProgress;
-                    
-                    mesh.position.set(x, y, z);
-                    
-                    // Animate cluster colors - only show clusters up to currentMaxClusters
-                    if (finalPositions[pointIndex] && finalPositions[pointIndex].cluster_pre !== undefined) {
-                        const finalCluster = finalPositions[pointIndex].cluster_pre;
-                        
-                        // Map final cluster to current visible clusters
-                        const animatedCluster = finalCluster < currentMaxClusters ? finalCluster : 0;
-                        const color = getClusterColor(animatedCluster);
-                        
-                        if (mesh.material && mesh.material.color) {
-                            mesh.material.color.setHex(color);
-                        }
-                    }
-                    
-                    pointIndex++;
+            try {
+                console.log('🎯 updateAnimationDuration called with:', seconds);
+                
+                // CHECK: Make sure training movie is loaded first
+                if (!epochProjections || Object.keys(epochProjections).length === 0) {
+                    console.warn('⚠️ Training movie not loaded yet! Click "🎬 Training Movie" button first.');
+                    showNotification('⚠️ Load training movie first!', 'error');
+                    return;
                 }
-            });
-            
-            // Update cluster info in UI
-            document.getElementById('progressText').textContent = 
-                `Epoch ${Math.floor(progress * (trainingMovieData[trainingMovieData.length - 1].epoch))} • ${currentMaxClusters}/${maxClusters} clusters`;
-            
-            if (sphereData.renderer && sphereData.scene && sphereData.camera) {
-                sphereData.renderer.render(sphereData.scene, sphereData.camera);
+                
+                animationDurationSeconds = parseInt(seconds);
+                
+                // Update button text
+                const playBtn = document.getElementById('playBtn');
+                if (playBtn) {
+                    playBtn.textContent = `▶️ Watch Training (${seconds} seconds)`;
+                }
+                
+                console.log(`⏱️ Speed changed to ${seconds} seconds for ${Object.keys(epochProjections).length} epochs`);
+                
+                // Show confirmation
+                showNotification(`⚡ Speed set to ${seconds} seconds`, 'success');
+                
+                // Restart if playing
+                if (autoPlayInterval) {
+                    playTraining();
+                }
+            } catch (error) {
+                console.error('❌ Error in updateAnimationDuration:', error);
+                showNotification('❌ Error updating animation speed', 'error');
+            }
+        }
+        
+        // Confirm function is properly defined
+        console.log('✅ updateAnimationDuration function defined successfully');
+        
+        // Legacy epoch update function - use updateEpochFromReal instead
+        function updateEpoch(epochIndex) {
+            console.warn('⚠️ updateEpoch is deprecated, using updateEpochFromReal instead');
+            updateEpochFromReal(epochIndex);
+        }
+        
+        // Legacy point movement function - use movePointsToRealEpoch instead
+        function movePointsToEpoch(progress) {
+            console.warn('⚠️ movePointsToEpoch is deprecated, using epoch-based animation instead');
+            // Convert progress to epoch index and use the real function
+            if (epochProjections && Object.keys(epochProjections).length > 0) {
+                const epochIndex = Math.floor(progress * (Object.keys(epochProjections).length - 1));
+                updateEpochFromReal(epochIndex);
             }
         }
         
         // Get maximum number of clusters from the data
         function getMaxClusters() {
-            if (!finalPositions || finalPositions.length === 0) return 2;
-            
-            const clusters = new Set();
-            finalPositions.forEach(point => {
-                if (point.cluster_pre !== undefined) {
-                    clusters.add(point.cluster_pre);
+            // Try to get from epoch data first (more reliable)
+            if (epochProjections && Object.keys(epochProjections).length > 0) {
+                const clusters = new Set();
+                Object.values(epochProjections).forEach(epochData => {
+                    if (epochData && epochData.coords && epochData.coords.length > 0) {
+                        epochData.coords.forEach(coord => {
+                            if (coord && coord.cluster !== undefined) {
+                                clusters.add(coord.cluster);
+                            }
+                        });
+                    }
+                });
+                if (clusters.size > 0) {
+                    const maxClusters = Math.max(2, clusters.size);
+                    console.log(`🎨 Detected ${maxClusters} clusters from epoch data:`, Array.from(clusters).sort());
+                    return maxClusters;
                 }
-            });
+            }
             
-            const maxClusters = Math.max(2, clusters.size);
-            console.log(`🎨 Detected ${maxClusters} clusters in final data:`, Array.from(clusters).sort());
-            return maxClusters;
+            // Try to get from current sphere data as fallback
+            if (window.sphereViewerInstance?.sphereRef?.data?.records) {
+                const clusters = new Set();
+                window.sphereViewerInstance.sphereRef.data.records.forEach(record => {
+                    if (record.cluster !== undefined) {
+                        clusters.add(record.cluster);
+                    } else if (record.cluster_pre !== undefined) {
+                        clusters.add(record.cluster_pre);
+                    }
+                });
+                if (clusters.size > 0) {
+                    const maxClusters = Math.max(2, clusters.size);
+                    console.log(`🎨 Detected ${maxClusters} clusters from sphere data:`, Array.from(clusters).sort());
+                    return maxClusters;
+                }
+            }
+            
+            // Default fallback for animation
+            console.log('🎨 Using default 12 clusters for animation');
+            return 12;
         }
 
         // Get color for cluster - ENHANCED PALETTE for cluster animation
@@ -1209,15 +1468,8 @@
             // Set up animation controls
             setupAnimationControls();
             
-            // Fallback to manual initialization if auto-init doesn't work
-            setTimeout(() => {
-                if (!viewer && window.SphereViewer) {
-                    initializeManualViewer();
-                }
-                
-                // Ensure movie button stays active after any initialization
-                ensureMovieButtonActive();
-            }, 3000);
+            // Ensure movie button stays active after any initialization
+            ensureMovieButtonActive();
         });
 
         // Initialize everything when the page loads
@@ -1234,6 +1486,7 @@
             const script = document.querySelector('script[src*="sphere-viewer.js"]');
             if (script) {
                 // Get values from script tag attributes
+                const trainingMovie = script.getAttribute('data-training-movie') !== 'false'; // default true
                 const isRotating = script.getAttribute('data-is-rotating') !== 'false';
                 const rotationSpeed = parseFloat(script.getAttribute('data-rotation-speed') || '0.1');
                 const animateClusters = script.getAttribute('data-animate-clusters') === 'true';
@@ -1241,6 +1494,7 @@
                 const pointOpacity = parseFloat(script.getAttribute('data-point-opacity') || '0.5');
                 
                 // Update UI controls to match
+                document.getElementById('trainingMovie').checked = trainingMovie;
                 document.getElementById('isRotating').checked = isRotating;
                 document.getElementById('rotationSpeed').value = rotationSpeed;
                 document.getElementById('speedValue').textContent = rotationSpeed;
@@ -1251,7 +1505,7 @@
                 document.getElementById('opacityValue').textContent = pointOpacity;
                 
                 // Update the displayed settings immediately
-                updateDisplayedSettings(isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity);
+                updateDisplayedSettings(trainingMovie, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity);
             }
         }
         
@@ -1317,6 +1571,9 @@
                 console.error('❌ Training movie button NOT found!');
             }
             
+            // KILL FEEDBACK MESSAGES
+            killFeedbackMessages();
+            
             // IMMEDIATE activation
             ensureMovieButtonActive();
             
@@ -1338,8 +1595,70 @@
                     });
                     ensureMovieButtonActive();
                 }
+                
+                // Also kill feedback messages periodically
+                killFeedbackMessages();
             }, 1000); // Check every second
         });
+        
+        // Function to hunt down and destroy feedback messages
+        function killFeedbackMessages() {
+            const feedbackTexts = [
+                "we'd love to hear what you think",
+                "love to hear what you think", 
+                "we'd love to hear",
+                "love to hear",
+                "what you think",
+                "hello@featrix.ai",
+                "email us at",
+                "contact us"
+            ];
+            
+            // Search all text nodes and elements
+            const walker = document.createTreeWalker(
+                document.body,
+                NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
+                null,
+                false
+            );
+            
+            const elementsToKill = [];
+            let node;
+            
+            while (node = walker.nextNode()) {
+                if (node.nodeType === Node.TEXT_NODE) {
+                    const text = node.textContent.toLowerCase();
+                    for (const feedbackText of feedbackTexts) {
+                        if (text.includes(feedbackText)) {
+                            // Kill the parent element
+                            let parent = node.parentElement;
+                            while (parent && parent !== document.body) {
+                                elementsToKill.push(parent);
+                                parent = parent.parentElement;
+                            }
+                        }
+                    }
+                } else if (node.nodeType === Node.ELEMENT_NODE) {
+                    const text = node.textContent.toLowerCase();
+                    for (const feedbackText of feedbackTexts) {
+                        if (text.includes(feedbackText)) {
+                            elementsToKill.push(node);
+                        }
+                    }
+                }
+            }
+            
+            // Remove duplicates and kill elements
+            const uniqueElements = [...new Set(elementsToKill)];
+            uniqueElements.forEach(element => {
+                if (element && element.parentNode) {
+                    console.log('💀 KILLED feedback element:', element.textContent.substring(0, 50));
+                    element.style.display = 'none';
+                    element.style.visibility = 'hidden';
+                    element.remove();
+                }
+            });
+        }
 
         // DEBUG: Console function to check and fix movie button
         window.debugMovieButton = function() {
@@ -1442,7 +1761,7 @@
             }
             if (event.code === 'Digit2') {
                 event.preventDefault();
-                updateAnimationDuration(10); // Normal: 10 seconds
+                updateAnimationDuration(3); // Normal: 3 seconds
             }
             if (event.code === 'Digit3') {
                 event.preventDefault();
@@ -1460,20 +1779,42 @@
             // Arrow keys for manual epoch control
             if (event.code === 'ArrowLeft') {
                 event.preventDefault();
-                const currentEpoch = parseInt(document.getElementById('epochSlider').value);
-                const newEpoch = Math.max(0, currentEpoch - 10);
-                document.getElementById('epochSlider').value = newEpoch;
-                updateEpoch(newEpoch);
+                const epochSlider = document.getElementById('epochSlider');
+                if (epochSlider) {
+                    const currentEpoch = parseInt(epochSlider.value);
+                    const newEpoch = Math.max(0, currentEpoch - 10);
+                    epochSlider.value = newEpoch;
+                    updateEpochFromReal(newEpoch);
+                }
             }
             if (event.code === 'ArrowRight') {
                 event.preventDefault();
-                const currentEpoch = parseInt(document.getElementById('epochSlider').value);
-                const maxEpoch = parseInt(document.getElementById('epochSlider').max);
-                const newEpoch = Math.min(maxEpoch, currentEpoch + 10);
-                document.getElementById('epochSlider').value = newEpoch;
-                updateEpoch(newEpoch);
+                const epochSlider = document.getElementById('epochSlider');
+                if (epochSlider) {
+                    const currentEpoch = parseInt(epochSlider.value);
+                    const maxEpoch = parseInt(epochSlider.max);
+                    const newEpoch = Math.min(maxEpoch, currentEpoch + 10);
+                    epochSlider.value = newEpoch;
+                    updateEpochFromReal(newEpoch);
+                }
             }
         });
+
+        // Update progress display for epoch frames
+        function updateProgressDisplay(epochIndex) {
+            if (!epochProjections || Object.keys(epochProjections).length === 0) return;
+            
+            const totalEpochs = Object.keys(epochProjections).length;
+            const progress = ((epochIndex / (totalEpochs - 1)) * 100).toFixed(1);
+            
+            // Update progress text
+            const progressText = document.getElementById('progressText');
+            if (progressText) {
+                progressText.textContent = `Epoch ${epochIndex + 1}/${totalEpochs} (${progress}%)`;
+            }
+            
+            console.log(`📊 Frame ${epochIndex + 1}/${totalEpochs} (${progress}%)`);
+        }
     </script>
 </body>
 </html> 

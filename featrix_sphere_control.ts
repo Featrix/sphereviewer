@@ -35,6 +35,17 @@ export interface SphereData {
 
     recordFields: string[];
     hasLoggedSizeIssue?: boolean;
+    
+    // Animation controls
+    rotationSpeed: number;
+    animateClusters: boolean;
+    clusterAnimationRef: number;
+    currentCluster: number;
+    jsonData?: any;
+    
+    // Visual controls
+    pointSize: number;
+    pointOpacity: number;
 }
 
 export type SphereRecord = {
@@ -115,7 +126,18 @@ function create_new_sphere(container: HTMLElement): SphereData {
 
         recordFields: [],
 
-        similaritySearchResults: new Map<string, Array<string>>()
+        similaritySearchResults: new Map<string, Array<string>>(),
+        
+        // Animation controls
+        rotationSpeed: 0.1,
+        animateClusters: false,
+        clusterAnimationRef: 0,
+        currentCluster: 2,
+        jsonData: null,
+        
+        // Visual controls
+        pointSize: 0.05,
+        pointOpacity: 0.5
     } as SphereData
 
 
@@ -264,8 +286,8 @@ function add_point_to_sphere(sphere: SphereData, record: SphereRecord) {
     
     const record_id = record.id;
     
-    const pointSize = 0.05;
-    const opacity = 0.5;
+    const pointSize = sphere.pointSize;
+    const opacity = sphere.pointOpacity;
     
 
     const geometry = new THREE.SphereGeometry(pointSize, 16, 16);
@@ -514,9 +536,8 @@ export function start_animation(sphere: SphereData) {
             dt = 50;
         }
 
-        // revolutions per second
-        const rps = 0.1;
-        sphere.angle += rps * dt / 1000  * Math.PI;
+        // revolutions per second - configurable
+        sphere.angle += sphere.rotationSpeed * dt / 1000  * Math.PI;
         render_sphere(sphere);
 
         sphere.cancelAnimationRef = requestAnimationFrame(animate);
@@ -537,6 +558,89 @@ export function toggle_animation(sphere: SphereData) {
         stop_animation(sphere);
     } else {
         start_animation(sphere);
+    }
+}
+
+// New animation control functions
+export function set_animation_options(sphere: SphereData, isRotating: boolean = true, rotationSpeed: number = 0.1, animateClusters: boolean = false, jsonData?: any) {
+    sphere.rotationSpeed = rotationSpeed;
+    sphere.animateClusters = animateClusters;
+    sphere.jsonData = jsonData;
+    
+    if (animateClusters && jsonData) {
+        start_cluster_animation(sphere);
+    } else {
+        stop_cluster_animation(sphere);
+    }
+    
+    if (isRotating && !sphere.isAnimating) {
+        start_animation(sphere);
+    } else if (!isRotating && sphere.isAnimating) {
+        stop_animation(sphere);
+    }
+}
+
+// Visual control functions
+export function set_visual_options(sphere: SphereData, pointSize: number = 0.05, pointOpacity: number = 0.5) {
+    sphere.pointSize = pointSize;
+    sphere.pointOpacity = pointOpacity;
+    
+    // Update all existing points with new visual properties
+    update_all_point_visuals(sphere);
+}
+
+export function update_all_point_visuals(sphere: SphereData) {
+    // Update all existing point objects with new size and opacity
+    sphere.pointObjectsByRecordID.forEach((mesh) => {
+        // Update geometry for size change
+        mesh.geometry.dispose(); // Clean up old geometry
+        mesh.geometry = new THREE.SphereGeometry(sphere.pointSize, 16, 16);
+        
+        // Update material for opacity change
+        if (mesh.material instanceof THREE.MeshBasicMaterial) {
+            mesh.material.opacity = sphere.pointOpacity;
+            mesh.material.needsUpdate = true;
+        }
+    });
+}
+
+function start_cluster_animation(sphere: SphereData) {
+    if (!sphere.jsonData?.entire_cluster_results) {
+        return;
+    }
+
+    const clusters = Object.keys(sphere.jsonData.entire_cluster_results).map(k => Number(k));
+    const minCluster = Math.min(...clusters);
+    const maxCluster = Math.max(...clusters);
+    
+    // Ensure we start with a valid cluster
+    if (sphere.currentCluster < minCluster || sphere.currentCluster > maxCluster) {
+        sphere.currentCluster = minCluster;
+    }
+
+    function animateClusters() {
+        // Change cluster every 2 seconds
+        change_cluster_count(sphere, sphere.jsonData, sphere.currentCluster.toString());
+        notify_highlights_changed(sphere);
+        render_sphere(sphere);
+        
+        // Move to next cluster
+        sphere.currentCluster++;
+        if (sphere.currentCluster > maxCluster) {
+            sphere.currentCluster = minCluster;
+        }
+        
+        sphere.clusterAnimationRef = window.setTimeout(animateClusters, 2000);
+    }
+    
+    // Start immediately
+    animateClusters();
+}
+
+function stop_cluster_animation(sphere: SphereData) {
+    if (sphere.clusterAnimationRef) {
+        clearTimeout(sphere.clusterAnimationRef);
+        sphere.clusterAnimationRef = 0;
     }
 }
 

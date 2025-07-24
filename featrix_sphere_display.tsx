@@ -21,6 +21,8 @@ import {
     add_similarity_search_results,
     SphereRecord,
     send_event,
+    set_animation_options,
+    set_visual_options,
 } from './featrix_sphere_control'
 
 import { Button } from '@/components/button'
@@ -41,6 +43,12 @@ interface Props {
     jsonData: any;
     recordList: any;
     columnTypes: any;
+    isRotating?: boolean;
+    rotationSpeed?: number;
+    animateClusters?: boolean;
+    pointSize?: number;
+    pointOpacity?: number;
+    onSphereReady?: (sphereRef: any) => void;
 }
 
 
@@ -178,7 +186,6 @@ const getAllColumns = (jsonData: any) => {
 
 const FeatrixClusterPicker = ({ sphereRef, jsonData, disabled }: any) => {
     const allClusters = jsonData?.entire_cluster_results || {};
-    console.log("allClusters = ", allClusters);
 
     const clusters  = Object.keys(allClusters).map((k: any) => Number(k))
     const min_cluster = Math.min(...clusters);
@@ -922,9 +929,7 @@ export function find_best_cluster_number(clusterInfoByClusterCount: any): string
 }
 
 
-const FeatrixEmbeddingsExplorer: React.FC<Props> = ({ recordList, columnTypes, data, jsonData }: any) => {
-    console.log("jsonData = ", jsonData);
-
+const FeatrixEmbeddingsExplorer: React.FC<Props> = ({ recordList, columnTypes, data, jsonData, isRotating = true, rotationSpeed = 0.1, animateClusters = false, pointSize = 0.05, pointOpacity = 0.5, onSphereReady }: any) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const sphereRef = useRef<SphereData | null>(null);
 
@@ -941,6 +946,19 @@ const FeatrixEmbeddingsExplorer: React.FC<Props> = ({ recordList, columnTypes, d
             sphereRef.current = initialize_sphere(containerRef.current, recordList);
             render_sphere(sphereRef.current);
             
+            // Set up animation options
+            set_animation_options(sphereRef.current, isRotating, rotationSpeed, animateClusters, jsonData);
+            
+            // Set up visual options
+            set_visual_options(sphereRef.current, pointSize, pointOpacity);
+            
+            setIsAnimating(sphereRef.current.isAnimating);
+            
+            // Notify parent that sphere is ready
+            if (onSphereReady) {
+                onSphereReady(sphereRef.current);
+            }
+            
             register_event_listener(
                 sphereRef.current,
                 'highlightedObjectChanged',
@@ -950,9 +968,6 @@ const FeatrixEmbeddingsExplorer: React.FC<Props> = ({ recordList, columnTypes, d
                     setselectedRecords([...event.detail]);
                 }
             )
-            
-            start_animation(sphereRef.current);
-            setIsAnimating(true);
         }
 
         if (jsonData?.projections?.entire_cluster_results) {

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .btn { background: #3b82f6; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; margin: 10px; }
+        .btn:hover { background: #2563eb; }
+        #sphere-viewer-container { width: 100%; height: 500px; border: 2px solid #ccc; margin: 20px 0; }
+        .notification { position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 6px; color: white; z-index: 1000; }
+        .notification.info { background: #3b82f6; }
+        .notification.success { background: #10b981; }
+        .notification.error { background: #ef4444; }
+    </style>
+</head>
+<body>
+    <h1>Debug Test Page</h1>
+    
+    <div>
+        <button class="btn" onclick="testTrainingButton()">🎬 Test Training Movie</button>
+        <button class="btn" onclick="testNotification()">Test Notification</button>
+    </div>
+    
+    <div id="sphere-viewer-container"></div>
+    
+    <div id="debug-output"></div>
+
+    <!-- Load the sphere viewer -->
+    <script 
+        src="sphere-viewer.js"
+        data-session-id="20250716-142858_653c60"
+        data-is-rotating="true"
+        data-rotation-speed="0.1"
+        data-animate-clusters="false"
+        data-point-size="0.05"
+        data-point-opacity="0.5">
+    </script>
+
+    <script>
+        function showNotification(message, type = 'info') {
+            // Remove existing
+            const existing = document.querySelector('.notification');
+            if (existing) existing.remove();
+            
+            // Create new
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            // Auto-remove
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 3000);
+        }
+
+        function testNotification() {
+            showNotification('✅ Test notification works!', 'success');
+        }
+
+        async function testTrainingButton() {
+            try {
+                showNotification('🎬 Loading training movie data...', 'info');
+                console.log('Fetching training data...');
+                
+                const response = await fetch('https://sphere-api.featrix.com/compute/session/20250716-142858_653c60/training_metrics');
+                console.log('Response:', response);
+                
+                const data = await response.json();
+                console.log('Data:', data);
+                
+                const trainingHistory = data.training_metrics.training_info.loss_history;
+                console.log('Training history:', trainingHistory);
+                
+                showNotification(`✅ Training movie loaded! ${trainingHistory.length} frames from epoch ${trainingHistory[0].epoch} to ${trainingHistory[trainingHistory.length-1].epoch}`, 'success');
+                
+                // Display in debug output
+                document.getElementById('debug-output').innerHTML = `
+                    <h3>🎬 Training Movie Data</h3>
+                    <p>Total frames: ${trainingHistory.length}</p>
+                    <p>Epoch range: ${trainingHistory[0].epoch} - ${trainingHistory[trainingHistory.length-1].epoch}</p>
+                    <p>Final loss: ${trainingHistory[trainingHistory.length-1].loss.toFixed(4)}</p>
+                `;
+                
+            } catch (error) {
+                console.error('❌ Error fetching training movie:', error);
+                showNotification('❌ Failed to load training movie: ' + error.message, 'error');
+                document.getElementById('debug-output').innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        }
+
+        // Check for JavaScript errors
+        window.addEventListener('error', (e) => {
+            console.error('❌ JavaScript error:', e.error);
+            document.getElementById('debug-output').innerHTML += `<p style="color: red;">JS Error: ${e.error.message}</p>`;
+        });
+
+        // Check if sphere viewer loaded
+        setTimeout(() => {
+            console.log('Checking sphere viewer...');
+            console.log('window.sphereViewerInstance:', window.sphereViewerInstance);
+            console.log('window.FeatrixSphereViewer:', window.FeatrixSphereViewer);
+            
+            if (window.sphereViewerInstance) {
+                document.getElementById('debug-output').innerHTML += '<p style="color: green;">✅ Sphere viewer instance found</p>';
+            } else {
+                document.getElementById('debug-output').innerHTML += '<p style="color: red;">❌ No sphere viewer instance</p>';
+            }
+        }, 3000);
+    </script>
+</body>
+</html> 

@@ -1,7 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import FeatrixSphereViewerApp from './FeatrixSphereViewerApp';
-import './embed-styles.css';
+import { set_animation_options, set_visual_options } from '../featrix_sphere_control';
+import './embed-styles-minimal.css';
 
 interface FeatrixSphereViewerConfig {
   // New: Accept data directly instead of sessionId
@@ -10,15 +11,29 @@ interface FeatrixSphereViewerConfig {
   sessionId?: string;
   containerId?: string;
   apiBaseUrl?: string;
+  // Animation controls
+  isRotating?: boolean;
+  rotationSpeed?: number;
+  animateClusters?: boolean;
+  // Visual controls
+  pointSize?: number;
+  pointOpacity?: number;
+  // Callback when sphere is ready
+  onSphereReady?: (sphereRef: any) => void;
 }
 
 class FeatrixSphereViewer {
   private root: ReactDOM.Root | null = null;
   private container: HTMLElement | null = null;
+  private currentConfig: FeatrixSphereViewerConfig = {};
+  private sphereRef: any = null;
 
   constructor() {
     // Auto-initialize if there's a script tag with data attributes
     this.autoInitFromScript();
+    
+    // Make this instance globally available for demo pages
+    (window as any).sphereViewerInstance = this;
   }
 
   private autoInitFromScript() {
@@ -32,14 +47,35 @@ class FeatrixSphereViewer {
       const apiBaseUrl = script.getAttribute('data-api-base-url');
       const dataUrl = script.getAttribute('data-featrix-data');
       const windowDataKey = script.getAttribute('data-use-window-data');
+      
+      // Animation control attributes
+      const isRotating = script.getAttribute('data-is-rotating') !== 'false'; // default true
+      const rotationSpeed = parseFloat(script.getAttribute('data-rotation-speed') || '0.1');
+      const animateClusters = script.getAttribute('data-animate-clusters') === 'true';
+      
+      // Visual control attributes
+      const pointSize = parseFloat(script.getAttribute('data-point-size') || '0.05');
+      const pointOpacity = parseFloat(script.getAttribute('data-point-opacity') || '0.5');
+
+      const config = {
+        sessionId: sessionId || undefined,
+        containerId: containerId || undefined,
+        apiBaseUrl: apiBaseUrl || undefined,
+        isRotating,
+        rotationSpeed,
+        animateClusters,
+        pointSize,
+        pointOpacity,
+        onSphereReady: (window as any).onSphereReady || undefined
+      };
 
       // Priority: 1) Window data, 2) Data URL, 3) Session ID (legacy)
       if (windowDataKey && (window as any)[windowDataKey]) {
-        this.initWithData((window as any)[windowDataKey], containerId);
+        this.init({ ...config, data: (window as any)[windowDataKey] });
       } else if (dataUrl) {
         this.loadDataAndInit(dataUrl, containerId);
       } else if (sessionId) {
-        this.init({ sessionId, containerId: containerId || undefined, apiBaseUrl: apiBaseUrl || undefined });
+        this.init(config);
       }
     }
   }
@@ -98,6 +134,9 @@ class FeatrixSphereViewer {
   init(config: FeatrixSphereViewerConfig) {
     const { data, sessionId, containerId = 'sphere-viewer-container', apiBaseUrl } = config;
 
+    // Store the current config for future updates
+    this.currentConfig = { ...config };
+
     // Validate that we have either data or sessionId
     if (!data && !sessionId) {
       console.error('FeatrixSphereViewer: Must provide either data or sessionId');
@@ -114,6 +153,17 @@ class FeatrixSphereViewer {
         data={data}
         sessionId={sessionId} 
         apiBaseUrl={apiBaseUrl}
+        isRotating={config.isRotating}
+        rotationSpeed={config.rotationSpeed}
+        animateClusters={config.animateClusters}
+        pointSize={config.pointSize}
+        pointOpacity={config.pointOpacity}
+        onSphereReady={(sphereRef: any) => {
+          this.sphereRef = sphereRef;
+          if (config.onSphereReady) {
+            config.onSphereReady(sphereRef);
+          }
+        }}
       />
     );
   }
@@ -135,10 +185,86 @@ class FeatrixSphereViewer {
           data={config.data}
           sessionId={config.sessionId} 
           apiBaseUrl={config.apiBaseUrl}
+          isRotating={config.isRotating}
+          rotationSpeed={config.rotationSpeed}
+          animateClusters={config.animateClusters}
         />
       );
     }
   }
+
+  updateAnimationSettings(animationConfig: { isRotating?: boolean, rotationSpeed?: number, animateClusters?: boolean, pointSize?: number, pointOpacity?: number }) {
+    // Update stored config
+    this.currentConfig = { ...this.currentConfig, ...animationConfig };
+    
+    // If we have direct access to the sphere, update it immediately
+    if (this.sphereRef) {
+      try {
+        // Update animation settings
+        if (animationConfig.isRotating !== undefined || animationConfig.rotationSpeed !== undefined || animationConfig.animateClusters !== undefined) {
+          set_animation_options(
+            this.sphereRef,
+            animationConfig.isRotating ?? this.currentConfig.isRotating ?? true,
+            animationConfig.rotationSpeed ?? this.currentConfig.rotationSpeed ?? 0.1,
+            animationConfig.animateClusters ?? this.currentConfig.animateClusters ?? false,
+            this.sphereRef.jsonData
+          );
+        }
+        
+        // Update visual settings
+        if (animationConfig.pointSize !== undefined || animationConfig.pointOpacity !== undefined) {
+          set_visual_options(
+            this.sphereRef,
+            animationConfig.pointSize ?? this.currentConfig.pointSize ?? 0.05,
+            animationConfig.pointOpacity ?? this.currentConfig.pointOpacity ?? 0.5
+          );
+        }
+        
+        this.showSuccessNotification('⚡ Direct sphere update - instant!');
+        return;
+        
+              } catch (error) {
+          // Direct update failed, fall back to re-render
+        }
+    }
+    
+    // Fallback: re-render the entire component with new settings
+    if (this.root) {
+      this.root.render(
+        <FeatrixSphereViewerApp 
+          data={this.currentConfig.data}
+          sessionId={this.currentConfig.sessionId} 
+          apiBaseUrl={this.currentConfig.apiBaseUrl}
+          isRotating={this.currentConfig.isRotating}
+          rotationSpeed={this.currentConfig.rotationSpeed}
+          animateClusters={this.currentConfig.animateClusters}
+          pointSize={this.currentConfig.pointSize}
+          pointOpacity={this.currentConfig.pointOpacity}
+          onSphereReady={(sphereRef: any) => this.sphereRef = sphereRef}
+        />
+      );
+      this.showSuccessNotification('🔄 Settings updated with re-render');
+    }
+  }
+  
+  private showSuccessNotification(message: string) {
+    const container = this.getOrCreateContainer();
+    if (container) {
+      const notice = document.createElement('div');
+      notice.style.cssText = 'position: absolute; top: 10px; right: 10px; background: #10b981; color: white; padding: 8px 12px; border-radius: 6px; font-size: 12px; z-index: 1000; box-shadow: 0 2px 8px rgba(0,0,0,0.2);';
+      notice.textContent = message;
+      container.style.position = 'relative';
+      container.appendChild(notice);
+      
+      setTimeout(() => {
+        if (notice.parentNode) {
+          notice.parentNode.removeChild(notice);
+        }
+      }, 2000);
+    }
+  }
+
+  
 }
 
 // Global API

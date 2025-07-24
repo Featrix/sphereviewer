@@ -12,4 +12,11 @@ export async function fetch_session_projections(session_id: string, apiBaseUrl?:
     const data_raw = await fetch(`${baseUrl}/compute/session/${session_id}/projections`);
     const data = await data_raw.json();
     return data.projections;
+}
+
+export async function fetch_training_metrics(session_id: string, apiBaseUrl?: string) {
+    const baseUrl = apiBaseUrl || 'https://sphere-api.featrix.com';
+    const data_raw = await fetch(`${baseUrl}/compute/session/${session_id}/training_metrics`);
+    const data = await data_raw.json();
+    return data;
 } 

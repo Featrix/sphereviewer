@@ -6,6 +6,15 @@ interface FeatrixSphereViewerAppProps {
   data?: any;           // New: Direct data input
   sessionId?: string;   // Legacy: API-based loading
   apiBaseUrl?: string;
+  // Animation controls
+  isRotating?: boolean;
+  rotationSpeed?: number;
+  animateClusters?: boolean;
+  // Visual controls
+  pointSize?: number;
+  pointOpacity?: number;
+  // Callbacks
+  onSphereReady?: (sphereRef: any) => void;
 }
 
 // API fetching functions (only used when sessionId provided)
@@ -21,7 +30,13 @@ async function fetchSessionData(sessionId: string, apiBaseUrl?: string) {
 const FeatrixSphereViewerApp: React.FC<FeatrixSphereViewerAppProps> = ({ 
   data,
   sessionId, 
-  apiBaseUrl 
+  apiBaseUrl,
+  isRotating,
+  rotationSpeed,
+  animateClusters,
+  pointSize,
+  pointOpacity,
+  onSphereReady
 }) => {
   const [initialData, setInitialData] = useState(data || null);
   const [loading, setLoading] = useState(!data); // Don't load if data provided
@@ -106,18 +121,18 @@ const FeatrixSphereViewerApp: React.FC<FeatrixSphereViewerAppProps> = ({
         <div className="flex flex-col gap-4">
           <FeatrixSphereHeader />
           
-          <div className="text-sm text-gray-600">
-            We'd love to hear what you think. You can always email us at{' '}
-            <a 
-              href="mailto:hello@featrix.ai?subject=I%20Love%20Embeddings" 
-              className="text-blue-600 hover:text-blue-800 underline ml-1"
-            >
-              hello@featrix.ai
-            </a>
-            .
-          </div>
+
           
-          <FeatrixSphereEmbedded initial_data={initialData} apiBaseUrl={apiBaseUrl} />
+          <FeatrixSphereEmbedded 
+            initial_data={initialData} 
+            apiBaseUrl={apiBaseUrl}
+            isRotating={isRotating}
+            rotationSpeed={rotationSpeed}
+            animateClusters={animateClusters}
+            pointSize={pointSize}
+            pointOpacity={pointOpacity}
+            onSphereReady={onSphereReady}
+          />
         </div>
       </div>
     </div>

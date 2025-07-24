@@ -11,7 +11,6 @@ const getColumnTypes = (projections: any) => {
     try {
         var d: any = {};
         const items = projections.coords;
-        console.log("items = ", items);
         for (var entry of items) {
             if (entry.scalar_columns) {
                 const ks = Object.keys(entry.scalar_columns);
@@ -49,8 +48,6 @@ const getColumnTypes = (projections: any) => {
 }
 
 function create_record_list(server_data: any): SphereRecord[] {
-    console.log("server_data = ", server_data);
-
     let recordIndex: Array<SphereRecord> = new Array();
 
     if (!server_data) {
@@ -82,7 +79,6 @@ function create_record_list(server_data: any): SphereRecord[] {
         recordIndex.push(sphere_record);
     }
 
-    console.log("recordIndex = ", recordIndex);
     return recordIndex;
 }
 
@@ -115,15 +111,20 @@ function fix_server_cluster_pre_assignments(serverData: any) {
 interface SphereEmbeddedProps {
     initial_data: any;
     apiBaseUrl?: string;
+    isRotating?: boolean;
+    rotationSpeed?: number;
+    animateClusters?: boolean;
+    pointSize?: number;
+    pointOpacity?: number;
+    onSphereReady?: (sphereRef: any) => void;
 }
 
-export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl }: SphereEmbeddedProps) {
+export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity, onSphereReady }: SphereEmbeddedProps) {
     // Use the passed data directly - no localStorage
     let init_projections = null;
     
     // Check if we have direct data (coords, entire_cluster_results)
     if (initial_data && initial_data.coords && initial_data.entire_cluster_results) {
-        console.log("Internal data:", initial_data);
         init_projections = initial_data;
     }
     
@@ -162,9 +163,6 @@ export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl }: Sphe
                         fix_server_cluster_pre_assignments(projections);
                     }
 
-                    console.log("projections:", projections);
-                    console.log("session is done, stopping intervals")
-
                     const recordList = create_record_list(projections);
                     const columnTypes = getColumnTypes(projections);
                     setRecordList(recordList);
@@ -188,8 +186,6 @@ export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl }: Sphe
         return () => clearInterval(intervalId);
     }, [isDone, session_id, apiBaseUrl]);
 
-    console.log("Internal data:", sessionData)
-
     const is_done = sessionData.session.status === "done";
 
     return (
@@ -204,6 +200,12 @@ export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl }: Sphe
                     jsonData={projections}
                     columnTypes={columnTypes}
                     recordList={recordList}
+                    isRotating={isRotating}
+                    rotationSpeed={rotationSpeed}
+                    animateClusters={animateClusters}
+                    pointSize={pointSize}
+                    pointOpacity={pointOpacity}
+                    onSphereReady={onSphereReady}
                 />
             )}
         </div>
