@@ -1855,11 +1855,45 @@
                 console.log(`🎨 Epoch ${epochIndex + 1}: Cluster animation disabled - showing all clusters`);
             }
             
-            // Check if we need to CREATE new points (after clearing) or UPDATE existing ones
-            const hasExistingPoints = sphereData.pointObjectsByRecordID && sphereData.pointObjectsByRecordID.size > 0;
+            // ALWAYS try to update existing points first (much more reliable)
+            const existingPointMeshes = Array.from(sphereData.pointObjectsByRecordID?.values() || []);
             let pointIndex = 0; // Track number of points processed
             
-            if (!hasExistingPoints) {
+            if (existingPointMeshes.length > 0) {
+                // UPDATE EXISTING POINTS (preferred method)
+                console.log(`🔄 Updating ${existingPointMeshes.length} existing points with new positions`);
+                
+                existingPointMeshes.forEach((mesh, index) => {
+                    if (index < epochData.coords.length) {
+                        const coord = epochData.coords[index];
+                        
+                        // Update position
+                        mesh.position.set(coord.x, coord.y, coord.z);
+                        
+                        // Update cluster color
+                        if (coord.cluster !== undefined) {
+                            let finalCluster = coord.cluster;
+                            if (animateClustersEnabled && currentMaxClusters !== null) {
+                                finalCluster = coord.cluster < currentMaxClusters ? coord.cluster : 0;
+                            }
+                            
+                            try {
+                                const color = getClusterColor(finalCluster);
+                                if (mesh.material && mesh.material.color && mesh.material.color.setHex) {
+                                    mesh.material.color.setHex(color);
+                                }
+                            } catch (e) {
+                                console.warn(`⚠️ Error setting color for point ${index}:`, e);
+                            }
+                        }
+                        
+                        pointIndex++;
+                    }
+                });
+                
+                console.log(`✅ Updated ${pointIndex} existing points with training data`);
+                
+            } else {
                 // CREATE NEW POINTS from scratch (after nuclear clear)
                 console.log('🆕 Creating new points from scratch (scene was cleared)');
                 console.log('📊 Epoch data check:', {
@@ -1902,10 +1936,64 @@
                             return;
                         }
                         
-                        // Create geometry and material
-                        const geometry = new THREE.SphereGeometry(sphereData.pointSize || 0.05, 16, 16);
+                        // Create geometry and material - try multiple ways to access THREE.js
+                        let geometry;
+                        let material;
                         
-                        // Determine cluster color
+                        // Method 1: Try global THREE
+                        if (window.THREE && window.THREE.SphereGeometry) {
+                            console.log('✅ Using global THREE.js');
+                            geometry = new window.THREE.SphereGeometry(sphereData.pointSize || 0.05, 16, 16);
+                            material = new window.THREE.MeshBasicMaterial({ 
+                                color: 0xcccccc, 
+                                opacity: sphereData.pointOpacity || 0.5, 
+                                transparent: true 
+                            });
+                        }
+                        // Method 2: Try to get THREE from existing scene objects  
+                        else {
+                            console.log('🔍 Global THREE not available, looking for existing objects...');
+                            const existingSphereObject = sphereData.scene.children.find(child => 
+                                child.geometry && child.geometry.type === 'SphereGeometry'
+                            );
+                            
+                            if (existingSphereObject) {
+                                console.log('✅ Found existing sphere geometry, cloning it');
+                                geometry = existingSphereObject.geometry.clone();
+                                material = existingSphereObject.material.clone();
+                            } else {
+                                // Method 3: Create basic geometry using scene's constructor context
+                                console.log('🔧 No existing spheres, trying to access THREE via renderer...');
+                                try {
+                                    // Try to get THREE from the WebGL context
+                                    const canvas = sphereData.renderer.domElement;
+                                    if (canvas && canvas.getContext) {
+                                        console.log('🔧 Trying manual geometry creation...');
+                                        // Create a simple point representation
+                                        geometry = {
+                                            type: 'SphereGeometry',
+                                            radius: sphereData.pointSize || 0.05,
+                                            // This is a fallback - we'll use a basic mesh
+                                        };
+                                        material = {
+                                            type: 'MeshBasicMaterial',
+                                            color: 0xcccccc,
+                                            opacity: sphereData.pointOpacity || 0.5,
+                                            transparent: true
+                                        };
+                                        console.log('⚠️ Using fallback geometry representation');
+                                    } else {
+                                        console.error('❌ Cannot create geometry - no THREE.js access');
+                                        return; // Skip this point
+                                    }
+                                } catch (e) {
+                                    console.error('❌ Error creating fallback geometry:', e);
+                                    return; // Skip this point
+                                }
+                            }
+                        }
+                        
+                        // Determine cluster color and apply to material
                         let finalCluster = coord.cluster || 0;
                         if (animateClustersEnabled && currentMaxClusters !== null && coord.cluster !== undefined) {
                             finalCluster = coord.cluster < currentMaxClusters ? coord.cluster : 0;
@@ -1919,14 +2007,47 @@
                             color = 0xcccccc; // Default gray
                         }
                         
-                        const material = new THREE.MeshBasicMaterial({ 
-                            color: color, 
-                            opacity: sphereData.pointOpacity || 0.5, 
-                            transparent: true 
-                        });
+                        // Update material color if material is an object
+                        if (material && typeof material.color !== 'undefined') {
+                            if (typeof material.color.setHex === 'function') {
+                                material.color.setHex(color);
+                            } else {
+                                material.color = color;
+                            }
+                        } else if (material) {
+                            material.color = color;
+                        }
                         
-                        // Create mesh
-                        const mesh = new THREE.Mesh(geometry, material);
+                        // Create mesh - handle both real THREE objects and fallback objects
+                        let mesh;
+                        if (geometry && typeof geometry === 'object' && geometry.type === 'SphereGeometry' && 
+                            material && typeof material === 'object') {
+                            // Try to create real THREE mesh
+                            try {
+                                if (window.THREE && window.THREE.Mesh) {
+                                    mesh = new window.THREE.Mesh(geometry, material);
+                                } else if (geometry.clone && material.clone) {
+                                    // Use existing objects as templates
+                                    mesh = {
+                                        type: 'Mesh',
+                                        geometry: geometry,
+                                        material: material,
+                                        position: { x: 0, y: 0, z: 0, set: function(x, y, z) { this.x = x; this.y = y; this.z = z; }},
+                                        userData: {},
+                                        uuid: 'training_point_' + Date.now() + '_' + Math.random()
+                                    };
+                                    console.log('⚠️ Created fallback mesh object');
+                                }
+                            } catch (e) {
+                                console.error('❌ Error creating mesh:', e);
+                                return;
+                            }
+                        }
+                        
+                        if (!mesh) {
+                            console.error('❌ Failed to create mesh');
+                            return;
+                        }
                         mesh.position.set(coord.x, coord.y, coord.z);
                         mesh.userData.record_id = recordId;
                         
@@ -1976,33 +2097,6 @@
                     console.log(`👁️ Visible sphere points: ${visibleCount}/${createdCount}`);
                 }
                 
-            } else {
-                // UPDATE EXISTING POINTS (normal case)
-                console.log('🔄 Updating existing points with new positions');
-                sphereData.pointObjectsByRecordID.forEach((mesh) => {
-                    if (pointIndex < epochData.coords.length) {
-                        const coord = epochData.coords[pointIndex];
-                        
-                        // Use actual coordinates from the epoch
-                        mesh.position.set(coord.x, coord.y, coord.z);
-                        
-                        // Apply cluster coloring (animated or full)
-                        if (coord.cluster !== undefined) {
-                            let finalCluster = coord.cluster;
-                            
-                            // Apply cluster animation if enabled
-                            if (animateClustersEnabled && currentMaxClusters !== null) {
-                                // If cluster is beyond what should be visible, assign it to cluster 0
-                                finalCluster = coord.cluster < currentMaxClusters ? coord.cluster : 0;
-                            }
-                            
-                            const color = getClusterColor(finalCluster);
-                            mesh.material.color.setHex(color);
-                        }
-                        
-                        pointIndex++;
-                    }
-                });
             }
             
             // Force render
@@ -2020,9 +2114,8 @@
                 `with ${currentMaxClusters} visible clusters (animated)` : 
                 'with all clusters visible (no animation)';
                 
-            const actionMsg = hasExistingPoints ? 'Updated' : 'Created';
-            const pointCount = hasExistingPoints ? pointIndex : epochData.coords.length;
-            console.log(`✅ ${actionMsg} ${pointCount} points to REAL epoch ${epochIndex + 1} positions ${statusMsg}`);
+            const actionMsg = existingPointMeshes.length > 0 ? 'Updated' : 'Created';
+            console.log(`✅ ${actionMsg} ${pointIndex} points to REAL epoch ${epochIndex + 1} positions ${statusMsg}`);
         }
         
         // Simple play function using pre-calculated frames
@@ -2047,15 +2140,9 @@
                 return;
             }
             
-            // NUCLEAR CLEAR - COMPLETELY WIPE THE SCENE BEFORE STARTING
-            console.log('🧹 NUCLEAR CLEAR: Removing ALL existing points from scene...');
-            clearAllPointsFromScene();
-            
-            // Wait a bit for the clear to complete, then start creating points
-            setTimeout(() => {
-                console.log('🎬 Starting training animation after clear...');
-                updateEpochFromReal(0); // Create first frame
-            }, 100);
+            // SMART UPDATE - Update existing points instead of clearing and recreating
+            console.log('🎬 Starting training animation by updating existing points...');
+            updateEpochFromReal(0); // Update first frame
             
             const totalEpochs = Object.keys(epochProjections).length;
             console.log(`🚀 Starting REAL training animation: ${totalEpochs} epochs`);
