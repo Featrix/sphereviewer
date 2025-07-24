@@ -111,61 +111,19 @@
             display: none !important;
         }
         
-        /* THERMONUCLEAR CSS - Kill EVERYTHING that could be an X */
-        *[aria-label*="close"],
-        *[aria-label*="Close"],
-        *[title*="close"],
-        *[title*="Close"],
-        *[role="button"]:not(.controls *):not(.container *),
-        *[class*="close"]:not(.controls *):not(.container *),
-        *[id*="close"]:not(.controls *):not(.container *),
-        *[class*="dismiss"]:not(.controls *):not(.container *),
-        *[class*="modal"]:not(.controls *):not(.container *),
-        *[class*="overlay"]:not(.controls *):not(.container *),
-        *[class*="popup"]:not(.controls *):not(.container *),
-        div[style*="cursor: pointer"]:not(.controls *):not(.container *),
-        span[style*="cursor: pointer"]:not(.controls *):not(.container *) {
+        /* TARGETED X KILLER - Only kill obvious overlays */
+        div[style*="position: fixed"][style*="z-index"][style*="background"]:not(.notification):not(.controls *):not(.container *),
+        div[style*="position: absolute"][style*="z-index"][style*="background"]:not(.notification):not(.controls *):not(.container *) {
             display: none !important;
             visibility: hidden !important;
             opacity: 0 !important;
-            pointer-events: none !important;
-            z-index: -9999 !important;
         }
         
-        /* Kill any element that contains only × or X */
-        *:not(.controls):not(.container):not(script):not(style):not(title) {
-            font-size: inherit !important;
-        }
-        
-        /* Prevent any new overlays from being created */
-        body::after,
-        body::before,
-        html::after,
-        html::before {
-            display: none !important;
-            content: none !important;
-        }
-        
-        /* EMERGENCY CSS INJECTION BLOCKER */
-        /* This catches dynamically injected styles */
-        * {
-            --overlay-display: none !important;
-        }
-        
-        /* Kill anything that tries to show above z-index 1000 */
-        *[style*="z-index"] {
-            z-index: 1 !important;
-        }
-        
-        /* Force hide common overlay classes that might be injected */
+        /* Kill only specific WebGL error overlays */
         .webgl-error,
         .context-lost,
         .three-error,
-        .webgl-context-lost,
-        [class*="webgl"],
-        [class*="three"],
-        [class*="context"],
-        [class*="error"]:not(.notification) {
+        .webgl-context-lost {
             display: none !important;
             visibility: hidden !important;
             opacity: 0 !important;
@@ -617,43 +575,8 @@
             }
         });
         
-        // REAL-TIME OVERLAY MONITOR - Log when new elements are added
-        if (window.MutationObserver) {
-            const overlayMonitor = new MutationObserver((mutations) => {
-                mutations.forEach(mutation => {
-                    mutation.addedNodes.forEach(node => {
-                        if (node.nodeType === 1) { // Element node
-                            const element = node;
-                            const text = element.textContent || '';
-                            const html = element.innerHTML || '';
-                            
-                            if (text === '×' || text === 'X' || html === '×' || html === 'X' ||
-                                element.style.position === 'absolute' || element.style.position === 'fixed' ||
-                                element.style.zIndex > 500) {
-                                console.log('🚨 OVERLAY MONITOR: New suspicious element added:', {
-                                    tag: element.tagName,
-                                    text: text.substring(0, 50),
-                                    html: html.substring(0, 50),
-                                    style: element.style.cssText,
-                                    className: element.className,
-                                    id: element.id,
-                                    parent: element.parentElement?.tagName
-                                });
-                                
-                                // Immediately destroy it
-                                element.remove();
-                            }
-                        }
-                    });
-                });
-            });
-            overlayMonitor.observe(document.body, { 
-                childList: true, 
-                subtree: true, 
-                attributes: true,
-                attributeFilter: ['style', 'class', 'id']
-            });
-        }
+        // DISABLED: Real-time monitor was too aggressive
+        // Will use targeted interval-based approach instead
         
         // GLOBAL onSphereReady callback - SINGLE EXECUTION ONLY
         let sphereReadyExecuted = false;
@@ -845,30 +768,28 @@
         // Run emergency killer more frequently
         setInterval(emergencyXKiller, 25);
         
-        // ULTRA AGGRESSIVE KILLER - Every 10ms 
+        // TARGETED X KILLER - Only elements that are EXACTLY × or X and positioned
         setInterval(() => {
-            // Find ANY element with X content
-            const allElements = document.querySelectorAll('*');
-            allElements.forEach(el => {
-                const text = el.textContent || '';
-                const html = el.innerHTML || '';
-                if ((text === '×' || text === 'X' || html === '×' || html === 'X' || 
-                     text.includes('×') || text.includes('X') || html.includes('×') || html.includes('X')) &&
-                    !el.closest('.container') && !el.closest('.controls') &&
-                    el.tagName !== 'TITLE' && el.tagName !== 'SCRIPT' && 
-                    !el.id?.includes('epoch') && !el.id?.includes('play')) {
-                    console.log('🚨 ULTRA KILLER: Found X element - DESTROYING:', {
+            const suspiciousElements = document.querySelectorAll('div, span');
+            suspiciousElements.forEach(el => {
+                const text = el.textContent?.trim() || '';
+                const style = el.style.cssText || '';
+                
+                // Only kill if it's EXACTLY × or X AND has positioning
+                if ((text === '×' || text === 'X') && 
+                    (style.includes('position:') || style.includes('z-index:')) &&
+                    !el.closest('.container') && !el.closest('.controls')) {
+                    console.log('🎯 TARGETED KILLER: Removing positioned X element:', {
                         tag: el.tagName,
-                        text: text.substring(0, 50),
-                        html: html.substring(0, 50),
+                        text: text,
+                        style: style.substring(0, 100),
                         id: el.id,
-                        className: el.className,
-                        parent: el.parentElement?.tagName
+                        className: el.className
                     });
                     el.remove();
                 }
             });
-        }, 10);
+        }, 100);
 
         console.log('🛡️ NUCLEAR OVERLAY KILLER ACTIVATED - Giant X will be DESTROYED!');
         
@@ -917,58 +838,29 @@
             }
         });
         
-        // ULTIMATE HACK: Override document.createElement to intercept overlay creation
-        const originalCreateElement = document.createElement;
-        document.createElement = function(tagName) {
-            const element = originalCreateElement.call(this, tagName);
-            
-            // Hook into style changes to catch overlay creation
-            const originalSetAttribute = element.setAttribute;
-            element.setAttribute = function(name, value) {
-                if (name === 'style' && value) {
-                    const styleValue = value.toLowerCase();
-                    if ((styleValue.includes('position:fixed') || styleValue.includes('position: fixed') ||
-                         styleValue.includes('position:absolute') || styleValue.includes('position: absolute')) &&
-                        (styleValue.includes('z-index') && value.match(/z-index:\s*\d{3,}/))) {
-                        console.log('🚫 BLOCKED overlay element creation:', {
-                            tag: tagName,
-                            style: value
-                        });
-                        return; // Don't set the style
-                    }
-                }
-                return originalSetAttribute.call(this, name, value);
-            };
-            
-            return element;
-        };
+        // DISABLED: createElement override was too aggressive and broke the sphere viewer
+        // console.log('🚫 createElement override disabled to allow sphere viewer to work');
         
-        // NUCLEAR CANVAS PROTECTION - Prevent any overlay injection on canvas
+        // GENTLE CANVAS PROTECTION - Only remove obvious X overlays near canvas
         setInterval(() => {
             const canvas = document.querySelector('canvas');
             if (canvas) {
-                // Check for any siblings that shouldn't be there
                 const parent = canvas.parentElement;
                 if (parent) {
                     const siblings = Array.from(parent.children);
                     siblings.forEach(sibling => {
-                        if (sibling !== canvas && 
-                            sibling.tagName !== 'DIV' || 
-                            !sibling.className?.includes('controls') &&
-                            !sibling.id?.includes('sphere') &&
-                            !sibling.id?.includes('epoch')) {
-                            
-                            const text = sibling.textContent || '';
+                        if (sibling !== canvas) {
+                            const text = sibling.textContent?.trim() || '';
                             const style = sibling.style.cssText || '';
                             
-                            if (text.includes('×') || text.includes('X') || 
-                                style.includes('position:') || 
-                                style.includes('z-index:')) {
-                                console.log('🔫 CANVAS PROTECTION: Removing canvas sibling overlay:', {
+                            // Only remove if it's EXACTLY × or X with positioning
+                            if ((text === '×' || text === 'X') && 
+                                (style.includes('position: absolute') || style.includes('position: fixed')) &&
+                                style.includes('z-index')) {
+                                console.log('🔫 CANVAS PROTECTION: Removing X overlay near canvas:', {
                                     tag: sibling.tagName,
-                                    text: text.substring(0, 30),
-                                    style: style.substring(0, 50),
-                                    className: sibling.className
+                                    text: text,
+                                    style: style.substring(0, 50)
                                 });
                                 sibling.remove();
                             }
@@ -976,7 +868,7 @@
                     });
                 }
             }
-        }, 50);
+        }, 200);
     </script>
     <script src="sphere-viewer.js" 
             data-session-id="20250716-142858_653c60"
