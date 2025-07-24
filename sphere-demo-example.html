@@ -1372,6 +1372,70 @@
         // Simplified Training Movie Functions
         let autoPlayInterval = null;
         
+        // NUCLEAR CLEAR FUNCTION - Remove ALL points from Three.js scene
+        function clearAllPointsFromScene() {
+            if (!window.sphereViewerInstance?.sphereRef) {
+                console.log('⚠️ No sphere reference available for clearing');
+                return;
+            }
+            
+            const sphereData = window.sphereViewerInstance.sphereRef;
+            let clearedCount = 0;
+            
+            console.log('🧹 Starting nuclear scene clear...');
+            
+            // Method 1: Clear via pointObjectsByRecordID map
+            if (sphereData.pointObjectsByRecordID) {
+                console.log(`🔧 Removing ${sphereData.pointObjectsByRecordID.size} points via object map...`);
+                sphereData.pointObjectsByRecordID.forEach((mesh, recordId) => {
+                    try {
+                        if (mesh && sphereData.scene) {
+                            sphereData.scene.remove(mesh);
+                            if (mesh.geometry) mesh.geometry.dispose();
+                            if (mesh.material) mesh.material.dispose();
+                            clearedCount++;
+                        }
+                    } catch (e) {
+                        console.warn('Error removing mesh:', e);
+                    }
+                });
+                sphereData.pointObjectsByRecordID.clear();
+            }
+            
+            // Method 2: Clear via pointRecordsByID map
+            if (sphereData.pointRecordsByID) {
+                console.log(`🔧 Clearing ${sphereData.pointRecordsByID.size} records from record map...`);
+                sphereData.pointRecordsByID.clear();
+            }
+            
+            // Method 3: NUCLEAR - Remove ALL sphere geometry from scene
+            if (sphereData.scene && sphereData.scene.children) {
+                console.log(`🔧 Scanning ${sphereData.scene.children.length} scene children for sphere geometries...`);
+                const objectsToRemove = [];
+                sphereData.scene.children.forEach(child => {
+                    // Only remove sphere geometries (our points), not floor/grid
+                    if (child.geometry && child.geometry.type === 'SphereGeometry') {
+                        objectsToRemove.push(child);
+                    }
+                });
+                
+                console.log(`🧹 NUCLEAR: Removing ${objectsToRemove.length} sphere geometries from scene...`);
+                objectsToRemove.forEach(obj => {
+                    sphereData.scene.remove(obj);
+                    if (obj.geometry) obj.geometry.dispose();
+                    if (obj.material) obj.material.dispose();
+                    clearedCount++;
+                });
+            }
+            
+            // Force a render to show the cleared scene
+            if (sphereData.renderer && sphereData.scene && sphereData.camera) {
+                sphereData.renderer.render(sphereData.scene, sphereData.camera);
+            }
+            
+            console.log(`✅ NUCLEAR CLEAR COMPLETE: Removed ${clearedCount} objects from scene`);
+        }
+        
         // Update sphere with REAL epoch data
         function updateEpochFromReal(epochIndex) {
             const epochKey = `epoch_${epochIndex + 1}`; // API uses epoch_1, epoch_2, etc.
@@ -1402,7 +1466,7 @@
             if (!window.sphereViewerInstance?.sphereRef) return;
             
             const sphereData = window.sphereViewerInstance.sphereRef;
-            if (!sphereData.pointObjectsByRecordID) return;
+            if (!sphereData.scene) return;
             
             // Disable any sphere viewer auto-updates during frame update
             const wasAnimating = sphereData.isAnimating;
@@ -1426,32 +1490,92 @@
                 console.log(`🎨 Epoch ${epochIndex + 1}: Cluster animation disabled - showing all clusters`);
             }
             
-            // Update each point to REAL epoch position
-            let pointIndex = 0;
-            sphereData.pointObjectsByRecordID.forEach((mesh) => {
-                if (pointIndex < epochData.coords.length) {
-                    const coord = epochData.coords[pointIndex];
+            // Check if we need to CREATE new points (after clearing) or UPDATE existing ones
+            const hasExistingPoints = sphereData.pointObjectsByRecordID && sphereData.pointObjectsByRecordID.size > 0;
+            
+            if (!hasExistingPoints) {
+                // CREATE NEW POINTS from scratch (after nuclear clear)
+                console.log('🆕 Creating new points from scratch (scene was cleared)');
+                
+                // Initialize maps if they don't exist
+                if (!sphereData.pointObjectsByRecordID) {
+                    sphereData.pointObjectsByRecordID = new Map();
+                }
+                if (!sphereData.pointRecordsByID) {
+                    sphereData.pointRecordsByID = new Map();
+                }
+                
+                // Create new meshes for each coordinate
+                epochData.coords.forEach((coord, index) => {
+                    const recordId = `epoch_${epochIndex + 1}_point_${index}`;
                     
-                    // Use actual coordinates from the epoch
+                    // Create geometry and material
+                    const geometry = new THREE.SphereGeometry(sphereData.pointSize || 0.05, 16, 16);
+                    
+                    // Determine cluster color
+                    let finalCluster = coord.cluster || 0;
+                    if (animateClustersEnabled && currentMaxClusters !== null && coord.cluster !== undefined) {
+                        finalCluster = coord.cluster < currentMaxClusters ? coord.cluster : 0;
+                    }
+                    const color = getClusterColor(finalCluster);
+                    
+                    const material = new THREE.MeshBasicMaterial({ 
+                        color: color, 
+                        opacity: sphereData.pointOpacity || 0.5, 
+                        transparent: true 
+                    });
+                    
+                    // Create mesh
+                    const mesh = new THREE.Mesh(geometry, material);
                     mesh.position.set(coord.x, coord.y, coord.z);
+                    mesh.userData.record_id = recordId;
                     
-                    // Apply cluster coloring (animated or full)
-                    if (coord.cluster !== undefined) {
-                        let finalCluster = coord.cluster;
+                    // Add to scene and maps
+                    sphereData.scene.add(mesh);
+                    sphereData.pointObjectsByRecordID.set(recordId, mesh);
+                    
+                    // Create a fake record entry for consistency
+                    const fakeRecord = {
+                        id: recordId,
+                        coords: { x: coord.x, y: coord.y, z: coord.z },
+                        cluster: finalCluster,
+                        featrix_meta: { webgl_id: mesh.uuid }
+                    };
+                    sphereData.pointRecordsByID.set(recordId, fakeRecord);
+                });
+                
+                console.log(`✅ Created ${epochData.coords.length} new points for epoch ${epochIndex + 1}`);
+                
+            } else {
+                // UPDATE EXISTING POINTS (normal case)
+                console.log('🔄 Updating existing points with new positions');
+                
+                let pointIndex = 0;
+                sphereData.pointObjectsByRecordID.forEach((mesh) => {
+                    if (pointIndex < epochData.coords.length) {
+                        const coord = epochData.coords[pointIndex];
                         
-                        // Apply cluster animation if enabled
-                        if (animateClustersEnabled && currentMaxClusters !== null) {
-                            // If cluster is beyond what should be visible, assign it to cluster 0
-                            finalCluster = coord.cluster < currentMaxClusters ? coord.cluster : 0;
+                        // Use actual coordinates from the epoch
+                        mesh.position.set(coord.x, coord.y, coord.z);
+                        
+                        // Apply cluster coloring (animated or full)
+                        if (coord.cluster !== undefined) {
+                            let finalCluster = coord.cluster;
+                            
+                            // Apply cluster animation if enabled
+                            if (animateClustersEnabled && currentMaxClusters !== null) {
+                                // If cluster is beyond what should be visible, assign it to cluster 0
+                                finalCluster = coord.cluster < currentMaxClusters ? coord.cluster : 0;
+                            }
+                            
+                            const color = getClusterColor(finalCluster);
+                            mesh.material.color.setHex(color);
                         }
                         
-                        const color = getClusterColor(finalCluster);
-                        mesh.material.color.setHex(color);
+                        pointIndex++;
                     }
-                    
-                    pointIndex++;
-                }
-            });
+                });
+            }
             
             // Force render
             if (sphereData.renderer && sphereData.scene && sphereData.camera) {
@@ -1464,7 +1588,10 @@
             const statusMsg = animateClustersEnabled ? 
                 `with ${currentMaxClusters} visible clusters (animated)` : 
                 'with all clusters visible (no animation)';
-            console.log(`✅ Updated ${pointIndex} points to REAL epoch ${epochIndex + 1} positions ${statusMsg}`);
+                
+            const actionMsg = hasExistingPoints ? 'Updated' : 'Created';
+            const pointCount = hasExistingPoints ? pointIndex : epochData.coords.length;
+            console.log(`✅ ${actionMsg} ${pointCount} points to REAL epoch ${epochIndex + 1} positions ${statusMsg}`);
         }
         
         // Simple play function using pre-calculated frames
@@ -1480,11 +1607,9 @@
                 return;
             }
             
-            // CLEAR EXISTING POINTS FIRST - CRITICAL FIX
-            console.log('🧹 Clearing existing points before starting training movie...');
-            if (window.sphereViewerInstance?.sphereRef?.clearPoints) {
-                window.sphereViewerInstance.sphereRef.clearPoints();
-            }
+            // NUCLEAR CLEAR - COMPLETELY WIPE THE SCENE BEFORE STARTING
+            console.log('🧹 NUCLEAR CLEAR: Removing ALL existing points from scene...');
+            clearAllPointsFromScene();
             
             console.log(`🚀 Starting REAL training animation: ${Object.keys(epochProjections).length} epochs`);
             
