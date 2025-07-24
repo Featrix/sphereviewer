@@ -1352,10 +1352,22 @@
             const pointOpacitySlider = document.getElementById('pointOpacity');
             const opacityValue = document.getElementById('opacityValue');
             
-            // Update speed display
+            // Update speed display and IMMEDIATELY apply rotation speed
             rotationSpeedSlider.addEventListener('input', (e) => {
-                speedValue.textContent = e.target.value;
-                updateAnimationSettings();
+                const newSpeed = parseFloat(e.target.value);
+                speedValue.textContent = newSpeed;
+                console.log('🎯 Rotation speed slider changed to:', newSpeed);
+                
+                // IMMEDIATE rotation speed update
+                const globalViewer = window.sphereViewerInstance;
+                if (globalViewer && globalViewer.sphereRef && globalViewer.sphereRef.updateAnimationSettings) {
+                    globalViewer.sphereRef.updateAnimationSettings({
+                        rotationSpeed: newSpeed
+                    });
+                    console.log('✅ Rotation speed updated immediately to:', newSpeed);
+                }
+                
+                updateAnimationSettings(); // Also update all other settings
             });
             
             // Update size display
@@ -1370,8 +1382,22 @@
                 updateAnimationSettings();
             });
             
-            // Handle rotation toggle
-            isRotatingCheckbox.addEventListener('change', updateAnimationSettings);
+            // Handle rotation toggle with IMMEDIATE response
+            isRotatingCheckbox.addEventListener('change', (e) => {
+                const isRotating = e.target.checked;
+                console.log('🎯 Rotation checkbox changed to:', isRotating);
+                
+                // IMMEDIATE rotation enable/disable
+                const globalViewer = window.sphereViewerInstance;
+                if (globalViewer && globalViewer.sphereRef && globalViewer.sphereRef.updateAnimationSettings) {
+                    globalViewer.sphereRef.updateAnimationSettings({
+                        isRotating: isRotating
+                    });
+                    console.log('✅ Rotation enabled/disabled immediately:', isRotating);
+                }
+                
+                updateAnimationSettings(); // Also update all other settings
+            });
             
             // Handle cluster animation toggle
             animateClustersCheckbox.addEventListener('change', updateAnimationSettings);
@@ -1427,18 +1453,30 @@
             // DIRECTLY update point size and opacity without reloading
             updatePointVisuals(pointSize, pointOpacity);
             
-            // Try to update the existing viewer for rotation/animation settings only
+            // IMMEDIATELY update the existing viewer rotation settings - NO EXCUSES
+            console.log('🎯 updateAnimationSettings called - isRotating:', isRotating, 'speed:', rotationSpeed);
+            
             const globalViewer = window.sphereViewerInstance;
-            if (globalViewer && globalViewer.sphereRef && globalViewer.sphereRef.updateAnimationSettings) {
-                try {
-                    globalViewer.sphereRef.updateAnimationSettings({
-                        isRotating: isRotating,
-                        rotationSpeed: rotationSpeed
-                    });
-                    console.log('✅ Updated rotation settings without reload');
-                } catch (e) {
-                    console.log('⚠️ Could not update rotation settings:', e);
+            if (globalViewer && globalViewer.sphereRef) {
+                if (globalViewer.sphereRef.updateAnimationSettings) {
+                    try {
+                        globalViewer.sphereRef.updateAnimationSettings({
+                            isRotating: isRotating,
+                            rotationSpeed: rotationSpeed
+                        });
+                        console.log('✅ ROTATION CONTROLS WORKING - Updated rotation settings');
+                        showNotification(`🔄 Rotation ${isRotating ? 'enabled' : 'disabled'} at speed ${rotationSpeed}`, 'success');
+                    } catch (e) {
+                        console.error('❌ Failed to update rotation settings:', e);
+                        showNotification('❌ Failed to update rotation settings', 'error');
+                    }
+                } else {
+                    console.error('❌ sphereRef.updateAnimationSettings method not found');
+                    showNotification('❌ Rotation update method not available', 'error');
                 }
+            } else {
+                console.error('❌ No sphere viewer instance available for rotation update');
+                showNotification('❌ Sphere not ready for rotation control', 'error');
             }
         }
         
@@ -2415,6 +2453,40 @@
             } catch (error) {
                 console.error('❌ Test failed:', error);
                 return 'Test failed: ' + error.message;
+            }
+        };
+        
+        // Test rotation controls function (accessible from console)
+        window.testRotationControls = function() {
+            console.log('🧪 Testing rotation controls...');
+            const globalViewer = window.sphereViewerInstance;
+            
+            if (!globalViewer) {
+                console.error('❌ No sphereViewerInstance found');
+                return 'FAILED: No sphereViewerInstance';
+            }
+            
+            if (!globalViewer.sphereRef) {
+                console.error('❌ No sphereRef found');
+                return 'FAILED: No sphereRef';
+            }
+            
+            if (!globalViewer.sphereRef.updateAnimationSettings) {
+                console.error('❌ No updateAnimationSettings method found');
+                return 'FAILED: No updateAnimationSettings method';
+            }
+            
+            try {
+                // Test enabling rotation
+                globalViewer.sphereRef.updateAnimationSettings({
+                    isRotating: true,
+                    rotationSpeed: 0.5
+                });
+                console.log('✅ Rotation controls test passed');
+                return 'SUCCESS: Rotation controls are working';
+            } catch (error) {
+                console.error('❌ Rotation controls test failed:', error);
+                return 'FAILED: ' + error.message;
             }
         };
         
