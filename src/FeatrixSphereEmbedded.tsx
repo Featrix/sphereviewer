@@ -24,9 +24,12 @@ const LossPlotOverlay: React.FC<{
         if (!ctx) return;
         
         const { width, height } = canvas;
-        const padding = 30;
-        const plotWidth = width - 2 * padding;
-        const plotHeight = height - 2 * padding;
+        const leftPadding = 70;   // More space for Y-axis labels
+        const rightPadding = 20;
+        const topPadding = 35;    // Space for title
+        const bottomPadding = 35; // Space for X-axis labels
+        const plotWidth = width - leftPadding - rightPadding;
+        const plotHeight = height - topPadding - bottomPadding;
         
         // Enable anti-aliasing for smooth lines
         ctx.imageSmoothingEnabled = true;
@@ -34,7 +37,7 @@ const LossPlotOverlay: React.FC<{
         
         // Clear canvas with proper background
         ctx.clearRect(0, 0, width, height);
-        ctx.fillStyle = 'rgba(0,0,0,0.85)';
+        ctx.fillStyle = 'rgba(0,0,0,0.9)';
         ctx.fillRect(0, 0, width, height);
         
         // Find min/max values with better scaling
@@ -45,47 +48,53 @@ const LossPlotOverlay: React.FC<{
         let minLoss = Math.min(...losses);
         let maxLoss = Math.max(...losses);
         
-        // Add 10% padding to Y-axis for better visualization
+        // Add reasonable padding to Y-axis - use smart scaling
         const lossRange = maxLoss - minLoss;
-        minLoss -= lossRange * 0.1;
-        maxLoss += lossRange * 0.1;
+        if (lossRange < 0.01) {
+            // Very small range, use fixed padding
+            minLoss -= 0.001;
+            maxLoss += 0.001;
+        } else {
+            minLoss -= lossRange * 0.05;
+            maxLoss += lossRange * 0.05;
+        }
         
-        // Draw background grid
-        ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+        // Draw background grid with proper coordinates
+        ctx.strokeStyle = 'rgba(255,255,255,0.08)';
         ctx.lineWidth = 1;
         
         // Horizontal grid lines (5 lines)
         for (let i = 0; i <= 4; i++) {
-            const y = padding + (i / 4) * plotHeight;
+            const y = topPadding + (i / 4) * plotHeight;
             ctx.beginPath();
-            ctx.moveTo(padding, y);
-            ctx.lineTo(width - padding, y);
+            ctx.moveTo(leftPadding, y);
+            ctx.lineTo(leftPadding + plotWidth, y);
             ctx.stroke();
         }
         
-        // Vertical grid lines (6 lines)
+        // Vertical grid lines (6 lines)  
         for (let i = 0; i <= 5; i++) {
-            const x = padding + (i / 5) * plotWidth;
+            const x = leftPadding + (i / 5) * plotWidth;
             ctx.beginPath();
-            ctx.moveTo(x, padding);
-            ctx.lineTo(x, height - padding);
+            ctx.moveTo(x, topPadding);
+            ctx.lineTo(x, topPadding + plotHeight);
             ctx.stroke();
         }
         
-        // Draw axes
-        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        // Draw axes with proper coordinates
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        // X-axis
-        ctx.moveTo(padding, height - padding);
-        ctx.lineTo(width - padding, height - padding);
-        // Y-axis
-        ctx.moveTo(padding, padding);
-        ctx.lineTo(padding, height - padding);
+        // X-axis (bottom)
+        ctx.moveTo(leftPadding, topPadding + plotHeight);
+        ctx.lineTo(leftPadding + plotWidth, topPadding + plotHeight);
+        // Y-axis (left)
+        ctx.moveTo(leftPadding, topPadding);
+        ctx.lineTo(leftPadding, topPadding + plotHeight);
         ctx.stroke();
         
         // Draw smooth loss curve with gradient
-        const gradient = ctx.createLinearGradient(0, padding, 0, height - padding);
+        const gradient = ctx.createLinearGradient(0, topPadding, 0, topPadding + plotHeight);
         gradient.addColorStop(0, '#00ff88');
         gradient.addColorStop(1, '#00aa55');
         
@@ -97,8 +106,8 @@ const LossPlotOverlay: React.FC<{
         
         lossData.forEach((point, i) => {
             const epoch = typeof point.epoch === 'string' ? parseInt(point.epoch) : point.epoch;
-            const x = padding + ((epoch - minEpoch) / (maxEpoch - minEpoch)) * plotWidth;
-            const y = padding + (1 - (point.value - minLoss) / (maxLoss - minLoss)) * plotHeight;
+            const x = leftPadding + ((epoch - minEpoch) / (maxEpoch - minEpoch)) * plotWidth;
+            const y = topPadding + (1 - (point.value - minLoss) / (maxLoss - minLoss)) * plotHeight;
             
             if (i === 0) {
                 ctx.moveTo(x, y);
@@ -108,16 +117,16 @@ const LossPlotOverlay: React.FC<{
         });
         ctx.stroke();
         
-        // Draw data points
+        // Draw data points - make them more visible
         ctx.fillStyle = '#00ff88';
         lossData.forEach((point, i) => {
-            if (i % 5 === 0) { // Only show every 5th point to avoid clutter
+            if (i % 3 === 0) { // Show every 3rd point for better visibility
                 const epoch = typeof point.epoch === 'string' ? parseInt(point.epoch) : point.epoch;
-                const x = padding + ((epoch - minEpoch) / (maxEpoch - minEpoch)) * plotWidth;
-                const y = padding + (1 - (point.value - minLoss) / (maxLoss - minLoss)) * plotHeight;
+                const x = leftPadding + ((epoch - minEpoch) / (maxEpoch - minEpoch)) * plotWidth;
+                const y = topPadding + (1 - (point.value - minLoss) / (maxLoss - minLoss)) * plotHeight;
                 
                 ctx.beginPath();
-                ctx.arc(x, y, 2, 0, 2 * Math.PI);
+                ctx.arc(x, y, 3, 0, 2 * Math.PI);
                 ctx.fill();
             }
         });
@@ -125,7 +134,7 @@ const LossPlotOverlay: React.FC<{
         // Draw current epoch cursor with glow effect
         if (currentEpoch) {
             const currentEpochNum = parseInt(currentEpoch);
-            const x = padding + ((currentEpochNum - minEpoch) / (maxEpoch - minEpoch)) * plotWidth;
+            const x = leftPadding + ((currentEpochNum - minEpoch) / (maxEpoch - minEpoch)) * plotWidth;
             
             // Glow effect
             ctx.shadowColor = '#ff4444';
@@ -133,8 +142,8 @@ const LossPlotOverlay: React.FC<{
             ctx.strokeStyle = '#ff4444';
             ctx.lineWidth = 3;
             ctx.beginPath();
-            ctx.moveTo(x, padding);
-            ctx.lineTo(x, height - padding);
+            ctx.moveTo(x, topPadding);
+            ctx.lineTo(x, topPadding + plotHeight);
             ctx.stroke();
             
             // Reset shadow
@@ -147,44 +156,49 @@ const LossPlotOverlay: React.FC<{
             });
             
             if (currentPoint) {
-                const y = padding + (1 - (currentPoint.value - minLoss) / (maxLoss - minLoss)) * plotHeight;
+                const y = topPadding + (1 - (currentPoint.value - minLoss) / (maxLoss - minLoss)) * plotHeight;
                 ctx.fillStyle = '#ff4444';
                 ctx.beginPath();
-                ctx.arc(x, y, 4, 0, 2 * Math.PI);
+                ctx.arc(x, y, 5, 0, 2 * Math.PI);
                 ctx.fill();
                 
-                // Value label
+                // Value label with better positioning
                 ctx.fillStyle = '#ffffff';
-                ctx.font = '12px Arial';
+                ctx.font = 'bold 12px Arial';
                 ctx.textAlign = 'center';
-                ctx.fillText(currentPoint.value.toFixed(4), x, y - 10);
+                ctx.fillText(currentPoint.value.toFixed(4), x, Math.max(15, y - 12));
             }
         }
         
-        // Draw labels
+        // Draw labels with better formatting
         ctx.fillStyle = '#ffffff';
-        ctx.font = '11px Arial';
+        ctx.font = '12px Arial';
         ctx.textAlign = 'center';
         
-        // X-axis labels
+        // X-axis labels (epochs)
         for (let i = 0; i <= 5; i++) {
             const epoch = minEpoch + (i / 5) * (maxEpoch - minEpoch);
-            const x = padding + (i / 5) * plotWidth;
-            ctx.fillText(Math.round(epoch).toString(), x, height - 8);
+            const x = leftPadding + (i / 5) * plotWidth;
+            ctx.fillText(Math.round(epoch).toString(), x, height - 10);
         }
         
-        // Y-axis labels
+        // Y-axis labels (loss values) - better formatting and positioning
         ctx.textAlign = 'right';
+        ctx.font = '12px Arial';
         for (let i = 0; i <= 4; i++) {
             const loss = maxLoss - (i / 4) * (maxLoss - minLoss);
-            const y = padding + (i / 4) * plotHeight;
-            ctx.fillText(loss.toFixed(3), padding - 5, y + 4);
+            const y = topPadding + (i / 4) * plotHeight;
+            // Smart decimal formatting based on value magnitude
+            const formatted = loss < 0.01 ? loss.toFixed(4) : 
+                             loss < 0.1 ? loss.toFixed(3) : 
+                             loss.toFixed(2);
+            ctx.fillText(formatted, leftPadding - 10, y + 4);
         }
         
-        // Title
+        // Title with better positioning
         ctx.textAlign = 'center';
-        ctx.font = 'bold 13px Arial';
-        ctx.fillText('Validation Loss', width / 2, 15);
+        ctx.font = 'bold 14px Arial';
+        ctx.fillText('Validation Loss', width / 2, 20);
         
     }, [lossData, currentEpoch]);
     
