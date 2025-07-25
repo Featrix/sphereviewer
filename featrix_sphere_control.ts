@@ -1967,51 +1967,74 @@ export function hide_convex_hulls(sphere: SphereData) {
 }
 
 function compute_cluster_convex_hulls(sphere: SphereData) {
-    if (!sphere.convexHullsGroup || !sphere.showConvexHulls) {
-        console.log('🔗 compute_cluster_convex_hulls: Skipped - no group or disabled');
+    if (!sphere.showConvexHulls) {
+        console.log('🔗 Dynamic point sizing: Disabled');
         return;
     }
     
-    console.log('🔗 Computing convex hulls for', sphere.pointObjectsByRecordID?.size || 0, 'points');
+    if (!sphere.pointPositionHistory) {
+        console.log('🔗 No position history available for dynamic sizing');
+        return;
+    }
     
-    // Clear existing hulls
-    hide_convex_hulls(sphere);
-    sphere.showConvexHulls = true; // Reset flag after clearing
+    console.log('🔗 Computing dynamic point sizes based on movement envelopes...');
     
-    // Group points by cluster
-    const clusterPoints: Map<number, Array<{point: THREE.Vector3, color: THREE.Color}>> = new Map();
-    
+    // Update each point's size based on its recent movement envelope
+    let pointsResized = 0;
     sphere.pointObjectsByRecordID.forEach((pointMesh, recordId) => {
-        const record = sphere.pointRecordsByID.get(recordId);
-        if (!record || record.featrix_meta.cluster_pre === null) return;
+        const history = sphere.pointPositionHistory?.get(recordId);
+        if (!history || history.length < 2) return;
         
-        const cluster = record.featrix_meta.cluster_pre;
-        const position = pointMesh.position.clone();
-        const color = pointMesh.material.color.clone();
+        // Calculate bounding sphere radius for recent positions
+        const boundingRadius = calculateBoundingSphereRadius(history);
         
-        if (!clusterPoints.has(cluster)) {
-            clusterPoints.set(cluster, []);
+        // Scale to reasonable visual range
+        const minRadius = 0.015; // Minimum point size
+        const maxRadius = 0.08;  // Maximum point size  
+        const scaleFactor = 2.0; // Amplify movement for visibility
+        
+        const newRadius = Math.min(maxRadius, Math.max(minRadius, boundingRadius * scaleFactor));
+        
+        // Calculate opacity inversely proportional to size
+        // Small points (stable) → High opacity (1.0 = solid)
+        // Large points (moving) → Low opacity (0.3 = transparent)
+        const normalizedSize = (newRadius - minRadius) / (maxRadius - minRadius); // 0-1
+        const minOpacity = 0.3;  // Most transparent for biggest points
+        const maxOpacity = 1.0;  // Solid for smallest points
+        const opacity = maxOpacity - (normalizedSize * (maxOpacity - minOpacity));
+        
+        // Update point geometry scale
+        pointMesh.scale.setScalar(newRadius / 0.025); // 0.025 is default point size
+        
+        // Update point material opacity (ensure material is transparent)
+        if (pointMesh.material instanceof THREE.MeshBasicMaterial) {
+            pointMesh.material.transparent = true;
+            pointMesh.material.opacity = opacity;
+            pointMesh.material.needsUpdate = true;
         }
-        clusterPoints.get(cluster)!.push({point: position, color});
+        
+        pointsResized++;
     });
     
-    console.log('🔗 Found clusters:', Array.from(clusterPoints.keys()), 'with points:', Array.from(clusterPoints.entries()).map(([k,v]) => `${k}:${v.length}`));
+    console.log('🔗 Resized', pointsResized, 'points with dynamic size AND opacity based on movement');
+}
+
+function calculateBoundingSphereRadius(positions: THREE.Vector3[]): number {
+    if (positions.length < 2) return 0.025; // Default size
     
-    // Create convex hulls for clusters with enough points (minimum 4 for 3D hull)
-    let hullsCreated = 0;
-    clusterPoints.forEach((points, cluster) => {
-        if (points.length >= 4) {
-            const hull = compute_3d_convex_hull(points.map(p => p.point));
-            if (hull && hull.length > 0) {
-                create_convex_hull_mesh(sphere, hull, points[0].color, cluster);
-                hullsCreated++;
-            }
-        } else {
-            console.log(`🔗 Cluster ${cluster} has only ${points.length} points (need 4+ for hull)`);
-        }
+    // Calculate centroid of recent positions
+    const centroid = new THREE.Vector3();
+    positions.forEach(pos => centroid.add(pos));
+    centroid.divideScalar(positions.length);
+    
+    // Find maximum distance from centroid to any position
+    let maxDistance = 0;
+    positions.forEach(pos => {
+        const distance = centroid.distanceTo(pos);
+        maxDistance = Math.max(maxDistance, distance);
     });
     
-    console.log('🔗 Created', hullsCreated, 'convex hulls');
+    return maxDistance;
 }
 
 function compute_3d_convex_hull(points: THREE.Vector3[]): THREE.Vector3[] | null {

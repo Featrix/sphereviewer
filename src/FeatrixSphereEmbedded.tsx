@@ -783,7 +783,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     cursor: 'pointer'
                                 }}
                             />
-                            🔗 Hulls ({frameInfo.visible})
+                            📏 Dynamic Size ({frameInfo.visible})
                         </label>
                     </>
                 )}
