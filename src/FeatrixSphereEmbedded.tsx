@@ -693,39 +693,42 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 <div>v{BUILD_TIMESTAMP.slice(0, 19).replace('T', ' ')}</div>
                 {frameInfo && (
                     <div>
-                        <div style={{ color: '#00ff00', marginTop: '2px' }}>
+                        <div style={{ color: '#00ff00', marginTop: '2px', fontSize: '12px', fontWeight: 'bold' }}>
                             Frame {frameInfo.current}/{frameInfo.total} | {frameInfo.visible} clusters
                         </div>
                         
-                        {/* Progress Bar */}
+                        {/* BIGGER Progress Bar */}
                         <div style={{ 
-                            marginTop: '4px',
-                            background: 'rgba(255,255,255,0.1)',
-                            borderRadius: '3px',
+                            marginTop: '6px',
+                            background: 'rgba(255,255,255,0.2)',
+                            borderRadius: '6px',
                             overflow: 'hidden',
-                            height: '6px',
-                            width: '120px'
+                            height: '12px',
+                            width: '160px',
+                            border: '1px solid rgba(0,255,0,0.3)'
                         }}>
                             <div style={{
                                 background: 'linear-gradient(90deg, #00ff00, #00aa00)',
                                 height: '100%',
                                 width: `${(frameInfo.current / frameInfo.total) * 100}%`,
                                 transition: 'width 0.2s ease',
-                                borderRadius: '3px'
+                                borderRadius: '5px',
+                                boxShadow: '0 0 8px rgba(0,255,0,0.4)'
                             }} />
                         </div>
                         <div style={{ 
-                            color: '#aaa', 
-                            fontSize: '9px', 
-                            marginTop: '1px',
-                            textAlign: 'center'
+                            color: '#00ff00', 
+                            fontSize: '11px', 
+                            marginTop: '3px',
+                            textAlign: 'center',
+                            fontWeight: 'bold'
                         }}>
                             {Math.round((frameInfo.current / frameInfo.total) * 100)}%
                         </div>
                         
                         {frameInfo.epoch && (
-                            <div style={{ color: '#00ffff', marginTop: '2px' }}>
-                                Epoch {frameInfo.epoch}
+                            <div style={{ color: '#00ffff', marginTop: '2px', fontSize: '12px', fontWeight: 'bold' }}>
+                                Epoch {frameInfo.epoch} of 225
                             </div>
                         )}
                         {frameInfo.validationLoss !== undefined && (

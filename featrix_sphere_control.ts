@@ -904,7 +904,11 @@ export function step_training_movie_frame(sphere: SphereData, direction: 'forwar
         pause_training_movie(sphere);
     }
     
-    const epochKeys = Object.keys(sphere.trainingMovieData).sort((a, b) => parseInt(a) - parseInt(b));
+    const epochKeys = Object.keys(sphere.trainingMovieData).sort((a, b) => {
+        const epochA = parseInt(a.replace('epoch_', ''));
+        const epochB = parseInt(b.replace('epoch_', ''));
+        return epochA - epochB;
+    });
     const currentIndex = sphere.currentEpoch || 0;
     const maxIndex = epochKeys.length - 1;
     
@@ -940,7 +944,11 @@ export function goto_training_movie_frame(sphere: SphereData, frameNumber: numbe
         pause_training_movie(sphere);
     }
     
-    const epochKeys = Object.keys(sphere.trainingMovieData).sort((a, b) => parseInt(a) - parseInt(b));
+    const epochKeys = Object.keys(sphere.trainingMovieData).sort((a, b) => {
+        const epochA = parseInt(a.replace('epoch_', ''));
+        const epochB = parseInt(b.replace('epoch_', ''));
+        return epochA - epochB;
+    });
     const targetIndex = Math.max(0, Math.min(frameNumber - 1, epochKeys.length - 1)); // Convert 1-based to 0-based
     
     sphere.currentEpoch = targetIndex;
@@ -1039,7 +1047,11 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string) {
     }
     
     // Calculate progressive cluster reveal
-    const epochKeys = Object.keys(sphere.trainingMovieData || {}).sort((a, b) => parseInt(a) - parseInt(b));
+    const epochKeys = Object.keys(sphere.trainingMovieData || {}).sort((a, b) => {
+        const epochA = parseInt(a.replace('epoch_', ''));
+        const epochB = parseInt(b.replace('epoch_', ''));
+        return epochA - epochB;
+    });
     const currentFrameIndex = epochKeys.indexOf(epochKey);
     const totalFrames = epochKeys.length;
     
