@@ -664,7 +664,11 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any, 
     sphere.trainingMovieStartClusters = 2; // Start showing 2 clusters
     
     // Initialize sphere with first epoch data
-    const epochKeys = Object.keys(trainingMovieData).sort((a, b) => parseInt(a) - parseInt(b));
+    const epochKeys = Object.keys(trainingMovieData).sort((a, b) => {
+        const epochA = parseInt(a.replace('epoch_', ''));
+        const epochB = parseInt(b.replace('epoch_', ''));
+        return epochA - epochB;
+    });
     const firstEpochKey = epochKeys[0];
     const firstEpochData = trainingMovieData[firstEpochKey];
     
@@ -752,7 +756,11 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
     
     sphere.isPlayingMovie = true;
     
-    const epochKeys = Object.keys(sphere.trainingMovieData).sort((a, b) => parseInt(a) - parseInt(b));
+    const epochKeys = Object.keys(sphere.trainingMovieData).sort((a, b) => {
+        const epochA = parseInt(a.replace('epoch_', ''));
+        const epochB = parseInt(b.replace('epoch_', ''));
+        return epochA - epochB;
+    });
     const totalFrames = epochKeys.length;
     const frameDelay = (durationSeconds * 1000) / totalFrames;
     
