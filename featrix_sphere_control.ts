@@ -1387,14 +1387,17 @@ export function update_memory_trails(sphere: SphereData) {
             const distance = distances[i];
             
             // Alpha decreases as distance increases (longer segments are lighter)
-            // Shorter segments: alpha = 0.9
-            // Longer segments: alpha = 0.2
+            // Keep big jumps very translucent even for current epoch
+            // Shorter segments: alpha = 0.4 (reduced from 0.9)
+            // Longer segments: alpha = 0.05 (reduced from 0.2)
             let alpha;
             if (distanceRange > 0.001) {
                 const normalizedDistance = (distance - minDistance) / distanceRange;
-                alpha = 0.9 - (normalizedDistance * 0.7); // 0.9 to 0.2
+                // More aggressive curve - big jumps stay very faint
+                const exponentialFactor = Math.pow(normalizedDistance, 1.5); // Make big jumps even fainter
+                alpha = 0.4 - (exponentialFactor * 0.35); // 0.4 to 0.05
             } else {
-                alpha = 0.9; // All segments same distance
+                alpha = 0.4; // All segments same distance - keep moderate
             }
             
             // Generate great circle arc points
