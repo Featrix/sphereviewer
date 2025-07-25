@@ -811,7 +811,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 type="checkbox"
                                 checked={showDynamicHulls}
                                 onChange={(e) => {
-                                    console.log('🔷 Hull sizing toggled:', e.target.checked, 'clusters:', frameInfo.visible);
+                                    console.log('🔮 Sphere sizing toggled:', e.target.checked, 'clusters:', frameInfo.visible);
                                     setShowDynamicHulls(e.target.checked);
                                 }}
                                 style={{
@@ -820,7 +820,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 }}
                                 disabled={frameInfo.visible < 4}
                             />
-                            🔷 Hulls ({frameInfo.visible})
+                            🔮 Spheres ({frameInfo.visible})
                         </label>
                     </>
                 )}
