@@ -2095,65 +2095,80 @@ function create_dynamic_cluster_hulls(sphere: SphereData) {
     
     console.log('🔷 Found', clusterData.size, 'clusters for dynamic hulls');
     
-    // Create dynamic hulls for each cluster
+    // Create dynamic sphere hulls for each cluster
     let hullsCreated = 0;
     clusterData.forEach((clusterInfo, cluster) => {
-        if (clusterInfo.points.length >= 4) {
-            const hull = compute_3d_convex_hull(clusterInfo.points);
-            if (hull && hull.length >= 4) {
-                // Calculate hull scale and opacity based on cluster movement
-                const movementScale = Math.max(1.0, Math.min(3.0, 1.0 + clusterInfo.movementEnvelope * 5.0));
-                const hullOpacity = Math.max(0.05, Math.min(0.3, 0.3 - clusterInfo.movementEnvelope * 0.5));
-                
-                create_dynamic_convex_hull_mesh(sphere, hull, clusterInfo.color, cluster, movementScale, hullOpacity);
-                hullsCreated++;
-            }
+        if (clusterInfo.points.length >= 3) { // Need at least 3 points for a meaningful sphere
+            // Calculate sphere scale and opacity based on cluster movement
+            const movementScale = Math.max(1.0, Math.min(3.0, 1.0 + clusterInfo.movementEnvelope * 5.0));
+            const sphereOpacity = Math.max(0.05, Math.min(0.2, 0.2 - clusterInfo.movementEnvelope * 0.3));
+            
+            create_dynamic_sphere_hull(sphere, clusterInfo.points, clusterInfo.color, cluster, movementScale, sphereOpacity);
+            hullsCreated++;
         }
     });
     
     console.log('🔷 Created', hullsCreated, 'DYNAMIC cluster hulls with movement-based sizing');
 }
 
-function create_dynamic_convex_hull_mesh(sphere: SphereData, hullPoints: THREE.Vector3[], clusterColor: THREE.Color, cluster: number, scale: number, opacity: number) {
-    if (!sphere.convexHullsGroup || hullPoints.length < 4) return;
+function create_dynamic_sphere_hull(sphere: SphereData, hullPoints: THREE.Vector3[], clusterColor: THREE.Color, cluster: number, scale: number, opacity: number) {
+    if (!sphere.convexHullsGroup || hullPoints.length < 3) return;
     
     try {
-        // Create filled geometry
-        const filledGeometry = create_filled_hull_geometry(hullPoints);
+        // Calculate bounding sphere for the cluster points
+        const boundingSphere = calculateClusterBoundingSphere(hullPoints);
         
-        if (filledGeometry) {
-            // Scale the hull based on cluster movement
-            const scaledGeometry = filledGeometry.clone();
-            scaledGeometry.scale(scale, scale, scale);
+        if (boundingSphere.radius > 0) {
+            // Create sphere geometry with good detail
+            const sphereGeometry = new THREE.SphereGeometry(
+                boundingSphere.radius * scale, // Apply movement-based scaling
+                32, // widthSegments - good detail
+                16  // heightSegments
+            );
             
-            // Create materials with movement-based opacity
-            const filledMaterial = new THREE.MeshBasicMaterial({
+            // Create translucent material
+            const sphereMaterial = new THREE.MeshBasicMaterial({
                 color: clusterColor,
                 transparent: true,
-                opacity: opacity * 0.5, // Even more transparent for filled
+                opacity: opacity,
                 side: THREE.DoubleSide,
                 wireframe: false
             });
             
-            const wireframeMaterial = new THREE.MeshBasicMaterial({
-                color: clusterColor,
-                transparent: true,
-                opacity: opacity,
-                wireframe: true
-            });
+            // Create mesh and position at cluster center
+            const sphereMesh = new THREE.Mesh(sphereGeometry, sphereMaterial);
+            sphereMesh.position.copy(boundingSphere.center);
             
-            // Create meshes
-            const filledMesh = new THREE.Mesh(scaledGeometry, filledMaterial);
-            const wireframeMesh = new THREE.Mesh(scaledGeometry.clone(), wireframeMaterial);
+            sphere.convexHullsGroup.add(sphereMesh);
             
-            sphere.convexHullsGroup.add(filledMesh);
-            sphere.convexHullsGroup.add(wireframeMesh);
-            
-            console.log(`✨ Created DYNAMIC hull for cluster ${cluster}: scale=${scale.toFixed(2)}, opacity=${opacity.toFixed(2)}`);
+            console.log(`🔮 Created DYNAMIC sphere for cluster ${cluster}: radius=${(boundingSphere.radius * scale).toFixed(3)}, opacity=${opacity.toFixed(2)}`);
         }
     } catch (error) {
-        console.warn(`Failed to create dynamic hull for cluster ${cluster}:`, error);
+        console.warn(`Failed to create dynamic sphere for cluster ${cluster}:`, error);
     }
+}
+
+function calculateClusterBoundingSphere(points: THREE.Vector3[]): { center: THREE.Vector3, radius: number } {
+    if (points.length === 0) {
+        return { center: new THREE.Vector3(), radius: 0 };
+    }
+    
+    // Calculate centroid
+    const center = new THREE.Vector3();
+    points.forEach(point => center.add(point));
+    center.divideScalar(points.length);
+    
+    // Find maximum distance from center to any point
+    let maxDistance = 0;
+    points.forEach(point => {
+        const distance = center.distanceTo(point);
+        maxDistance = Math.max(maxDistance, distance);
+    });
+    
+    // Add a small padding to ensure all points are inside
+    const radius = maxDistance * 1.1;
+    
+    return { center, radius };
 }
 
 function calculateBoundingSphereRadius(positions: THREE.Vector3[]): number {
