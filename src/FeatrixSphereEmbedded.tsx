@@ -401,9 +401,13 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     
-    // Performance timing
+    // Performance timing  
     const componentStartTime = useRef(performance.now());
-    console.log('🎬 COMPONENT_INIT_START:', componentStartTime.current + 'ms');
+    const hasLoggedInit = useRef(false);
+    if (!hasLoggedInit.current) {
+        console.log('🎬 COMPONENT_INIT_START:', componentStartTime.current + 'ms');
+        hasLoggedInit.current = true;
+    }
     const [sphereRef, setSphereRef] = useState<any>(null);
     const [frameInfo, setFrameInfo] = useState<{ current: number, total: number, visible: number, epoch?: string, validationLoss?: number } | null>(null);
     const [isPlaying, setIsPlaying] = useState(true); // Start playing automatically

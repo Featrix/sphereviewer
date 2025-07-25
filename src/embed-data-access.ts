@@ -23,7 +23,16 @@ export async function fetch_training_metrics(session_id: string, apiBaseUrl?: st
     const projectionsResponse = await fetch(`${baseUrl}/compute/session/${session_id}/epoch_projections`);
     const projectionsData = await projectionsResponse.json();
     console.timeEnd('🔗 API_EPOCH_PROJECTIONS');
-    console.log('🔗 API_PROJECTIONS_SIZE:', JSON.stringify(projectionsData).length, 'bytes');
+    const sizeBytes = JSON.stringify(projectionsData).length;
+    const sizeMB = (sizeBytes / (1024 * 1024)).toFixed(1);
+    console.log('🔗 API_PROJECTIONS_SIZE:', sizeBytes, `bytes (${sizeMB}MB)`);
+    
+    if (sizeBytes > 50 * 1024 * 1024) { // > 50MB
+        console.warn('⚠️ PERFORMANCE: Large API response detected!', {
+            size: `${sizeMB}MB`,
+            suggestion: 'Consider API pagination or data compression for better performance'
+        });
+    }
     
     // Also fetch training metrics (loss data) for the 3D loss plot
     let trainingMetrics = null;
