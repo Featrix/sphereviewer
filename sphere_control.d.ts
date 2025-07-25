@@ -58,6 +58,8 @@ export interface SphereData {
     // Convex hull properties
     convexHullsGroup?: THREE.Group;
     showConvexHulls?: boolean;
+    showDynamicPoints?: boolean;
+    showDynamicHulls?: boolean;
     // Smooth interpolation properties
     pointTargetPositions?: Map<string, THREE.Vector3>;
     pointStartPositions?: Map<string, THREE.Vector3>;

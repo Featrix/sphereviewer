@@ -1967,23 +1967,35 @@ export function hide_convex_hulls(sphere: SphereData) {
 }
 
 function compute_cluster_convex_hulls(sphere: SphereData) {
-    if (!sphere.showConvexHulls) {
-        console.log('🔗 Dynamic sizing: Disabled');
+    const hasPointFeature = sphere.showDynamicPoints;
+    const hasHullFeature = sphere.showDynamicHulls;
+    
+    if (!hasPointFeature && !hasHullFeature) {
+        console.log('🔗 Dynamic features: Both disabled');
         return;
     }
     
     if (!sphere.pointPositionHistory) {
-        console.log('🔗 No position history available for dynamic sizing');
+        console.log('🔗 No position history available for dynamic features');
         return;
     }
     
-    console.log('🔗 Computing dynamic POINTS + CLUSTER HULLS based on movement...');
+    console.log(`🔗 Computing dynamic features: Points=${hasPointFeature}, Hulls=${hasHullFeature}`);
     
-    // First, update individual point sizes
-    update_dynamic_point_sizes(sphere);
+    // Update individual point sizes if enabled, otherwise reset to default
+    if (hasPointFeature) {
+        update_dynamic_point_sizes(sphere);
+    } else {
+        reset_point_sizes_to_default(sphere);
+    }
     
-    // Then, create dynamic cluster hulls
-    create_dynamic_cluster_hulls(sphere);
+    // Create dynamic cluster hulls if enabled
+    if (hasHullFeature) {
+        create_dynamic_cluster_hulls(sphere);
+    } else {
+        // Hide hulls if disabled
+        hide_convex_hulls(sphere);
+    }
 }
 
 function update_dynamic_point_sizes(sphere: SphereData) {
@@ -2019,7 +2031,23 @@ function update_dynamic_point_sizes(sphere: SphereData) {
         pointsResized++;
     });
     
-    console.log('🔗 Resized', pointsResized, 'points with dynamic size + opacity');
+    console.log('🔹 Resized', pointsResized, 'points with dynamic size + opacity');
+}
+
+function reset_point_sizes_to_default(sphere: SphereData) {
+    let pointsReset = 0;
+    sphere.pointObjectsByRecordID.forEach((pointMesh, recordId) => {
+        // Reset to default scale and opacity
+        pointMesh.scale.setScalar(1.0); // Default scale
+        if (pointMesh.material instanceof THREE.MeshBasicMaterial) {
+            pointMesh.material.transparent = false;
+            pointMesh.material.opacity = 1.0; // Fully opaque
+            pointMesh.material.needsUpdate = true;
+        }
+        pointsReset++;
+    });
+    
+    console.log('🔹 Reset', pointsReset, 'points to default size + opacity');
 }
 
 function create_dynamic_cluster_hulls(sphere: SphereData) {
@@ -2065,7 +2093,7 @@ function create_dynamic_cluster_hulls(sphere: SphereData) {
         clusterInfo.movementEnvelope = Math.max(clusterInfo.movementEnvelope, pointMovement);
     });
     
-    console.log('🔗 Found', clusterData.size, 'clusters for dynamic hulls');
+    console.log('🔷 Found', clusterData.size, 'clusters for dynamic hulls');
     
     // Create dynamic hulls for each cluster
     let hullsCreated = 0;
@@ -2083,7 +2111,7 @@ function create_dynamic_cluster_hulls(sphere: SphereData) {
         }
     });
     
-    console.log('🔗 Created', hullsCreated, 'DYNAMIC cluster hulls with movement-based sizing');
+    console.log('🔷 Created', hullsCreated, 'DYNAMIC cluster hulls with movement-based sizing');
 }
 
 function create_dynamic_convex_hull_mesh(sphere: SphereData, hullPoints: THREE.Vector3[], clusterColor: THREE.Color, cluster: number, scale: number, opacity: number) {

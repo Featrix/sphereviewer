@@ -412,7 +412,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [frameInfo, setFrameInfo] = useState<{ current: number, total: number, visible: number, epoch?: string, validationLoss?: number } | null>(null);
     const [isPlaying, setIsPlaying] = useState(true); // Start playing automatically
     const [frameInput, setFrameInput] = useState<string>('');
-    const [showConvexHulls, setShowConvexHulls] = useState(false);
+    const [showDynamicPoints, setShowDynamicPoints] = useState(false);
+    const [showDynamicHulls, setShowDynamicHulls] = useState(false);
 
     useEffect(() => {
         const loadTrainingData = async () => {
@@ -451,20 +452,19 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         loadTrainingData();
     }, [sessionId, apiBaseUrl]);
 
-    // Handle convex hull visibility changes
+    // Handle dynamic visualization feature changes
     useEffect(() => {
         if (!sphereRef) return;
         
-        if (showConvexHulls) {
-            // Import and call function to show convex hulls
-            const { show_convex_hulls } = require('../featrix_sphere_control');
-            show_convex_hulls(sphereRef);
-        } else {
-            // Import and call function to hide convex hulls  
-            const { hide_convex_hulls } = require('../featrix_sphere_control');
-            hide_convex_hulls(sphereRef);
-        }
-    }, [showConvexHulls, sphereRef]);
+        // Update sphere settings based on both features
+        sphereRef.showDynamicPoints = showDynamicPoints;
+        sphereRef.showDynamicHulls = showDynamicHulls;
+        
+        // Call the unified compute function with both settings
+        const { compute_cluster_convex_hulls } = require('../featrix_sphere_control');
+        compute_cluster_convex_hulls(sphereRef);
+        
+    }, [showDynamicPoints, showDynamicHulls, sphereRef]);
 
     // Frame control functions
     const handlePlayPause = () => {
@@ -765,6 +765,28 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     <>
                         <div style={{ margin: '0 8px', color: '#888' }}>|</div>
                         <label style={{
+                            color: '#fff',
+                            fontSize: '11px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            cursor: 'pointer',
+                            marginRight: '8px'
+                        }}>
+                            <input
+                                type="checkbox"
+                                checked={showDynamicPoints}
+                                onChange={(e) => {
+                                    console.log('🔹 Point sizing toggled:', e.target.checked);
+                                    setShowDynamicPoints(e.target.checked);
+                                }}
+                                style={{
+                                    marginRight: '4px',
+                                    cursor: 'pointer'
+                                }}
+                            />
+                            🔹 Points
+                        </label>
+                        <label style={{
                             color: frameInfo.visible >= 4 ? '#fff' : '#888',
                             fontSize: '11px',
                             display: 'flex',
@@ -773,17 +795,18 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         }}>
                             <input
                                 type="checkbox"
-                                checked={showConvexHulls}
+                                checked={showDynamicHulls}
                                 onChange={(e) => {
-                                    console.log('🔗 Hull checkbox toggled:', e.target.checked, 'clusters:', frameInfo.visible);
-                                    setShowConvexHulls(e.target.checked);
+                                    console.log('🔷 Hull sizing toggled:', e.target.checked, 'clusters:', frameInfo.visible);
+                                    setShowDynamicHulls(e.target.checked);
                                 }}
                                 style={{
                                     marginRight: '4px',
                                     cursor: 'pointer'
                                 }}
+                                disabled={frameInfo.visible < 4}
                             />
-                            📏 Dynamic Size ({frameInfo.visible})
+                            🔷 Hulls ({frameInfo.visible})
                         </label>
                     </>
                 )}
