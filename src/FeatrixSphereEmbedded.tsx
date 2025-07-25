@@ -354,6 +354,15 @@ const TrainingMovieSphere: React.FC<{
         }
 
         if (!sphereRef.current) {
+            // DIAGNOSTIC: Check if all required functions exist
+            console.log('🔍 FUNCTION_CHECK:', {
+                initialize_sphere: typeof initialize_sphere,
+                load_training_movie: typeof load_training_movie,
+                play_training_movie: typeof play_training_movie,
+                set_animation_options: typeof set_animation_options,
+                set_visual_options: typeof set_visual_options
+            });
+            
             // Initializing sphere and loading training movie
             console.time('🌐 SPHERE_INITIALIZATION');
             console.log('🌐 SPHERE_INIT_START:', performance.now() + 'ms');
