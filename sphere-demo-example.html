@@ -249,21 +249,44 @@
         let reactDomRetries = 0;
         const maxRetries = 3;
         
-        // Alternative CDNs for fallback
+        // EXACT VERSION MATCHING - Use specific 18.2.0 for perfect compatibility
         const reactCdns = [
-            'https://unpkg.com/react@18/umd/react.production.min.js',
-            'https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js',
+            'https://unpkg.com/react@18.2.0/umd/react.production.min.js',
+            'https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js',
             'https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js'
         ];
         
         const reactDomCdns = [
-            'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
-            'https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js',
+            'https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js',
+            'https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js',
             'https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js'
         ];
         
         function checkReactReady() {
             if (reactLoaded && reactDomLoaded && window.React && window.ReactDOM) {
+                // EXTRA VALIDATION: Check that ReactDOM has essential methods
+                try {
+                    const hasCreateRoot = typeof window.ReactDOM.createRoot === 'function';
+                    const hasRender = typeof window.ReactDOM.render === 'function';
+                    const hasReactInternals = window.React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
+                    
+                    if (!hasCreateRoot && !hasRender) {
+                        console.warn('❌ ReactDOM corrupted - no render methods available');
+                        return;
+                    }
+                    
+                    if (!hasReactInternals) {
+                        console.warn('❌ React corrupted - missing internals');
+                        return;
+                    }
+                    
+                    console.log('✅ React/ReactDOM validation passed:', {hasCreateRoot, hasRender, hasInternals: !!hasReactInternals});
+                    
+                } catch (error) {
+                    console.warn('❌ React/ReactDOM validation failed:', error);
+                    return;
+                }
+                
                 console.timeEnd('⚛️ REACT_LOADING_TIME');
                 console.log('✅ CACHE BUSTED: React dependencies fully loaded and ready');
                 console.log('⚛️ REACT_READY:', performance.now() - loadStartTime + 'ms');
@@ -285,12 +308,14 @@
             reactScript.src = `${reactCdns[cdnIndex]}?v=${reactCacheBust}&retry=${retryCount}`;
             
             reactScript.onload = () => {
-                if (window.React) {
+                if (window.React && window.React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED) {
                     reactLoaded = true;
-                    console.log('✅ React core loaded from CDN', cdnIndex + 1);
+                    console.log('✅ React core loaded and validated from CDN', cdnIndex + 1);
                     checkReactReady();
                 } else {
-                    console.warn('⚠️ React script loaded but window.React not available, retrying...');
+                    console.warn('⚠️ React loaded but corrupted/incomplete from CDN', cdnIndex + 1, '- clearing and retrying...');
+                    // Clear corrupted React
+                    if (window.React) delete window.React;
                     setTimeout(() => loadReactWithRetry(retryCount + 1), 1000 * (retryCount + 1));
                 }
             };
@@ -323,15 +348,20 @@
             reactDomScript.src = `${reactDomCdns[cdnIndex]}?v=${reactCacheBust}&retry=${retryCount}`;
             
             reactDomScript.onload = () => {
-                if (window.ReactDOM) {
+                // VALIDATE: Check that ReactDOM has essential methods
+                const hasReactDOM = window.ReactDOM;
+                const hasCreateRoot = hasReactDOM && typeof window.ReactDOM.createRoot === 'function';
+                const hasRender = hasReactDOM && typeof window.ReactDOM.render === 'function';
+                
+                if (hasReactDOM && (hasCreateRoot || hasRender)) {
                     reactDomLoaded = true;
-                    console.log('✅ ReactDOM loaded from CDN', cdnIndex + 1);
+                    console.log('✅ ReactDOM loaded and validated from CDN', cdnIndex + 1, {hasCreateRoot, hasRender});
                     
                     // CRITICAL: Ensure createRoot is available globally and add it to ReactDOM if missing
-                    if (!window.ReactDOM.createRoot && window.ReactDOM.createRoot === undefined) {
+                    if (!hasCreateRoot) {
                         // Fallback: use render method for older React compatibility
                         console.log('⚠️ createRoot not found, creating shim using render method');
-                        if (window.ReactDOM.render) {
+                        if (hasRender) {
                             // Create a createRoot shim that uses the old render method
                             window.ReactDOM.createRoot = function(container) {
                                 return {
@@ -345,7 +375,11 @@
                             };
                             console.log('✅ createRoot shim created using render method');
                         } else {
-                            console.error('❌ Neither createRoot nor render available!');
+                            console.error('❌ Neither createRoot nor render available - corrupted ReactDOM!');
+                            // Clear corrupted ReactDOM and retry
+                            if (window.ReactDOM) delete window.ReactDOM;
+                            setTimeout(() => loadReactDomWithRetry(retryCount + 1), 1000 * (retryCount + 1));
+                            return;
                         }
                     } else {
                         console.log('✅ ReactDOM.createRoot confirmed available');
@@ -353,7 +387,9 @@
                     
                     checkReactReady();
                 } else {
-                    console.warn('⚠️ ReactDOM script loaded but window.ReactDOM not available, retrying...');
+                    console.warn('⚠️ ReactDOM loaded but corrupted/incomplete from CDN', cdnIndex + 1, '- clearing and retrying...');
+                    // Clear corrupted ReactDOM
+                    if (window.ReactDOM) delete window.ReactDOM;
                     setTimeout(() => loadReactDomWithRetry(retryCount + 1), 1000 * (retryCount + 1));
                 }
             };
