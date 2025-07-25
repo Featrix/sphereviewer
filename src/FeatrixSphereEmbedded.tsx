@@ -493,6 +493,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 // Get the epoch projections (3D coordinates per epoch)
                 if (data && data.epoch_projections) {
                     const epochKeys = Object.keys(data.epoch_projections).sort((a, b) => parseInt(a) - parseInt(b));
+                    console.log('🎯 DEBUG: Epoch keys found:', epochKeys.length, 'epochs:', epochKeys.slice(0, 10));
+                    console.log('🎯 DEBUG: First few epoch data:', epochKeys.slice(0, 3).map(k => ({ epoch: k, count: data.epoch_projections[k]?.length || 0 })));
 
                     setTrainingData(data.epoch_projections);
                     

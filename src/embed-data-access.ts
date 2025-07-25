@@ -23,6 +23,10 @@ export async function fetch_training_metrics(session_id: string, apiBaseUrl?: st
     const projectionsResponse = await fetch(`${baseUrl}/compute/session/${session_id}/epoch_projections`);
     const projectionsData = await projectionsResponse.json();
     console.timeEnd('🔗 API_EPOCH_PROJECTIONS');
+    console.log('🎯 DEBUG: API Response keys:', Object.keys(projectionsData));
+    if (projectionsData.epoch_projections) {
+        console.log('🎯 DEBUG: Epoch projections keys:', Object.keys(projectionsData.epoch_projections).length, 'epochs');
+    }
     const sizeBytes = JSON.stringify(projectionsData).length;
     const sizeMB = (sizeBytes / (1024 * 1024)).toFixed(1);
     console.log('🔗 API_PROJECTIONS_SIZE:', sizeBytes, `bytes (${sizeMB}MB)`);
