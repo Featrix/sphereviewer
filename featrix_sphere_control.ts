@@ -1931,12 +1931,18 @@ function handle_mouse_highlight(sphere: SphereData) {
 // ============================================================================
 
 export function show_convex_hulls(sphere: SphereData) {
-    if (!sphere) return;
+    if (!sphere) {
+        console.warn('🔗 show_convex_hulls: No sphere provided');
+        return;
+    }
+    
+    console.log('🔗 show_convex_hulls called - points:', sphere.pointObjectsByRecordID?.size || 0);
     
     // Create convex hulls group if it doesn't exist
     if (!sphere.convexHullsGroup) {
         sphere.convexHullsGroup = new THREE.Group();
         sphere.scene.add(sphere.convexHullsGroup);
+        console.log('🔗 Created convex hulls group');
     }
     
     // Set flag and compute hulls
@@ -1961,7 +1967,12 @@ export function hide_convex_hulls(sphere: SphereData) {
 }
 
 function compute_cluster_convex_hulls(sphere: SphereData) {
-    if (!sphere.convexHullsGroup || !sphere.showConvexHulls) return;
+    if (!sphere.convexHullsGroup || !sphere.showConvexHulls) {
+        console.log('🔗 compute_cluster_convex_hulls: Skipped - no group or disabled');
+        return;
+    }
+    
+    console.log('🔗 Computing convex hulls for', sphere.pointObjectsByRecordID?.size || 0, 'points');
     
     // Clear existing hulls
     hide_convex_hulls(sphere);
@@ -1984,15 +1995,23 @@ function compute_cluster_convex_hulls(sphere: SphereData) {
         clusterPoints.get(cluster)!.push({point: position, color});
     });
     
+    console.log('🔗 Found clusters:', Array.from(clusterPoints.keys()), 'with points:', Array.from(clusterPoints.entries()).map(([k,v]) => `${k}:${v.length}`));
+    
     // Create convex hulls for clusters with enough points (minimum 4 for 3D hull)
+    let hullsCreated = 0;
     clusterPoints.forEach((points, cluster) => {
         if (points.length >= 4) {
             const hull = compute_3d_convex_hull(points.map(p => p.point));
             if (hull && hull.length > 0) {
                 create_convex_hull_mesh(sphere, hull, points[0].color, cluster);
+                hullsCreated++;
             }
+        } else {
+            console.log(`🔗 Cluster ${cluster} has only ${points.length} points (need 4+ for hull)`);
         }
     });
+    
+    console.log('🔗 Created', hullsCreated, 'convex hulls');
 }
 
 function compute_3d_convex_hull(points: THREE.Vector3[]): THREE.Vector3[] | null {

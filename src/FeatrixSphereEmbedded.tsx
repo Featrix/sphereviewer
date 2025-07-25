@@ -760,12 +760,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     ⏹️
                 </button>
                 
-                {/* Convex Hull Toggle - only show when k>=4 */}
-                {frameInfo && frameInfo.visible >= 4 && (
+                {/* Convex Hull Toggle - always visible for debugging */}
+                {frameInfo && (
                     <>
                         <div style={{ margin: '0 8px', color: '#888' }}>|</div>
                         <label style={{
-                            color: '#fff',
+                            color: frameInfo.visible >= 4 ? '#fff' : '#888',
                             fontSize: '11px',
                             display: 'flex',
                             alignItems: 'center',
@@ -774,13 +774,16 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             <input
                                 type="checkbox"
                                 checked={showConvexHulls}
-                                onChange={(e) => setShowConvexHulls(e.target.checked)}
+                                onChange={(e) => {
+                                    console.log('🔗 Hull checkbox toggled:', e.target.checked, 'clusters:', frameInfo.visible);
+                                    setShowConvexHulls(e.target.checked);
+                                }}
                                 style={{
                                     marginRight: '4px',
                                     cursor: 'pointer'
                                 }}
                             />
-                            🔗 Hulls
+                            🔗 Hulls ({frameInfo.visible})
                         </label>
                     </>
                 )}
@@ -820,18 +823,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             // Training movie sphere ready
                             setSphereRef(sphere);
                             
-                            // Monitor sphere playing state
-                            const checkPlayingState = () => {
-                                if (sphere && sphere.isPlayingMovie !== undefined) {
-                                    setIsPlaying(sphere.isPlayingMovie);
-                                }
-                            };
+                            // Initial state sync only - no aggressive monitoring  
+                            if (sphere && sphere.isPlayingMovie !== undefined) {
+                                setIsPlaying(sphere.isPlayingMovie);
+                            }
                             
-                            // Check state periodically
-                            const stateChecker = setInterval(checkPlayingState, 500);
-                            
-                            // Clean up on unmount
-                            return () => clearInterval(stateChecker);
+                            console.log('🎮 Sphere ready - initial playing state:', sphere.isPlayingMovie);
                         }}
                         onFrameUpdate={(info) => {
                             setFrameInfo(info);
