@@ -90,15 +90,15 @@ class FeatrixSphereViewer {
     try {
       const response = await fetch(dataUrl);
       const data = await response.json();
-      this.initWithData(data, containerId);
+      await this.initWithData(data, containerId);
     } catch (error) {
       console.error('Failed to load Featrix data:', error);
       this.showError('Failed to load data file', containerId);
     }
   }
 
-  private initWithData(data: any, containerId?: string | null) {
-    this.init({ data, containerId: containerId || undefined });
+  private async initWithData(data: any, containerId?: string | null) {
+    await this.init({ data, containerId: containerId || undefined });
   }
 
   private showError(message: string, containerId?: string | null) {
@@ -115,8 +115,8 @@ class FeatrixSphereViewer {
     }
   }
 
-  private renderWithRetry(component: any, container: any, containerId?: string | null, retryCount: number = 0) {
-    const maxRetries = 3;
+  private async renderWithRetry(component: any, container: any, containerId?: string | null, retryCount: number = 0) {
+    const maxRetries = 5;
     
     if (retryCount >= maxRetries) {
       console.error('❌ Failed to render React component after', maxRetries, 'attempts');
@@ -124,28 +124,48 @@ class FeatrixSphereViewer {
       return;
     }
     
+    // Add sleep delay before first attempt and retries
+    if (retryCount > 0) {
+      const delay = 500 * (retryCount + 1); // Progressive delay: 500ms, 1s, 1.5s, 2s
+      console.log(`💤 Sleeping ${delay}ms before retry attempt ${retryCount + 1}...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    } else {
+      // Even on first attempt, give ReactDOM a moment to fully initialize
+      console.log(`💤 Initial sleep 200ms to let ReactDOM settle...`);
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    
     try {
-      // Check if ReactDOM is available and has required methods
-      if (!window.ReactDOM) {
-        throw new Error('ReactDOM not available on window');
+      // Check if window.ReactDOM is available and functional
+      const reactDOM = (window as any).ReactDOM;
+      if (!reactDOM) {
+        throw new Error('window.ReactDOM not available');
       }
       
-      // React 18 vs 17 compatibility
-      if (ReactDOM.createRoot) {
+      // Test if ReactDOM is actually functional by checking for required methods
+      const hasCreateRoot = typeof reactDOM.createRoot === 'function';
+      const hasRender = typeof reactDOM.render === 'function';
+      
+      if (!hasCreateRoot && !hasRender) {
+        throw new Error('ReactDOM methods not available (createRoot: ' + hasCreateRoot + ', render: ' + hasRender + ')');
+      }
+      
+      console.log(`🔍 ReactDOM check (attempt ${retryCount + 1}): createRoot=${hasCreateRoot}, render=${hasRender}`);
+      
+      // React 18 vs 17 compatibility - use window.ReactDOM directly
+      if (hasCreateRoot) {
         // React 18
         console.log('✅ Using React 18 createRoot (attempt', retryCount + 1, ')');
-        this.root = ReactDOM.createRoot(container);
+        this.root = reactDOM.createRoot(container);
         this.root.render(component);
-      } else if (ReactDOM.render) {
+      } else if (hasRender) {
         // React 17 fallback
         console.log('✅ Using React 17 render fallback (attempt', retryCount + 1, ')');
-        ReactDOM.render(component, container);
+        reactDOM.render(component, container);
         this.root = { 
-          render: (comp: any) => ReactDOM.render(comp, container), 
-          unmount: () => ReactDOM.unmountComponentAtNode(container) 
+          render: (comp: any) => reactDOM.render(comp, container), 
+          unmount: () => reactDOM.unmountComponentAtNode(container) 
         };
-      } else {
-        throw new Error('Neither ReactDOM.createRoot nor ReactDOM.render available');
       }
       
       // Success - verify rendering actually worked
@@ -153,6 +173,8 @@ class FeatrixSphereViewer {
         if (container.children.length === 0) {
           console.warn('⚠️ React rendering appears to have failed (empty container), retrying...');
           this.renderWithRetry(component, container, containerId, retryCount + 1);
+        } else {
+          console.log('✅ React component successfully rendered and verified');
         }
       }, 1000);
       
@@ -160,11 +182,8 @@ class FeatrixSphereViewer {
       console.warn(`⚠️ React rendering failed (attempt ${retryCount + 1}):`, error);
       
       if (retryCount < maxRetries - 1) {
-        const delay = 1000 * (retryCount + 1); // Exponential backoff
-        console.log(`🔄 Retrying React rendering in ${delay}ms...`);
-        setTimeout(() => {
-          this.renderWithRetry(component, container, containerId, retryCount + 1);
-        }, delay);
+        console.log(`🔄 Will retry React rendering...`);
+        this.renderWithRetry(component, container, containerId, retryCount + 1);
       } else {
         this.showError('ReactDOM initialization failed after multiple attempts', containerId);
       }
@@ -193,7 +212,7 @@ class FeatrixSphereViewer {
     return container;
   }
 
-  init(config: FeatrixSphereViewerConfig) {
+  async init(config: FeatrixSphereViewerConfig) {
     const { data, sessionId, containerId = 'sphere-viewer-container', apiBaseUrl } = config;
 
     // Store the current config for future updates
@@ -232,7 +251,7 @@ class FeatrixSphereViewer {
     );
     
     // React 18 vs 17 compatibility with retry logic
-    this.renderWithRetry(component, container, containerId, 0);
+          await this.renderWithRetry(component, container, containerId, 0);
   }
 
   destroy() {

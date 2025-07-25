@@ -606,6 +606,14 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any, 
         create_3d_loss_plot(sphere, lossData);
     }
     
+    // Initialize memory trails system
+    create_memory_trails(sphere);
+    
+    // Store initial positions for any existing points
+    sphere.pointObjectsByRecordID.forEach((mesh: any, recordId: string) => {
+        store_point_position_in_history(sphere, recordId, mesh.position);
+    });
+    
     // Load logistics cluster data from the actual JSON file
     let logisticsClusterData = null;
     try {
@@ -984,7 +992,14 @@ function animate_interpolation(sphere: SphereData) {
     if (progress < 1.0) {
         sphere.interpolationAnimationRef = requestAnimationFrame(() => animate_interpolation(sphere));
     } else {
-        // Interpolation complete
+        // Interpolation complete - store final positions in memory trail history
+        sphere.pointObjectsByRecordID.forEach((mesh: any, recordId: string) => {
+            store_point_position_in_history(sphere, recordId, mesh.position);
+        });
+        
+        // Update memory trails with new positions
+        update_memory_trails(sphere);
+        
         sphere.isInterpolating = false;
         sphere.pointTargetPositions = undefined;
         sphere.pointStartPositions = undefined;
@@ -1268,6 +1283,91 @@ export function clear_colors(sphere: SphereData) {
     }
 }
 
+export function create_memory_trails(sphere: SphereData) {
+    // Remove existing trails if any
+    if (sphere.memoryTrailsGroup) {
+        sphere.scene.remove(sphere.memoryTrailsGroup);
+        sphere.memoryTrailsGroup = undefined;
+    }
+    
+    // Create group for memory trails
+    sphere.memoryTrailsGroup = new THREE.Group();
+    sphere.scene.add(sphere.memoryTrailsGroup);
+    
+    // Initialize position history map
+    sphere.pointPositionHistory = new Map();
+}
+
+export function update_memory_trails(sphere: SphereData) {
+    if (!sphere.memoryTrailsGroup || !sphere.pointPositionHistory) {
+        return;
+    }
+    
+    // Clear existing trail lines
+    while (sphere.memoryTrailsGroup.children.length > 0) {
+        const child = sphere.memoryTrailsGroup.children[0];
+        sphere.memoryTrailsGroup.remove(child);
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) child.material.dispose();
+    }
+    
+    // Create trails for each point
+    sphere.pointObjectsByRecordID.forEach((pointMesh, recordId) => {
+        const history = sphere.pointPositionHistory?.get(recordId);
+        if (!history || history.length < 2) return;
+        
+        // Get point color
+        const pointColor = pointMesh.material.color;
+        
+        // Create trail segments (up to 5 segments)
+        const maxSegments = Math.min(5, history.length - 1);
+        
+        for (let i = 0; i < maxSegments; i++) {
+            // Alpha decreases as we go further back in time
+            // Most recent segment (i=0): alpha = 0.8
+            // Oldest segment (i=4): alpha = 0.1
+            const alpha = 0.8 - (i * 0.15);
+            
+            // Create line from current position to previous position
+            const points = [
+                history[0].clone(), // Current position
+                history[i + 1].clone() // Previous position (1, 2, 3, 4, or 5 epochs ago)
+            ];
+            
+            const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+            const lineMaterial = new THREE.LineBasicMaterial({
+                color: pointColor.clone(),
+                transparent: true,
+                opacity: alpha,
+                linewidth: 1
+            });
+            
+            const line = new THREE.Line(lineGeometry, lineMaterial);
+            sphere.memoryTrailsGroup.add(line);
+        }
+    });
+}
+
+export function store_point_position_in_history(sphere: SphereData, recordId: string, position: THREE.Vector3) {
+    if (!sphere.pointPositionHistory) {
+        sphere.pointPositionHistory = new Map();
+    }
+    
+    let history = sphere.pointPositionHistory.get(recordId);
+    if (!history) {
+        history = [];
+        sphere.pointPositionHistory.set(recordId, history);
+    }
+    
+    // Add current position to front of history
+    history.unshift(position.clone());
+    
+    // Keep only last 6 positions (current + 5 previous)
+    if (history.length > 6) {
+        history.splice(6);
+    }
+}
+
 export function create_3d_loss_plot(sphere: SphereData, lossData: any) {
     if (!lossData || !lossData.validation_loss || !Array.isArray(lossData.validation_loss)) {
         return;
@@ -1403,6 +1503,17 @@ export function clear_all_points(sphere: SphereData) {
         sphere.lossPlotGroup = undefined;
         sphere.lossPlotLine = undefined;
         sphere.lossPlotCurrentMarker = undefined;
+    }
+    
+    // Remove memory trails if they exist
+    if (sphere.memoryTrailsGroup) {
+        sphere.scene.remove(sphere.memoryTrailsGroup);
+        sphere.memoryTrailsGroup = undefined;
+    }
+    
+    // Clear position history
+    if (sphere.pointPositionHistory) {
+        sphere.pointPositionHistory.clear();
     }
     
 

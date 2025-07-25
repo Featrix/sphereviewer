@@ -52,6 +52,8 @@ export interface SphereData {
     lossPlotGroup?: THREE.Group;
     lossPlotLine?: THREE.Line;
     lossPlotCurrentMarker?: THREE.Mesh;
+    memoryTrailsGroup?: THREE.Group;
+    pointPositionHistory?: Map<string, THREE.Vector3[]>;
     // Smooth interpolation properties
     pointTargetPositions?: Map<string, THREE.Vector3>;
     pointStartPositions?: Map<string, THREE.Vector3>;
