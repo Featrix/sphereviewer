@@ -1968,7 +1968,7 @@ export function hide_convex_hulls(sphere: SphereData) {
 
 function compute_cluster_convex_hulls(sphere: SphereData) {
     if (!sphere.showConvexHulls) {
-        console.log('🔗 Dynamic point sizing: Disabled');
+        console.log('🔗 Dynamic sizing: Disabled');
         return;
     }
     
@@ -1977,9 +1977,16 @@ function compute_cluster_convex_hulls(sphere: SphereData) {
         return;
     }
     
-    console.log('🔗 Computing dynamic point sizes based on movement envelopes...');
+    console.log('🔗 Computing dynamic POINTS + CLUSTER HULLS based on movement...');
     
-    // Update each point's size based on its recent movement envelope
+    // First, update individual point sizes
+    update_dynamic_point_sizes(sphere);
+    
+    // Then, create dynamic cluster hulls
+    create_dynamic_cluster_hulls(sphere);
+}
+
+function update_dynamic_point_sizes(sphere: SphereData) {
     let pointsResized = 0;
     sphere.pointObjectsByRecordID.forEach((pointMesh, recordId) => {
         const history = sphere.pointPositionHistory?.get(recordId);
@@ -1996,17 +2003,13 @@ function compute_cluster_convex_hulls(sphere: SphereData) {
         const newRadius = Math.min(maxRadius, Math.max(minRadius, boundingRadius * scaleFactor));
         
         // Calculate opacity inversely proportional to size
-        // Small points (stable) → High opacity (1.0 = solid)
-        // Large points (moving) → Low opacity (0.3 = transparent)
-        const normalizedSize = (newRadius - minRadius) / (maxRadius - minRadius); // 0-1
+        const normalizedSize = (newRadius - minRadius) / (maxRadius - minRadius);
         const minOpacity = 0.3;  // Most transparent for biggest points
         const maxOpacity = 1.0;  // Solid for smallest points
         const opacity = maxOpacity - (normalizedSize * (maxOpacity - minOpacity));
         
-        // Update point geometry scale
-        pointMesh.scale.setScalar(newRadius / 0.025); // 0.025 is default point size
-        
-        // Update point material opacity (ensure material is transparent)
+        // Update point geometry scale and opacity
+        pointMesh.scale.setScalar(newRadius / 0.025);
         if (pointMesh.material instanceof THREE.MeshBasicMaterial) {
             pointMesh.material.transparent = true;
             pointMesh.material.opacity = opacity;
@@ -2016,7 +2019,113 @@ function compute_cluster_convex_hulls(sphere: SphereData) {
         pointsResized++;
     });
     
-    console.log('🔗 Resized', pointsResized, 'points with dynamic size AND opacity based on movement');
+    console.log('🔗 Resized', pointsResized, 'points with dynamic size + opacity');
+}
+
+function create_dynamic_cluster_hulls(sphere: SphereData) {
+    // Clear existing hulls
+    hide_convex_hulls(sphere);
+    sphere.showConvexHulls = true;
+    
+    if (!sphere.convexHullsGroup) {
+        sphere.convexHullsGroup = new THREE.Group();
+        sphere.scene.add(sphere.convexHullsGroup);
+    }
+    
+    // Group points by cluster and calculate cluster movement
+    const clusterData: Map<number, {
+        points: THREE.Vector3[],
+        color: THREE.Color,
+        movementEnvelope: number
+    }> = new Map();
+    
+    sphere.pointObjectsByRecordID.forEach((pointMesh, recordId) => {
+        const record = sphere.pointRecordsByID.get(recordId);
+        if (!record || record.featrix_meta.cluster_pre === null) return;
+        
+        const cluster = record.featrix_meta.cluster_pre;
+        const currentPos = pointMesh.position.clone();
+        const color = pointMesh.material.color.clone();
+        
+        // Calculate this point's movement envelope for cluster-level calculation
+        const history = sphere.pointPositionHistory?.get(recordId);
+        const pointMovement = history ? calculateBoundingSphereRadius(history) : 0;
+        
+        if (!clusterData.has(cluster)) {
+            clusterData.set(cluster, {
+                points: [],
+                color: color,
+                movementEnvelope: 0
+            });
+        }
+        
+        const clusterInfo = clusterData.get(cluster)!;
+        clusterInfo.points.push(currentPos);
+        // Use average movement of points in cluster
+        clusterInfo.movementEnvelope = Math.max(clusterInfo.movementEnvelope, pointMovement);
+    });
+    
+    console.log('🔗 Found', clusterData.size, 'clusters for dynamic hulls');
+    
+    // Create dynamic hulls for each cluster
+    let hullsCreated = 0;
+    clusterData.forEach((clusterInfo, cluster) => {
+        if (clusterInfo.points.length >= 4) {
+            const hull = compute_3d_convex_hull(clusterInfo.points);
+            if (hull && hull.length >= 4) {
+                // Calculate hull scale and opacity based on cluster movement
+                const movementScale = Math.max(1.0, Math.min(3.0, 1.0 + clusterInfo.movementEnvelope * 5.0));
+                const hullOpacity = Math.max(0.05, Math.min(0.3, 0.3 - clusterInfo.movementEnvelope * 0.5));
+                
+                create_dynamic_convex_hull_mesh(sphere, hull, clusterInfo.color, cluster, movementScale, hullOpacity);
+                hullsCreated++;
+            }
+        }
+    });
+    
+    console.log('🔗 Created', hullsCreated, 'DYNAMIC cluster hulls with movement-based sizing');
+}
+
+function create_dynamic_convex_hull_mesh(sphere: SphereData, hullPoints: THREE.Vector3[], clusterColor: THREE.Color, cluster: number, scale: number, opacity: number) {
+    if (!sphere.convexHullsGroup || hullPoints.length < 4) return;
+    
+    try {
+        // Create filled geometry
+        const filledGeometry = create_filled_hull_geometry(hullPoints);
+        
+        if (filledGeometry) {
+            // Scale the hull based on cluster movement
+            const scaledGeometry = filledGeometry.clone();
+            scaledGeometry.scale(scale, scale, scale);
+            
+            // Create materials with movement-based opacity
+            const filledMaterial = new THREE.MeshBasicMaterial({
+                color: clusterColor,
+                transparent: true,
+                opacity: opacity * 0.5, // Even more transparent for filled
+                side: THREE.DoubleSide,
+                wireframe: false
+            });
+            
+            const wireframeMaterial = new THREE.MeshBasicMaterial({
+                color: clusterColor,
+                transparent: true,
+                opacity: opacity,
+                wireframe: true
+            });
+            
+            // Create meshes
+            const filledMesh = new THREE.Mesh(scaledGeometry, filledMaterial);
+            const wireframeMesh = new THREE.Mesh(scaledGeometry.clone(), wireframeMaterial);
+            
+            sphere.convexHullsGroup.add(filledMesh);
+            sphere.convexHullsGroup.add(wireframeMesh);
+            
+            console.log(`✨ Created DYNAMIC hull for cluster ${cluster}: scale=${scale.toFixed(2)}, opacity=${opacity.toFixed(2)}`);
+        }
+    } catch (error) {
+        console.warn(`Failed to create dynamic hull for cluster ${cluster}:`, error);
+    }
 }
 
 function calculateBoundingSphereRadius(positions: THREE.Vector3[]): number {
