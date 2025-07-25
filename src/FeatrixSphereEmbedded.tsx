@@ -428,6 +428,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [frameInput, setFrameInput] = useState<string>('');
     const [showDynamicPoints, setShowDynamicPoints] = useState(false);
     const [showDynamicHulls, setShowDynamicHulls] = useState(false);
+    const [trailLength, setTrailLength] = useState(5); // Default 5 epochs
+    const [spotlightCluster, setSpotlightCluster] = useState<number>(-1); // -1 = off, 0+ = cluster number
 
     useEffect(() => {
         const loadTrainingData = async () => {
@@ -470,15 +472,18 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     useEffect(() => {
         if (!sphereRef) return;
         
-        // Update sphere settings based on both features
+        // Update sphere settings based on features
         sphereRef.showDynamicPoints = showDynamicPoints;
         sphereRef.showDynamicHulls = showDynamicHulls;
+        sphereRef.memoryTrailLength = trailLength;
+        sphereRef.spotlightCluster = spotlightCluster;
         
-        // Call the unified compute function with both settings
-        const { compute_cluster_convex_hulls } = require('../featrix_sphere_control');
+        // Call the unified compute function with all settings
+        const { compute_cluster_convex_hulls, update_cluster_spotlight } = require('../featrix_sphere_control');
         compute_cluster_convex_hulls(sphereRef);
+        update_cluster_spotlight(sphereRef);
         
-    }, [showDynamicPoints, showDynamicHulls, sphereRef]);
+    }, [showDynamicPoints, showDynamicHulls, trailLength, spotlightCluster, sphereRef]);
 
     // Frame control functions
     const handlePlayPause = () => {
@@ -821,6 +826,70 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 disabled={frameInfo.visible < 4}
                             />
                             🔮 Spheres ({frameInfo.visible})
+                        </label>
+                        
+                        <div style={{ margin: '0 8px', color: '#888' }}>|</div>
+                        
+                        {/* Trail Length Control */}
+                        <label style={{
+                            color: '#fff',
+                            fontSize: '11px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            marginRight: '8px'
+                        }}>
+                            🛤️ Trails:
+                            <input
+                                type="range"
+                                min="2"
+                                max="15"
+                                value={trailLength}
+                                onChange={(e) => {
+                                    const newLength = parseInt(e.target.value);
+                                    console.log('🛤️ Trail length changed:', newLength);
+                                    setTrailLength(newLength);
+                                }}
+                                style={{
+                                    marginLeft: '4px',
+                                    marginRight: '4px',
+                                    cursor: 'pointer',
+                                    width: '40px'
+                                }}
+                            />
+                            <span style={{ fontSize: '10px', color: '#ccc' }}>{trailLength}</span>
+                        </label>
+                        
+                        {/* Cluster Spotlight Control */}
+                        <label style={{
+                            color: '#fff',
+                            fontSize: '11px',
+                            display: 'flex',
+                            alignItems: 'center'
+                        }}>
+                            🎯 Focus:
+                            <select
+                                value={spotlightCluster}
+                                onChange={(e) => {
+                                    const cluster = parseInt(e.target.value);
+                                    console.log('🎯 Spotlight cluster changed:', cluster);
+                                    setSpotlightCluster(cluster);
+                                }}
+                                style={{
+                                    marginLeft: '4px',
+                                    fontSize: '10px',
+                                    padding: '1px 2px',
+                                    backgroundColor: '#333',
+                                    color: '#fff',
+                                    border: '1px solid #555',
+                                    borderRadius: '2px',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                <option value={-1}>Off</option>
+                                {Array.from({length: frameInfo.visible}, (_, i) => (
+                                    <option key={i} value={i}>C{i}</option>
+                                ))}
+                            </select>
                         </label>
                     </>
                 )}

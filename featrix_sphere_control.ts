@@ -1438,9 +1438,10 @@ export function store_point_position_in_history(sphere: SphereData, recordId: st
     // Add current position to front of history
     history.unshift(position.clone());
     
-    // Keep only last 6 positions (current + 5 previous)
-    if (history.length > 6) {
-        history.splice(6);
+    // Keep only last N positions (current + configurable previous)
+    const maxLength = (sphere.memoryTrailLength || 5) + 1; // +1 for current position
+    if (history.length > maxLength) {
+        history.splice(maxLength);
     }
 }
 
@@ -2169,6 +2170,92 @@ function calculateClusterBoundingSphere(points: THREE.Vector3[]): { center: THRE
     const radius = maxDistance * 1.1;
     
     return { center, radius };
+}
+
+export function update_cluster_spotlight(sphere: SphereData) {
+    // Clear existing spotlight
+    if (sphere.clusterSpotlightGroup) {
+        sphere.scene.remove(sphere.clusterSpotlightGroup);
+        sphere.clusterSpotlightGroup = undefined;
+    }
+    
+    const spotlightCluster = sphere.spotlightCluster;
+    
+    // If spotlight is off (-1) or no cluster selected, return
+    if (spotlightCluster === undefined || spotlightCluster < 0) {
+        console.log('🎯 Cluster spotlight: OFF');
+        return;
+    }
+    
+    console.log('🎯 Creating cluster spotlight for cluster:', spotlightCluster);
+    
+    // Create spotlight group
+    sphere.clusterSpotlightGroup = new THREE.Group();
+    sphere.scene.add(sphere.clusterSpotlightGroup);
+    
+    // Find all points in the selected cluster
+    const clusterPoints: { position: THREE.Vector3, color: THREE.Color }[] = [];
+    sphere.pointObjectsByRecordID.forEach((pointMesh, recordId) => {
+        const record = sphere.pointRecordsByID.get(recordId);
+        if (record && record.featrix_meta.cluster_pre === spotlightCluster) {
+            clusterPoints.push({
+                position: pointMesh.position.clone(),
+                color: pointMesh.material.color.clone()
+            });
+        }
+    });
+    
+    if (clusterPoints.length === 0) {
+        console.log('🎯 No points found for cluster:', spotlightCluster);
+        return;
+    }
+    
+    console.log(`🎯 Found ${clusterPoints.length} points in cluster ${spotlightCluster}`);
+    
+    // Calculate cluster centroid
+    const centroid = new THREE.Vector3();
+    clusterPoints.forEach(point => centroid.add(point.position));
+    centroid.divideScalar(clusterPoints.length);
+    
+    // Create thick lines from center of sphere to each point in the cluster
+    const sphereCenter = new THREE.Vector3(0, 0, 0);
+    const clusterColor = clusterPoints[0].color; // Use cluster color
+    
+    clusterPoints.forEach(point => {
+        // Create line from sphere center to point
+        const lineGeometry = new THREE.BufferGeometry().setFromPoints([
+            sphereCenter,
+            point.position
+        ]);
+        
+        const lineMaterial = new THREE.LineBasicMaterial({
+            color: clusterColor,
+            transparent: true,
+            opacity: 0.6,
+            linewidth: 3 // Note: linewidth may not work in WebGL, but we'll try
+        });
+        
+        const line = new THREE.Line(lineGeometry, lineMaterial);
+        sphere.clusterSpotlightGroup.add(line);
+    });
+    
+    // Also create a thicker line to the centroid for reference
+    const centroidLineGeometry = new THREE.BufferGeometry().setFromPoints([
+        sphereCenter,
+        centroid
+    ]);
+    
+    const centroidLineMaterial = new THREE.LineBasicMaterial({
+        color: clusterColor,
+        transparent: true,
+        opacity: 0.9,
+        linewidth: 5
+    });
+    
+    const centroidLine = new THREE.Line(centroidLineGeometry, centroidLineMaterial);
+    sphere.clusterSpotlightGroup.add(centroidLine);
+    
+    console.log(`🎯 Created ${clusterPoints.length + 1} spotlight lines for cluster ${spotlightCluster}`);
 }
 
 function calculateBoundingSphereRadius(positions: THREE.Vector3[]): number {
