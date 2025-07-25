@@ -2,7 +2,7 @@ import React, { Suspense, useEffect, useRef, useState } from "react";
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
 import { fetch_session_data, fetch_session_projections, fetch_training_metrics } from './embed-data-access';
-import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie } from '../featrix_sphere_control';
+import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 
 // Build timestamp for cache busting verification
@@ -120,8 +120,9 @@ interface TrainingMovieProps {
 // Training Movie Sphere Component - handles everything internally
 const TrainingMovieSphere: React.FC<{ 
     trainingData: any,
-    onReady?: (sphere: any) => void 
-}> = ({ trainingData, onReady }) => {
+    onReady?: (sphere: any) => void,
+    onFrameUpdate?: (frameInfo: { current: number, total: number, visible: number }) => void
+}> = ({ trainingData, onReady, onFrameUpdate }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const sphereRef = useRef<any>(null);
 
@@ -137,9 +138,14 @@ const TrainingMovieSphere: React.FC<{
             // Initialize empty sphere
             sphereRef.current = initialize_sphere(containerRef.current, []);
             
-            // Set up visual options for training movie
-            set_animation_options(sphereRef.current, true, 0.05, false, null);
-            set_visual_options(sphereRef.current, 0.08, 0.8);
+            // Set frame update callback
+            if (onFrameUpdate) {
+                sphereRef.current.frameUpdateCallback = onFrameUpdate;
+            }
+            
+            // Set up visual options for training movie - smaller points
+            set_animation_options(sphereRef.current, true, 0.02, false, null);
+            set_visual_options(sphereRef.current, 0.025, 0.9);
             
             // Load training movie data into the sphere
             load_training_movie(sphereRef.current, trainingData);
@@ -182,6 +188,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [sphereRef, setSphereRef] = useState<any>(null);
+    const [frameInfo, setFrameInfo] = useState<{ current: number, total: number, visible: number } | null>(null);
+    const [isPlaying, setIsPlaying] = useState(true); // Start playing automatically
+    const [frameInput, setFrameInput] = useState<string>('');
 
     useEffect(() => {
         const loadTrainingData = async () => {
@@ -210,6 +219,46 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
 
         loadTrainingData();
     }, [sessionId, apiBaseUrl]);
+
+    // Frame control functions
+    const handlePlayPause = () => {
+        if (!sphereRef) return;
+        
+        if (isPlaying) {
+            pause_training_movie(sphereRef);
+            setIsPlaying(false);
+        } else {
+            resume_training_movie(sphereRef);
+            setIsPlaying(true);
+        }
+    };
+
+    const handleStepBackward = () => {
+        if (!sphereRef) return;
+        step_training_movie_frame(sphereRef, 'backward');
+        setIsPlaying(false); // Stepping pauses the movie
+    };
+
+    const handleStepForward = () => {
+        if (!sphereRef) return;
+        step_training_movie_frame(sphereRef, 'forward');
+        setIsPlaying(false); // Stepping pauses the movie
+    };
+
+    const handleGotoFrame = () => {
+        if (!sphereRef || !frameInput) return;
+        const frameNumber = parseInt(frameInput);
+        if (isNaN(frameNumber)) return;
+        
+        goto_training_movie_frame(sphereRef, frameNumber);
+        setIsPlaying(false); // Jumping pauses the movie
+    };
+
+    const handleStop = () => {
+        if (!sphereRef) return;
+        stop_training_movie(sphereRef);
+        setIsPlaying(false);
+    };
 
     if (loading) {
         return (
@@ -312,7 +361,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
             color: '#fff',
             overflow: 'hidden'
         }}>
-            {/* Build timestamp ONLY - top right overlay */}
+            {/* Build timestamp & frame info - top right overlay */}
             <div className="build-display" style={{
                 position: 'absolute',
                 top: '10px',
@@ -325,7 +374,133 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 borderRadius: '3px',
                 zIndex: 1000
             }}>
-                v{BUILD_TIMESTAMP.slice(0, 19).replace('T', ' ')}
+                <div>v{BUILD_TIMESTAMP.slice(0, 19).replace('T', ' ')}</div>
+                {frameInfo && (
+                    <div style={{ color: '#00ff00', marginTop: '2px' }}>
+                        Frame {frameInfo.current}/{frameInfo.total} | {frameInfo.visible} clusters
+                    </div>
+                )}
+            </div>
+
+            {/* Frame Controls - bottom center overlay */}
+            <div style={{
+                position: 'absolute',
+                bottom: '10px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: 'rgba(0,0,0,0.8)',
+                padding: '8px 12px',
+                borderRadius: '6px',
+                zIndex: 1000,
+                fontFamily: 'monospace',
+                fontSize: '12px'
+            }}>
+                <button
+                    onClick={handleStepBackward}
+                    style={{
+                        background: '#333',
+                        border: '1px solid #555',
+                        color: '#fff',
+                        padding: '4px 8px',
+                        borderRadius: '3px',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                    }}
+                    title="Previous Frame"
+                >
+                    ⏮️
+                </button>
+                
+                <button
+                    onClick={handlePlayPause}
+                    style={{
+                        background: isPlaying ? '#c44' : '#4c4',
+                        border: '1px solid #555',
+                        color: '#fff',
+                        padding: '4px 8px',
+                        borderRadius: '3px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        minWidth: '32px'
+                    }}
+                    title={isPlaying ? "Pause" : "Play"}
+                >
+                    {isPlaying ? '⏸️' : '▶️'}
+                </button>
+                
+                <button
+                    onClick={handleStepForward}
+                    style={{
+                        background: '#333',
+                        border: '1px solid #555',
+                        color: '#fff',
+                        padding: '4px 8px',
+                        borderRadius: '3px',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                    }}
+                    title="Next Frame"
+                >
+                    ⏭️
+                </button>
+                
+                <div style={{ margin: '0 8px', color: '#888' }}>|</div>
+                
+                <input
+                    type="number"
+                    value={frameInput}
+                    onChange={(e) => setFrameInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleGotoFrame()}
+                    placeholder="Frame #"
+                    style={{
+                        background: '#222',
+                        border: '1px solid #555',
+                        color: '#fff',
+                        padding: '2px 6px',
+                        borderRadius: '3px',
+                        width: '60px',
+                        fontSize: '11px'
+                    }}
+                    min="1"
+                    max={frameInfo?.total || 1}
+                />
+                
+                <button
+                    onClick={handleGotoFrame}
+                    style={{
+                        background: '#333',
+                        border: '1px solid #555',
+                        color: '#fff',
+                        padding: '4px 8px',
+                        borderRadius: '3px',
+                        cursor: 'pointer',
+                        fontSize: '11px'
+                    }}
+                    title="Go to Frame"
+                >
+                    Go
+                </button>
+                
+                <div style={{ margin: '0 8px', color: '#888' }}>|</div>
+                
+                <button
+                    onClick={handleStop}
+                    style={{
+                        background: '#633',
+                        border: '1px solid #555',
+                        color: '#fff',
+                        padding: '4px 8px',
+                        borderRadius: '3px',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                    }}
+                    title="Stop"
+                >
+                    ⏹️
+                </button>
             </div>
 
             {/* ACTUAL 3D SPHERE VIEWER */}
@@ -342,6 +517,26 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         onReady={(sphere: any) => {
                             console.log('🎬 Training movie sphere ready:', sphere);
                             setSphereRef(sphere);
+                            
+                            // Monitor sphere playing state
+                            const checkPlayingState = () => {
+                                if (sphere && sphere.isPlayingMovie !== undefined) {
+                                    setIsPlaying(sphere.isPlayingMovie);
+                                }
+                            };
+                            
+                            // Check state periodically
+                            const stateChecker = setInterval(checkPlayingState, 500);
+                            
+                            // Clean up on unmount
+                            return () => clearInterval(stateChecker);
+                        }}
+                        onFrameUpdate={(info) => {
+                            setFrameInfo(info);
+                            // Update frame input to current frame for convenience
+                            if (frameInput === '') {
+                                setFrameInput(info.current.toString());
+                            }
                         }}
                     />
                 ) : (

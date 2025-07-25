@@ -36,13 +36,25 @@ export interface SphereData {
     jsonData: any;
     pointSize: number;
     pointOpacity: number;
-    trainingMovieData: any;
-    currentEpoch: number;
-    isPlayingMovie: boolean;
-    movieAnimationRef: number;
-    trainingMovieMaxClusters: number;
-    trainingMovieStartClusters: number;
+    trainingMovieData?: any;
+    currentEpoch?: number;
+    isPlayingMovie?: boolean;
+    movieAnimationRef?: number;
+    trainingMovieMaxClusters?: number;
+    trainingMovieStartClusters?: number;
+    logisticsClusterData?: any;
+    frameUpdateCallback?: (frameInfo: { current: number, total: number, visible: number, phase?: string }) => void;
+    isInRotationPhase: boolean;
+    rotationStartTime?: number;
+    rotationStartAngle?: number;
     hasLoggedSizeIssue?: boolean;
+    // Smooth interpolation properties
+    pointTargetPositions?: Map<string, THREE.Vector3>;
+    pointStartPositions?: Map<string, THREE.Vector3>;
+    interpolationStartTime?: number;
+    interpolationDuration?: number;
+    interpolationAnimationRef?: number;
+    isInterpolating?: boolean;
 }
 export type SphereRecord = {
     coords: {
@@ -85,3 +97,7 @@ export declare function clear_selected_objects(sphere: SphereData): void;
 export declare function load_training_movie(sphere: SphereData, trainingMovieData: any): void;
 export declare function play_training_movie(sphere: SphereData, durationSeconds?: number): void;
 export declare function stop_training_movie(sphere: SphereData): void;
+export declare function pause_training_movie(sphere: SphereData): void;
+export declare function resume_training_movie(sphere: SphereData): void;
+export declare function step_training_movie_frame(sphere: SphereData, direction: 'forward' | 'backward'): void;
+export declare function goto_training_movie_frame(sphere: SphereData, frameNumber: number): void;
