@@ -408,6 +408,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [frameInfo, setFrameInfo] = useState<{ current: number, total: number, visible: number, epoch?: string, validationLoss?: number } | null>(null);
     const [isPlaying, setIsPlaying] = useState(true); // Start playing automatically
     const [frameInput, setFrameInput] = useState<string>('');
+    const [showConvexHulls, setShowConvexHulls] = useState(false);
 
     useEffect(() => {
         const loadTrainingData = async () => {
@@ -445,6 +446,21 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
 
         loadTrainingData();
     }, [sessionId, apiBaseUrl]);
+
+    // Handle convex hull visibility changes
+    useEffect(() => {
+        if (!sphereRef) return;
+        
+        if (showConvexHulls) {
+            // Import and call function to show convex hulls
+            const { show_convex_hulls } = require('../featrix_sphere_control');
+            show_convex_hulls(sphereRef);
+        } else {
+            // Import and call function to hide convex hulls  
+            const { hide_convex_hulls } = require('../featrix_sphere_control');
+            hide_convex_hulls(sphereRef);
+        }
+    }, [showConvexHulls, sphereRef]);
 
     // Frame control functions
     const handlePlayPause = () => {
@@ -739,6 +755,31 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 >
                     ⏹️
                 </button>
+                
+                {/* Convex Hull Toggle - only show when k>=4 */}
+                {frameInfo && frameInfo.visible >= 4 && (
+                    <>
+                        <div style={{ margin: '0 8px', color: '#888' }}>|</div>
+                        <label style={{
+                            color: '#fff',
+                            fontSize: '11px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            cursor: 'pointer'
+                        }}>
+                            <input
+                                type="checkbox"
+                                checked={showConvexHulls}
+                                onChange={(e) => setShowConvexHulls(e.target.checked)}
+                                style={{
+                                    marginRight: '4px',
+                                    cursor: 'pointer'
+                                }}
+                            />
+                            🔗 Hulls
+                        </label>
+                    </>
+                )}
             </div>
 
             {/* Loss Plot - fixed screen overlay at top */}

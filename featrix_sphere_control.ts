@@ -1219,6 +1219,11 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string) {
         // start_point_interpolation(sphere, targetPositions, interpolationDuration);
     }
     
+    // Update convex hulls if they are enabled
+    if (sphere.showConvexHulls) {
+        compute_cluster_convex_hulls(sphere);
+    }
+    
     // Always re-render to show the updates
     render_sphere(sphere);
 }
@@ -1918,5 +1923,157 @@ function handle_mouse_highlight(sphere: SphereData) {
             // If the closest object is not already selected, then select it.
             add_selected_record(sphere, record_id);
         }
+    }
+}
+
+// ============================================================================
+// CONVEX HULL FUNCTIONS
+// ============================================================================
+
+export function show_convex_hulls(sphere: SphereData) {
+    if (!sphere) return;
+    
+    // Create convex hulls group if it doesn't exist
+    if (!sphere.convexHullsGroup) {
+        sphere.convexHullsGroup = new THREE.Group();
+        sphere.scene.add(sphere.convexHullsGroup);
+    }
+    
+    // Set flag and compute hulls
+    sphere.showConvexHulls = true;
+    compute_cluster_convex_hulls(sphere);
+}
+
+export function hide_convex_hulls(sphere: SphereData) {
+    if (!sphere) return;
+    
+    sphere.showConvexHulls = false;
+    
+    // Clear existing convex hulls
+    if (sphere.convexHullsGroup) {
+        while (sphere.convexHullsGroup.children.length > 0) {
+            const child = sphere.convexHullsGroup.children[0];
+            sphere.convexHullsGroup.remove(child);
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) child.material.dispose();
+        }
+    }
+}
+
+function compute_cluster_convex_hulls(sphere: SphereData) {
+    if (!sphere.convexHullsGroup || !sphere.showConvexHulls) return;
+    
+    // Clear existing hulls
+    hide_convex_hulls(sphere);
+    sphere.showConvexHulls = true; // Reset flag after clearing
+    
+    // Group points by cluster
+    const clusterPoints: Map<number, Array<{point: THREE.Vector3, color: THREE.Color}>> = new Map();
+    
+    sphere.pointObjectsByRecordID.forEach((pointMesh, recordId) => {
+        const record = sphere.pointRecordsByID.get(recordId);
+        if (!record || record.featrix_meta.cluster_pre === null) return;
+        
+        const cluster = record.featrix_meta.cluster_pre;
+        const position = pointMesh.position.clone();
+        const color = pointMesh.material.color.clone();
+        
+        if (!clusterPoints.has(cluster)) {
+            clusterPoints.set(cluster, []);
+        }
+        clusterPoints.get(cluster)!.push({point: position, color});
+    });
+    
+    // Create convex hulls for clusters with enough points (minimum 4 for 3D hull)
+    clusterPoints.forEach((points, cluster) => {
+        if (points.length >= 4) {
+            const hull = compute_3d_convex_hull(points.map(p => p.point));
+            if (hull && hull.length > 0) {
+                create_convex_hull_mesh(sphere, hull, points[0].color, cluster);
+            }
+        }
+    });
+}
+
+function compute_3d_convex_hull(points: THREE.Vector3[]): THREE.Vector3[] | null {
+    if (points.length < 4) return null;
+    
+    // Use simple hull approach since ConvexGeometry is not in core Three.js
+    return compute_simple_convex_hull(points);
+}
+
+function compute_simple_convex_hull(points: THREE.Vector3[]): THREE.Vector3[] {
+    // Simple approach: create a hull from the extremal points
+    if (points.length < 4) return points;
+    
+    // Find extremal points in each direction
+    let minX = points[0], maxX = points[0];
+    let minY = points[0], maxY = points[0]; 
+    let minZ = points[0], maxZ = points[0];
+    
+    for (const point of points) {
+        if (point.x < minX.x) minX = point;
+        if (point.x > maxX.x) maxX = point;
+        if (point.y < minY.y) minY = point;
+        if (point.y > maxY.y) maxY = point;
+        if (point.z < minZ.z) minZ = point;
+        if (point.z > maxZ.z) maxZ = point;
+    }
+    
+    // Return unique extremal points
+    const extremalPoints = [minX, maxX, minY, maxY, minZ, maxZ];
+    const uniquePoints: THREE.Vector3[] = [];
+    
+    for (const point of extremalPoints) {
+        const isDuplicate = uniquePoints.some(existing => 
+            existing.distanceTo(point) < 0.001
+        );
+        if (!isDuplicate) {
+            uniquePoints.push(point);
+        }
+    }
+    
+    return uniquePoints;
+}
+
+function create_convex_hull_mesh(sphere: SphereData, hullPoints: THREE.Vector3[], clusterColor: THREE.Color, cluster: number) {
+    if (!sphere.convexHullsGroup || hullPoints.length < 4) return;
+    
+    try {
+        // Create a simple wireframe connecting the extremal points
+        // This creates a rough "hull" visualization using line segments
+        
+        // Create line segments connecting hull points
+        const geometry = new THREE.BufferGeometry();
+        const lines: THREE.Vector3[] = [];
+        
+        // Connect each point to every other point to create a wireframe hull
+        for (let i = 0; i < hullPoints.length; i++) {
+            for (let j = i + 1; j < hullPoints.length; j++) {
+                lines.push(hullPoints[i]);
+                lines.push(hullPoints[j]);
+            }
+        }
+        
+        geometry.setFromPoints(lines);
+        
+        // Create wireframe material with cluster color
+        const wireframeMaterial = new THREE.LineBasicMaterial({
+            color: clusterColor,
+            transparent: true,
+            opacity: 0.3,
+            linewidth: 2
+        });
+        
+        // Create line segments mesh
+        const wireframeMesh = new THREE.LineSegments(geometry, wireframeMaterial);
+        
+        // Add to convex hulls group
+        sphere.convexHullsGroup.add(wireframeMesh);
+        
+        console.log(`Created simple hull wireframe for cluster ${cluster} with ${hullPoints.length} vertices`);
+        
+    } catch (error) {
+        console.warn(`Failed to create convex hull for cluster ${cluster}:`, error);
     }
 }

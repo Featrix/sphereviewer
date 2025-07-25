@@ -55,6 +55,9 @@ export interface SphereData {
     lossPlotCursor?: THREE.Line;
     memoryTrailsGroup?: THREE.Group;
     pointPositionHistory?: Map<string, THREE.Vector3[]>;
+    // Convex hull properties
+    convexHullsGroup?: THREE.Group;
+    showConvexHulls?: boolean;
     // Smooth interpolation properties
     pointTargetPositions?: Map<string, THREE.Vector3>;
     pointStartPositions?: Map<string, THREE.Vector3>;
@@ -109,3 +112,5 @@ export declare function pause_training_movie(sphere: SphereData): void;
 export declare function resume_training_movie(sphere: SphereData): void;
 export declare function step_training_movie_frame(sphere: SphereData, direction: 'forward' | 'backward'): void;
 export declare function goto_training_movie_frame(sphere: SphereData, frameNumber: number): void;
+export declare function show_convex_hulls(sphere: SphereData): void;
+export declare function hide_convex_hulls(sphere: SphereData): void;
