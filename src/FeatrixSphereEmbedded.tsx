@@ -430,6 +430,36 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [showDynamicHulls, setShowDynamicHulls] = useState(false);
     const [trailLength, setTrailLength] = useState(5); // Default 5 epochs
     const [spotlightCluster, setSpotlightCluster] = useState<number>(-1); // -1 = off, 0+ = cluster number
+    const [showCountdown, setShowCountdown] = useState(false);
+    const [countdownText, setCountdownText] = useState('');
+
+    // Countdown function for initial pause
+    const startCountdown = () => {
+        setShowCountdown(true);
+        setCountdownText('Ready!');
+        
+        setTimeout(() => {
+            setCountdownText('3');
+            setTimeout(() => {
+                setCountdownText('2');
+                setTimeout(() => {
+                    setCountdownText('1');
+                    setTimeout(() => {
+                        setCountdownText('Go!');
+                        setTimeout(() => {
+                            setShowCountdown(false);
+                            // Start the training movie
+                            if (sphereRef) {
+                                const { resume_training_movie } = require('../featrix_sphere_control');
+                                resume_training_movie(sphereRef);
+                                setIsPlaying(true);
+                            }
+                        }, 800);
+                    }, 1000);
+                }, 1000);
+            }, 1000);
+        }, 500);
+    };
 
     useEffect(() => {
         const loadTrainingData = async () => {
@@ -645,6 +675,33 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         <div style={{ color: '#00ff00', marginTop: '2px' }}>
                             Frame {frameInfo.current}/{frameInfo.total} | {frameInfo.visible} clusters
                         </div>
+                        
+                        {/* Progress Bar */}
+                        <div style={{ 
+                            marginTop: '4px',
+                            background: 'rgba(255,255,255,0.1)',
+                            borderRadius: '3px',
+                            overflow: 'hidden',
+                            height: '6px',
+                            width: '120px'
+                        }}>
+                            <div style={{
+                                background: 'linear-gradient(90deg, #00ff00, #00aa00)',
+                                height: '100%',
+                                width: `${(frameInfo.current / frameInfo.total) * 100}%`,
+                                transition: 'width 0.2s ease',
+                                borderRadius: '3px'
+                            }} />
+                        </div>
+                        <div style={{ 
+                            color: '#aaa', 
+                            fontSize: '9px', 
+                            marginTop: '1px',
+                            textAlign: 'center'
+                        }}>
+                            {Math.round((frameInfo.current / frameInfo.total) * 100)}%
+                        </div>
+                        
                         {frameInfo.epoch && (
                             <div style={{ color: '#00ffff', marginTop: '2px' }}>
                                 Epoch {frameInfo.epoch}
@@ -658,6 +715,29 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     </div>
                 )}
             </div>
+
+            {/* Countdown Overlay */}
+            {showCountdown && (
+                <div style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    background: 'rgba(0, 0, 0, 0.9)',
+                    color: '#fff',
+                    padding: '30px 50px',
+                    borderRadius: '12px',
+                    fontSize: '32px',
+                    fontWeight: 'bold',
+                    fontFamily: 'monospace',
+                    border: '3px solid #00ff00',
+                    textAlign: 'center',
+                    boxShadow: '0 0 30px rgba(0, 255, 0, 0.4)',
+                    zIndex: 2000
+                }}>
+                    {countdownText}
+                </div>
+            )}
 
             {/* Frame Controls - bottom center overlay */}
             <div style={{
@@ -929,14 +1009,31 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             // Training movie sphere ready
                             setSphereRef(sphere);
                             
-                            // Initial state sync only - no aggressive monitoring  
-                            if (sphere && sphere.isPlayingMovie !== undefined) {
-                                setIsPlaying(sphere.isPlayingMovie);
+                            // Start with paused state for countdown
+                            setIsPlaying(false);
+                            
+                            // Pause the sphere initially
+                            if (sphere) {
+                                const { pause_training_movie } = require('../featrix_sphere_control');
+                                pause_training_movie(sphere);
                             }
                             
-                            console.log('🎮 Sphere ready - initial playing state:', sphere.isPlayingMovie);
+                            console.log('🎮 Sphere ready - starting countdown sequence');
+                            
+                            // Start countdown after a brief delay
+                            setTimeout(() => {
+                                startCountdown();
+                            }, 1000);
                         }}
                         onFrameUpdate={(info) => {
+                            // Detect restart (frame went back to 1 from higher number)
+                            const prevFrame = frameInfo?.current || 0;
+                            if (prevFrame > 1 && info.current === 1) {
+                                console.log('🔄 Training movie restarted - showing countdown');
+                                setTimeout(() => {
+                                    startCountdown();
+                                }, 500);
+                            }
                             setFrameInfo(info);
                             // Update frame input to current frame for convenience
                             if (frameInput === '') {
