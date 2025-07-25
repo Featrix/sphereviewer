@@ -1970,7 +1970,7 @@ export function hide_convex_hulls(sphere: SphereData) {
     }
 }
 
-function compute_cluster_convex_hulls(sphere: SphereData) {
+export function compute_cluster_convex_hulls(sphere: SphereData) {
     const hasPointFeature = sphere.showDynamicPoints;
     const hasHullFeature = sphere.showDynamicHulls;
     

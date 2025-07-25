@@ -2,7 +2,7 @@ import React, { Suspense, useEffect, useRef, useState, useCallback } from "react
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
 import { fetch_session_data, fetch_session_projections, fetch_training_metrics } from './embed-data-access';
-import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame } from '../featrix_sphere_control';
+import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 
 // Build timestamp for cache busting verification
@@ -451,7 +451,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             setShowCountdown(false);
                             // Start the training movie
                             if (sphereRef) {
-                                const { resume_training_movie } = require('../featrix_sphere_control');
                                 resume_training_movie(sphereRef);
                                 setIsPlaying(true);
                             }
@@ -510,7 +509,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         sphereRef.spotlightCluster = spotlightCluster;
         
         // Call the unified compute function with all settings
-        const { compute_cluster_convex_hulls, update_cluster_spotlight } = require('../featrix_sphere_control');
         compute_cluster_convex_hulls(sphereRef);
         update_cluster_spotlight(sphereRef);
         
@@ -1015,7 +1013,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             
                             // Pause the sphere initially
                             if (sphere) {
-                                const { pause_training_movie } = require('../featrix_sphere_control');
                                 pause_training_movie(sphere);
                             }
                             
