@@ -115,6 +115,62 @@ class FeatrixSphereViewer {
     }
   }
 
+  private renderWithRetry(component: any, container: any, containerId?: string | null, retryCount: number = 0) {
+    const maxRetries = 3;
+    
+    if (retryCount >= maxRetries) {
+      console.error('❌ Failed to render React component after', maxRetries, 'attempts');
+      this.showError('Failed to initialize React widget after multiple attempts', containerId);
+      return;
+    }
+    
+    try {
+      // Check if ReactDOM is available and has required methods
+      if (!window.ReactDOM) {
+        throw new Error('ReactDOM not available on window');
+      }
+      
+      // React 18 vs 17 compatibility
+      if (ReactDOM.createRoot) {
+        // React 18
+        console.log('✅ Using React 18 createRoot (attempt', retryCount + 1, ')');
+        this.root = ReactDOM.createRoot(container);
+        this.root.render(component);
+      } else if (ReactDOM.render) {
+        // React 17 fallback
+        console.log('✅ Using React 17 render fallback (attempt', retryCount + 1, ')');
+        ReactDOM.render(component, container);
+        this.root = { 
+          render: (comp: any) => ReactDOM.render(comp, container), 
+          unmount: () => ReactDOM.unmountComponentAtNode(container) 
+        };
+      } else {
+        throw new Error('Neither ReactDOM.createRoot nor ReactDOM.render available');
+      }
+      
+      // Success - verify rendering actually worked
+      setTimeout(() => {
+        if (container.children.length === 0) {
+          console.warn('⚠️ React rendering appears to have failed (empty container), retrying...');
+          this.renderWithRetry(component, container, containerId, retryCount + 1);
+        }
+      }, 1000);
+      
+    } catch (error) {
+      console.warn(`⚠️ React rendering failed (attempt ${retryCount + 1}):`, error);
+      
+      if (retryCount < maxRetries - 1) {
+        const delay = 1000 * (retryCount + 1); // Exponential backoff
+        console.log(`🔄 Retrying React rendering in ${delay}ms...`);
+        setTimeout(() => {
+          this.renderWithRetry(component, container, containerId, retryCount + 1);
+        }, delay);
+      } else {
+        this.showError('ReactDOM initialization failed after multiple attempts', containerId);
+      }
+    }
+  }
+
   private getOrCreateContainer(containerId?: string | null) {
     const id = containerId || 'sphere-viewer-container';
     let container = document.getElementById(id);
@@ -152,13 +208,12 @@ class FeatrixSphereViewer {
 
     const container = this.getOrCreateContainer(containerId);
     this.container = container;
-    this.root = ReactDOM.createRoot(container);
     
     // CRITICAL: Always show ONLY training movie, never the finished sphere
     // Construct data object with session info for training movie
     const initial_data = data || { session: { session_id: sessionId } };
     
-    this.root.render(
+    const component = (
       <FeatrixSphereEmbedded 
         initial_data={initial_data}
         apiBaseUrl={apiBaseUrl}
@@ -175,6 +230,9 @@ class FeatrixSphereViewer {
         }}
       />
     );
+    
+    // React 18 vs 17 compatibility with retry logic
+    this.renderWithRetry(component, container, containerId, 0);
   }
 
   destroy() {

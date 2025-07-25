@@ -111,6 +111,8 @@ function fix_server_cluster_pre_assignments(serverData: any) {
     });
 }
 
+
+
 // Training Movie Component
 interface TrainingMovieProps {
     sessionId: string;
@@ -120,9 +122,10 @@ interface TrainingMovieProps {
 // Training Movie Sphere Component - handles everything internally
 const TrainingMovieSphere: React.FC<{ 
     trainingData: any,
+    lossData?: any,
     onReady?: (sphere: any) => void,
-    onFrameUpdate?: (frameInfo: { current: number, total: number, visible: number }) => void
-}> = ({ trainingData, onReady, onFrameUpdate }) => {
+    onFrameUpdate?: (frameInfo: { current: number, total: number, visible: number, epoch?: string, validationLoss?: number }) => void
+}> = ({ trainingData, lossData, onReady, onFrameUpdate }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const sphereRef = useRef<any>(null);
 
@@ -133,7 +136,7 @@ const TrainingMovieSphere: React.FC<{
         }
 
         if (!sphereRef.current) {
-            console.log('🎬 TrainingMovieSphere: Initializing sphere and loading training movie');
+            // Initializing sphere and loading training movie
             
             // Initialize empty sphere
             sphereRef.current = initialize_sphere(containerRef.current, []);
@@ -148,12 +151,12 @@ const TrainingMovieSphere: React.FC<{
             set_visual_options(sphereRef.current, 0.025, 0.9);
             
             // Load training movie data into the sphere
-            load_training_movie(sphereRef.current, trainingData);
+            load_training_movie(sphereRef.current, trainingData, lossData);
             
             // Start playing the training movie (10 second loop)
             play_training_movie(sphereRef.current, 10);
             
-            console.log('🎬 TrainingMovieSphere: Training movie started');
+            // Training movie started successfully
             
             // Notify parent that sphere is ready
             if (onReady) {
@@ -185,10 +188,11 @@ const TrainingMovieSphere: React.FC<{
 
 const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) => {
     const [trainingData, setTrainingData] = useState<any>(null);
+    const [lossData, setLossData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [sphereRef, setSphereRef] = useState<any>(null);
-    const [frameInfo, setFrameInfo] = useState<{ current: number, total: number, visible: number } | null>(null);
+    const [frameInfo, setFrameInfo] = useState<{ current: number, total: number, visible: number, epoch?: string, validationLoss?: number } | null>(null);
     const [isPlaying, setIsPlaying] = useState(true); // Start playing automatically
     const [frameInput, setFrameInput] = useState<string>('');
 
@@ -199,13 +203,18 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 const data = await fetch_training_metrics(sessionId, apiBaseUrl);
                 
                 // TRAINING MOVIE: Get 3D coordinates for each epoch
-                console.log('🎬 Epoch projections data received:', data);
+                // Epoch projections data received successfully
                 
                 // Get the epoch projections (3D coordinates per epoch)
                 if (data && data.epoch_projections) {
                     const epochKeys = Object.keys(data.epoch_projections).sort((a, b) => parseInt(a) - parseInt(b));
-                    console.log(`✅ Found ${epochKeys.length} epoch projections for training movie`);
+
                     setTrainingData(data.epoch_projections);
+                    
+                    // Also extract training metrics (loss data) if available
+                    if (data.training_metrics) {
+                        setLossData(data.training_metrics);
+                    }
                 } else {
                     console.error('❌ No epoch_projections found. Data structure:', Object.keys(data || {}));
                     throw new Error('No epoch projections data available for training movie');
@@ -267,7 +276,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                height: '400px',
+                height: '770px',
                 background: '#000',
                 color: '#fff',
                 position: 'relative'
@@ -310,7 +319,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                height: '400px',
+                height: '770px',
                 background: '#000',
                 color: '#ff4444',
                 position: 'relative'
@@ -343,7 +352,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                height: '400px',
+                height: '770px',
                 background: '#000',
                 color: '#fff'
             }}>
@@ -356,7 +365,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         <div className="training-progress-display" style={{
             position: 'relative',
             width: '100%',
-            height: '400px',
+            height: '770px',
             background: '#000',
             color: '#fff',
             overflow: 'hidden'
@@ -378,6 +387,14 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 {frameInfo && (
                     <div style={{ color: '#00ff00', marginTop: '2px' }}>
                         Frame {frameInfo.current}/{frameInfo.total} | {frameInfo.visible} clusters
+                        {frameInfo.epoch && (
+                            <div style={{ color: '#00ffff', marginTop: '2px' }}>
+                                Epoch {frameInfo.epoch}
+                                {frameInfo.validationLoss !== undefined && (
+                                    <span> | Loss: {frameInfo.validationLoss.toFixed(4)}</span>
+                                )}
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
@@ -514,8 +531,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 {trainingData ? (
                     <TrainingMovieSphere
                         trainingData={trainingData}
+                        lossData={lossData}
                         onReady={(sphere: any) => {
-                            console.log('🎬 Training movie sphere ready:', sphere);
+                            // Training movie sphere ready
                             setSphereRef(sphere);
                             
                             // Monitor sphere playing state
@@ -585,11 +603,11 @@ export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, isRota
                 {session_id ? (
                     <TrainingMovie sessionId={session_id} apiBaseUrl={apiBaseUrl} />
                 ) : (
-                    <div className="training-progress-display" style={{
+                    <div className="training-progress-display"                     style={{
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        height: '400px',
+                        height: '770px',
                         background: '#000',
                         color: '#fff'
                     }}>

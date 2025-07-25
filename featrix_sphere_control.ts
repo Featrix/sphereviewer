@@ -174,29 +174,11 @@ function fit_sphere_to_container(sphere: SphereData) {
     // Force canvas style if it still has zero height
     if (sphere.renderer.domElement.style.height === '0px' && effectiveHeight > 0) {
         sphere.renderer.domElement.style.height = `${effectiveHeight}px`;
-        console.log('🔧 Force-fixed canvas height to', effectiveHeight);
     }
 }
 
 function attach_sphere_to_container(sphere: SphereData) {
-    console.log('🔧 Attaching sphere to container:', {
-        containerSize: {
-            width: sphere.container.clientWidth,
-            height: sphere.container.clientHeight
-        },
-        rendererSize: {
-            width: sphere.renderer.domElement.width,
-            height: sphere.renderer.domElement.height
-        },
-        containerChildren: sphere.container.children.length
-    });
-    
     sphere.container.appendChild(sphere.renderer.domElement);
-    
-    console.log('🔧 After attachment:', {
-        containerChildren: sphere.container.children.length,
-        canvasStyle: sphere.renderer.domElement.style.cssText
-    });
 }
 
 export function render_sphere(sphere: SphereData) {
@@ -611,23 +593,26 @@ export function update_all_point_visuals(sphere: SphereData) {
 }
 
 // Training Movie Functions
-export function load_training_movie(sphere: SphereData, trainingMovieData: any) {
-    console.log('🎬 Loading training movie data into sphere:', Object.keys(trainingMovieData).length, 'epochs');
-    console.log('🎬 Training data structure:', trainingMovieData);
+export function load_training_movie(sphere: SphereData, trainingMovieData: any, lossData?: any) {
+    // CRITICAL: Clear all existing points to prevent accumulation when restarting
+    clear_all_points(sphere);
     
     sphere.trainingMovieData = trainingMovieData;
+    sphere.lossData = lossData;
     sphere.currentEpoch = 0;
     
+    // Create 3D loss plot if loss data is available
+    if (lossData) {
+        create_3d_loss_plot(sphere, lossData);
+    }
+    
     // Load logistics cluster data from the actual JSON file
-    console.log('🎯 Loading logistics cluster data from logistics-featrix-data.json...');
     let logisticsClusterData = null;
     try {
         // Use fetch to load the actual logistics data file
         fetch('/logistics-featrix-data.json')
             .then(response => response.json())
             .then(data => {
-                console.log('🎯 Logistics data loaded successfully');
-                console.log('🎯 Available cluster counts:', Object.keys(data.entire_cluster_results || {}));
                 
                 if (data.entire_cluster_results) {
                     // Use the logistics data but expand it to 12 clusters for the training movie
@@ -646,7 +631,7 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any) 
                         "12": { "cluster_labels": expandedLabels }
                     };
                     
-                    console.log(`🎯 Generated 12-cluster pattern from logistics data: ${expandedLabels.slice(0, 10)}...`);
+
                     sphere.trainingMovieMaxClusters = 11; // 0-11 = 12 clusters
                 } else {
                     console.error('❌ No cluster results found in logistics data');
@@ -669,7 +654,7 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any) 
     
     // Set cluster range for progressive reveal
     const maxCluster = 1; // Logistics data has clusters 0,1
-    console.log(`🎬 Cluster analysis: Using logistics clusters 0 to ${maxCluster} (${maxCluster + 1} total clusters)`);
+    // Logistics cluster analysis completed
     sphere.trainingMovieMaxClusters = maxCluster;
     sphere.trainingMovieStartClusters = 2; // Start showing 2 clusters
     
@@ -678,14 +663,7 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any) 
     const firstEpochKey = epochKeys[0];
     const firstEpochData = trainingMovieData[firstEpochKey];
     
-    console.log('🎬 First epoch key:', firstEpochKey);
-            console.log('🎬 First epoch data:', firstEpochData);
-        
-        // CHECK THE CLUSTER ARRANGEMENT DATA
-        console.log('🔍 SEARCHING FOR CLUSTER DATA in all fields...');
-        console.log('🔍 firstEpochData keys:', Object.keys(firstEpochData));
-        console.log('🔍 firstEpochData.entire_cluster_results:', firstEpochData.entire_cluster_results);
-        console.log('🔍 firstEpochData.cluster_messages:', firstEpochData.cluster_messages);
+    // Process first epoch data
         
         // Check if cluster data exists anywhere
         if (firstEpochData && firstEpochData.entire_cluster_results) {
@@ -708,72 +686,54 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any) 
         }
         
         if (firstEpochData && firstEpochData.coords) {
-        console.log('🎬 First epoch coords length:', firstEpochData.coords.length);
-        console.log('🎬 Sample coord:', firstEpochData.coords[0]);
-        console.log('🎬 Sample coord keys:', Object.keys(firstEpochData.coords[0]));
-        console.log('🎬 Sample coord [0]:', firstEpochData.coords[0][0]);
-        console.log('🎬 Sample coord [1]:', firstEpochData.coords[0][1]); 
-        console.log('🎬 Sample coord [2]:', firstEpochData.coords[0][2]);
+                // Debug coordinate format for development
         
         // The coords are already in full sphere record format, just need to extract coordinates
         const recordList: SphereRecord[] = firstEpochData.coords.map((entry: any, index: number) => {
             
-            // EMERGENCY DEBUG: What's actually in the entry?
-            if (index < 5) {
-                console.log(`🚨 EMERGENCY DEBUG Entry ${index}:`, {
-                    fullEntry: entry,
-                    entryKeys: Object.keys(entry),
-                    clusterPre: entry.cluster_pre,
-                    clusterPreType: typeof entry.cluster_pre,
-                    hasClusterPre: 'cluster_pre' in entry
-                });
-            }
+            // Parse coordinate entry
             
-            const record = {
-                coords: {
-                    x: entry.x, // Coordinates are stored as object properties, not array indices
-                    y: entry.y,
-                    z: entry.z
-                },
+                    // Handle both object format {x, y, z} and array format [x, y, z]
+        let x, y, z;
+        if (entry && typeof entry === 'object') {
+            if (Array.isArray(entry)) {
+                // Array format: [x, y, z]
+                x = entry[0];
+                y = entry[1]; 
+                z = entry[2];
+            } else {
+                // Object format: {x, y, z}
+                x = entry.x;
+                y = entry.y;
+                z = entry.z;
+            }
+        }
+
+        const record = {
+            coords: {
+                x: x,
+                y: y,
+                z: z
+            },
                 id: String(index),
                 featrix_meta: {
-                    cluster_pre: entry.cluster_pre !== undefined ? entry.cluster_pre : 0,
+                    cluster_pre: 0, // Will be set from logistics data during animation
                     webgl_id: null,
-                    __featrix_row_id: entry.__featrix_row_id || index,
-                    __featrix_row_offset: entry.__featrix_row_offset || index,
+                    __featrix_row_id: index,
+                    __featrix_row_offset: index,
                 },
                 original: {
-                    ...(entry.set_columns || {}),
-                    ...(entry.scalar_columns || {}),
-                    ...(entry.string_columns || {})
+                    // Entry is coordinate array [x, y, z], no additional properties
                 }
             };
             
-            // Debug first few records
-            if (index < 3) {
-                console.log(`🎬 Record ${index}:`, {
-                    extractedCoords: record.coords,
-                    rawValues: { x: entry.x, y: entry.y, z: entry.z },
-                    coordTypes: { x: typeof entry.x, y: typeof entry.y, z: typeof entry.z },
-                    coordStrings: { x: String(entry.x), y: String(entry.y), z: String(entry.z) },
-                    clusterPre: entry.cluster_pre,
-                    clusterPreType: typeof entry.cluster_pre,
-                    recordClusterPre: record.featrix_meta.cluster_pre
-                });
-            }
+            // Record created successfully
             
             return record;
         });
         
-        console.log('🎬 Created record list:', recordList.length, 'records');
-        console.log('🎬 Sample record:', recordList[0]);
-        
         // Add points to sphere
         add_points_to_sphere(sphere, recordList);
-        
-        console.log('🎬 After adding points - scene children:', sphere.scene.children.length);
-        console.log('🎬 After adding points - pointRecordsByID:', sphere.pointRecordsByID.size);
-        console.log('🎬 After adding points - pointObjectsByRecordID:', sphere.pointObjectsByRecordID.size);
         
         // Force render
         render_sphere(sphere);
@@ -789,14 +749,16 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
     
     const epochKeys = Object.keys(sphere.trainingMovieData).sort((a, b) => parseInt(a) - parseInt(b));
     const totalFrames = epochKeys.length;
-    const frameDelay = (durationSeconds * 1000) / totalFrames; // Total time between frame starts
+    const frameDelay = (durationSeconds * 1000) / totalFrames;
     
-    console.log('🎬 Starting training movie with smooth interpolation:', totalFrames, 'epochs over', durationSeconds, 'seconds');
+
     
     sphere.currentEpoch = 0;
     sphere.isInRotationPhase = false;
+    sphere.rotationStartTime = undefined;
+    sphere.rotationStartAngle = undefined;
     
-    const scheduleNextFrame = () => {
+    const animate = () => {
         if (!sphere.isPlayingMovie) return;
         
         if (!sphere.isInRotationPhase) {
@@ -806,45 +768,76 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
             
             // Check if this epoch has valid data before updating
             if (epochData && epochData.coords && epochData.coords.length > 0) {
+                // Update frame
                 update_training_movie_frame(sphere, currentEpochKey);
-                
-                // Wait for interpolation to complete, then schedule next frame
-                const waitForInterpolation = () => {
-                    if (sphere.isInterpolating) {
-                        // Still interpolating, check again soon
-                        setTimeout(waitForInterpolation, 16); // Check every ~16ms (60fps)
-                    } else {
-                        // Interpolation complete, schedule next frame
-                        sphere.currentEpoch++;
-                        
-                        if (sphere.currentEpoch >= totalFrames) {
-                            // Training complete, restart immediately
-                            console.log('🎬 Training complete, restarting training movie...');
-                            sphere.currentEpoch = 0;
-                        }
-                        
-                        // Schedule next frame with remaining time
-                        const remainingTime = Math.max(50, frameDelay - (sphere.interpolationDuration || 0));
-                        sphere.movieAnimationRef = setTimeout(scheduleNextFrame, remainingTime);
-                    }
-                };
-                waitForInterpolation();
             } else {
                 console.warn(`⚠️ Skipping problematic epoch ${currentEpochKey} (frame ${sphere.currentEpoch})`);
-                sphere.currentEpoch++;
+            }
+        } else {
+            // Rotation phase - 8 full rotations over ~4 seconds
+            const rotationDuration = 4000; // 4 seconds for 8 rotations
+            const totalRotations = 8;
+            const elapsed = Date.now() - (sphere.rotationStartTime || 0);
+            const rotationProgress = Math.min(elapsed / rotationDuration, 1.0);
+            
+            if (rotationProgress < 1.0) {
+                // Still rotating - update camera angle
+                const rotationAmount = totalRotations * 2 * Math.PI * rotationProgress; // 8 full rotations
+                sphere.angle = (sphere.rotationStartAngle || 0) + rotationAmount;
                 
-                if (sphere.currentEpoch >= totalFrames) {
-                    sphere.currentEpoch = 0;
+                render_sphere(sphere);
+                
+                // Update frame counter for rotation
+                if (sphere.frameUpdateCallback) {
+                    sphere.frameUpdateCallback({
+                        current: totalFrames,
+                        total: totalFrames,
+                        visible: 12, // Show all clusters during rotation
+                        phase: `rotating (${(rotationProgress * 100).toFixed(0)}%)`
+                    });
                 }
                 
-                // Continue immediately for bad frames
-                sphere.movieAnimationRef = setTimeout(scheduleNextFrame, 50);
+                // Rotation in progress
+            } else {
+                // Rotation complete, restart training
+                
+                sphere.currentEpoch = 0;
+                sphere.isInRotationPhase = false;
+                sphere.rotationStartTime = undefined;
+                sphere.rotationStartAngle = undefined;
+                
+                // Reset frame counter display for restart
+                if (sphere.frameUpdateCallback) {
+                    sphere.frameUpdateCallback({
+                        current: 1,
+                        total: totalFrames,
+                        visible: 2 // Starting clusters
+                    });
+                }
             }
+        }
+        
+        // Only increment epoch during training phase, not during rotation
+        if (!sphere.isInRotationPhase) {
+            sphere.currentEpoch++;
+            
+            if (sphere.currentEpoch >= totalFrames) {
+                // Training complete, start rotation phase
+
+                sphere.isInRotationPhase = true;
+                sphere.rotationStartTime = Date.now();
+                sphere.rotationStartAngle = sphere.angle; // Current camera angle
+            }
+        }
+        
+        // Schedule next frame or rotation update
+        if (sphere.isPlayingMovie) {
+            sphere.movieAnimationRef = setTimeout(animate, frameDelay);
         }
     };
     
-    // Start the animation loop
-    scheduleNextFrame();
+    // Start immediately
+    animate();
 }
 
 export function stop_training_movie(sphere: SphereData) {
@@ -864,7 +857,7 @@ export function pause_training_movie(sphere: SphereData) {
         clearTimeout(sphere.movieAnimationRef);
         sphere.movieAnimationRef = 0;
     }
-    console.log('⏸️ Training movie paused');
+
 }
 
 export function resume_training_movie(sphere: SphereData) {
@@ -874,18 +867,22 @@ export function resume_training_movie(sphere: SphereData) {
     }
     
     if (sphere.isPlayingMovie) {
-        console.log('Training movie already playing');
         return;
     }
     
     // Resume from current epoch
     play_training_movie(sphere, 10);
-    console.log('▶️ Training movie resumed');
 }
 
 export function step_training_movie_frame(sphere: SphereData, direction: 'forward' | 'backward') {
     if (!sphere.trainingMovieData) {
         console.warn('No training data for frame stepping');
+        return;
+    }
+    
+    // Can't step during rotation phase
+    if (sphere.isInRotationPhase) {
+        console.warn('Cannot step during rotation phase');
         return;
     }
     
@@ -907,13 +904,19 @@ export function step_training_movie_frame(sphere: SphereData, direction: 'forwar
     sphere.currentEpoch = newIndex;
     const epochKey = epochKeys[newIndex];
     
-    console.log(`${direction === 'forward' ? '⏭️' : '⏮️'} Step to frame ${newIndex + 1}/${epochKeys.length} (epoch ${epochKey})`);
+
     update_training_movie_frame(sphere, epochKey);
 }
 
 export function goto_training_movie_frame(sphere: SphereData, frameNumber: number) {
     if (!sphere.trainingMovieData) {
         console.warn('No training data for frame navigation');
+        return;
+    }
+    
+    // Can't navigate during rotation phase
+    if (sphere.isInRotationPhase) {
+        console.warn('Cannot navigate during rotation phase');
         return;
     }
     
@@ -928,13 +931,13 @@ export function goto_training_movie_frame(sphere: SphereData, frameNumber: numbe
     sphere.currentEpoch = targetIndex;
     const epochKey = epochKeys[targetIndex];
     
-    console.log(`🎯 Jump to frame ${targetIndex + 1}/${epochKeys.length} (epoch ${epochKey})`);
+
     update_training_movie_frame(sphere, epochKey);
 }
 
 // Smooth interpolation functions
 function start_point_interpolation(sphere: SphereData, targetPositions: Map<string, THREE.Vector3>, duration: number = 300) {
-    console.log(`🎬 Starting smooth interpolation with ${targetPositions.size} points over ${duration}ms`);
+    // Starting smooth interpolation
     
     // Initialize interpolation state
     sphere.pointTargetPositions = targetPositions;
@@ -985,7 +988,7 @@ function animate_interpolation(sphere: SphereData) {
         sphere.isInterpolating = false;
         sphere.pointTargetPositions = undefined;
         sphere.pointStartPositions = undefined;
-        console.log(`✅ Interpolation complete`);
+    
     }
 }
 
@@ -1026,16 +1029,32 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string) {
     const clusterRange = endClusters - startClusters;
     const visibleClusters = startClusters + Math.floor(progressRatio * clusterRange);
     
-    console.log(`🎬 Frame ${currentFrameIndex}/${totalFrames}: Showing ${visibleClusters} clusters (0-${visibleClusters-1})`);
+    // Progressive cluster reveal calculation
     
     // Call frame update callback if available
     if (sphere.frameUpdateCallback) {
+        // Extract validation loss for current epoch if available
+        let validationLoss: number | undefined;
+        if (sphere.lossData && sphere.lossData.validation_loss && epochKey) {
+            const lossEntry = sphere.lossData.validation_loss.find((entry: any) => 
+                entry.epoch === parseInt(epochKey) || entry.epoch === epochKey
+            );
+            if (lossEntry && typeof lossEntry.value === 'number') {
+                validationLoss = lossEntry.value;
+            }
+        }
+        
         sphere.frameUpdateCallback({
             current: currentFrameIndex + 1,
             total: totalFrames,
-            visible: visibleClusters
+            visible: visibleClusters,
+            epoch: epochKey,
+            validationLoss: validationLoss
         });
     }
+    
+    // Update 3D loss plot marker position
+    update_3d_loss_plot_marker(sphere, epochKey);
     
     // Collect target positions for smooth interpolation
     const targetPositions = new Map<string, THREE.Vector3>();
@@ -1051,14 +1070,30 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string) {
         const rowOffset = parseInt(recordId); // We used index as record ID
         if (rowOffset < epochData.coords.length) {
             const newCoords = epochData.coords[rowOffset];
-                            if (newCoords && 
-                    typeof newCoords.x === 'number' && !isNaN(newCoords.x) &&
-                    typeof newCoords.y === 'number' && !isNaN(newCoords.y) &&
-                    typeof newCoords.z === 'number' && !isNaN(newCoords.z)) {
+            
+            // Handle both object format {x, y, z} and array format [x, y, z]
+            let x, y, z;
+            if (newCoords && typeof newCoords === 'object') {
+                if (Array.isArray(newCoords)) {
+                    // Array format: [x, y, z]
+                    x = newCoords[0];
+                    y = newCoords[1]; 
+                    z = newCoords[2];
+                } else {
+                    // Object format: {x, y, z}
+                    x = newCoords.x;
+                    y = newCoords.y;
+                    z = newCoords.z;
+                }
+            }
+            
+            if (typeof x === 'number' && !isNaN(x) &&
+                typeof y === 'number' && !isNaN(y) &&
+                typeof z === 'number' && !isNaN(z)) {
                     
-                    // Store target position for smooth interpolation instead of direct movement
-                    targetPositions.set(recordId, new THREE.Vector3(newCoords.x, newCoords.y, newCoords.z));
-                    validPoints++;
+                // Store target position for smooth interpolation instead of direct movement
+                targetPositions.set(recordId, new THREE.Vector3(x, y, z));
+                validPoints++;
                 
                 // Use logistics cluster data instead of broken cluster_pre
                 let clusterAssignment = 0; // Default fallback
@@ -1070,7 +1105,10 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string) {
                 if (sphere.logisticsClusterData && sphere.logisticsClusterData[clusterKey] && sphere.logisticsClusterData[clusterKey].cluster_labels) {
                     const clusterLabels = sphere.logisticsClusterData[clusterKey].cluster_labels;
                     if (rowOffset < clusterLabels.length) {
-                        clusterAssignment = clusterLabels[rowOffset];
+                        const originalCluster = clusterLabels[rowOffset];
+                        // REMAP cluster assignment to current visible range
+                        // This prevents early frames from having too many gray points
+                        clusterAssignment = originalCluster % visibleClusters;
                     }
                 }
                 
@@ -1083,35 +1121,19 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string) {
                 // PROGRESSIVE CLUSTER REVEAL with enhanced debugging
                 let newColor;
                 
-                // DEBUG: Log cluster values for first few points
-                if (rowOffset < 3) {
-                    console.log(`🔍 Point ${rowOffset}: logisticsCluster=${clusterAssignment}, visibleClusters=${visibleClusters}, kColorTable.length=${kColorTable.length}`);
-                    console.log(`🔍 Point ${rowOffset}: originalCoords.cluster_pre=${newCoords.cluster_pre} (broken API data)`);
-                }
+                // Cluster assignment calculated
                 
                 // Check if cluster is valid first
                 if (clusterAssignment === undefined || clusterAssignment === null) {
                     newColor = 0xff0000; // Red for undefined clusters
-                    if (rowOffset < 3) {
-                        console.log(`🔴 Point ${rowOffset}: cluster is ${clusterAssignment}, using red`);
-                    }
                 } else if (clusterAssignment >= kColorTable.length) {
                     newColor = 0xff0000; // Red for out-of-range clusters
-                    if (rowOffset < 3) {
-                        console.log(`🔴 Point ${rowOffset}: cluster ${clusterAssignment} >= kColorTable.length ${kColorTable.length}, using red`);
-                    }
                 } else if (clusterAssignment < visibleClusters) {
                     // Cluster is "revealed" - use its assigned color
                     newColor = kColorTable[clusterAssignment];
-                    if (rowOffset < 3) {
-                        console.log(`🟢 Point ${rowOffset}: Using logistics cluster ${clusterAssignment} = color 0x${newColor.toString(16)} (revealed)`);
-                    }
                 } else {
-                    // Cluster not yet revealed - use gray
+                    // This should rarely happen now with remapping
                     newColor = 0x999999; // Gray for unrevealed clusters
-                    if (rowOffset < 3) {
-                        console.log(`⚪ Point ${rowOffset}: cluster ${clusterAssignment} not yet revealed (visible: ${visibleClusters}), using gray`);
-                    }
                 }
                 
                                      // Apply the new color
@@ -1124,18 +1146,34 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string) {
                      if (rowOffset < 5) { // Show more examples
                          let issues = [];
                          if (!newCoords) {
-                             issues.push("coords object is null/undefined");
+                             issues.push("coords is null/undefined");
+                         } else if (typeof newCoords !== 'object') {
+                             issues.push(`coords is not an object (${typeof newCoords})`);
                          } else {
-                             if (typeof newCoords.x !== 'number') issues.push(`x is ${typeof newCoords.x} (${newCoords.x})`);
-                             else if (isNaN(newCoords.x)) issues.push(`x is NaN`);
-                             
-                             if (typeof newCoords.y !== 'number') issues.push(`y is ${typeof newCoords.y} (${newCoords.y})`);
-                             else if (isNaN(newCoords.y)) issues.push(`y is NaN`);
-                             
-                             if (typeof newCoords.z !== 'number') issues.push(`z is ${typeof newCoords.z} (${newCoords.z})`);
-                             else if (isNaN(newCoords.z)) issues.push(`z is NaN`);
+                             // Check both array and object formats
+                             if (Array.isArray(newCoords)) {
+                                 if (newCoords.length < 3) issues.push(`array too short (length ${newCoords.length})`);
+                                 if (typeof newCoords[0] !== 'number') issues.push(`x[0] is ${typeof newCoords[0]} (${newCoords[0]})`);
+                                 else if (isNaN(newCoords[0])) issues.push(`x[0] is NaN`);
+                                 
+                                 if (typeof newCoords[1] !== 'number') issues.push(`y[1] is ${typeof newCoords[1]} (${newCoords[1]})`);
+                                 else if (isNaN(newCoords[1])) issues.push(`y[1] is NaN`);
+                                 
+                                 if (typeof newCoords[2] !== 'number') issues.push(`z[2] is ${typeof newCoords[2]} (${newCoords[2]})`);
+                                 else if (isNaN(newCoords[2])) issues.push(`z[2] is NaN`);
+                             } else {
+                                 // Object format
+                                 if (typeof newCoords.x !== 'number') issues.push(`x is ${typeof newCoords.x} (${newCoords.x})`);
+                                 else if (isNaN(newCoords.x)) issues.push(`x is NaN`);
+                                 
+                                 if (typeof newCoords.y !== 'number') issues.push(`y is ${typeof newCoords.y} (${newCoords.y})`);
+                                 else if (isNaN(newCoords.y)) issues.push(`y is NaN`);
+                                 
+                                 if (typeof newCoords.z !== 'number') issues.push(`z is ${typeof newCoords.z} (${newCoords.z})`);
+                                 else if (isNaN(newCoords.z)) issues.push(`z is NaN`);
+                             }
                          }
-                                                   console.warn(`⚠️ BAD FRAME DATA - Point ${rowOffset} in epoch ${epochKey}: ${issues.join(', ')}. Full object:`, newCoords);
+                         console.warn(`⚠️ BAD FRAME DATA - Point ${rowOffset} in epoch ${epochKey}: ${issues.join(', ')}. Full object:`, newCoords);
                       }
                       invalidPoints++;
                   }
@@ -1147,23 +1185,31 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string) {
     if (invalidPoints > 0) {
         console.warn(`📊 Frame ${epochKey} DATA QUALITY: ${validPoints}/${totalPoints} valid points (${invalidPercentage}% invalid)`);
     } else {
-        console.log(`📊 Frame ${epochKey} DATA QUALITY: All ${validPoints} points valid ✅`);
+    
     }
     
-    // Start smooth interpolation to target positions
+    // Update positions with smooth interpolation for fluid movement
     if (targetPositions.size > 0) {
-        // Calculate interpolation duration based on frame timing
-        // Use 80% of frame duration to allow for smooth transitions
-        const epochKeys = Object.keys(sphere.trainingMovieData || {});
-        const frameDelay = (10 * 1000) / epochKeys.length; // 10 seconds total / number of frames
-        const interpolationDuration = Math.max(100, frameDelay * 0.8); // At least 100ms, but up to 80% of frame time
+        // Stop any current interpolation before starting new one
+        stop_point_interpolation(sphere);
         
-        console.log(`🎬 Starting interpolation: ${targetPositions.size} points, ${interpolationDuration}ms duration`);
+        // Start smooth interpolation to target positions
+        // Calculate optimal interpolation duration based on frame timing
+        const epochKeys = Object.keys(sphere.trainingMovieData || {});
+        const frameDelay = (10 * 1000) / epochKeys.length; // Same calc as play_training_movie
+        const interpolationDuration = Math.max(50, frameDelay * 0.8); // 80% of frame delay to finish before next frame
+        
         start_point_interpolation(sphere, targetPositions, interpolationDuration);
-    } else {
-        // No valid target positions, just re-render
-        render_sphere(sphere);
+        
+        // Smooth interpolation started
+        // const epochKeys = Object.keys(sphere.trainingMovieData || {});
+        // const frameDelay = (10 * 1000) / epochKeys.length;
+        // const interpolationDuration = Math.max(50, frameDelay * 0.3);
+        // start_point_interpolation(sphere, targetPositions, interpolationDuration);
     }
+    
+    // Always re-render to show the updates
+    render_sphere(sphere);
 }
 
 function start_cluster_animation(sphere: SphereData) {
@@ -1220,6 +1266,146 @@ export function clear_colors(sphere: SphereData) {
     for (const record_id of sphere.pointRecordsByID.keys()) {
         change_object_color(sphere, record_id, GRAY);
     }
+}
+
+export function create_3d_loss_plot(sphere: SphereData, lossData: any) {
+    if (!lossData || !lossData.validation_loss || !Array.isArray(lossData.validation_loss)) {
+        return;
+    }
+    
+    // Remove existing loss plot if any
+    if (sphere.lossPlotGroup) {
+        sphere.scene.remove(sphere.lossPlotGroup);
+        sphere.lossPlotGroup = undefined;
+        sphere.lossPlotLine = undefined;
+        sphere.lossPlotCurrentMarker = undefined;
+    }
+    
+    const lossArray = lossData.validation_loss;
+    if (lossArray.length === 0) return;
+    
+    // Find min/max values for scaling
+    const epochs = lossArray.map((d: any) => typeof d.epoch === 'string' ? parseInt(d.epoch) : d.epoch);
+    const losses = lossArray.map((d: any) => d.value);
+    const minEpoch = Math.min(...epochs);
+    const maxEpoch = Math.max(...epochs);
+    const minLoss = Math.min(...losses);
+    const maxLoss = Math.max(...losses);
+    
+    // Create group for loss plot elements
+    sphere.lossPlotGroup = new THREE.Group();
+    
+    // Position the plot at the bottom of the view
+    sphere.lossPlotGroup.position.set(0, -1.5, 0);
+    sphere.lossPlotGroup.scale.set(0.8, 0.8, 0.8);
+    
+    // Create loss curve line
+    const points: THREE.Vector3[] = [];
+    const plotWidth = 3; // 3D world units
+    const plotHeight = 1; // 3D world units
+    
+    lossArray.forEach((point: any) => {
+        const epoch = typeof point.epoch === 'string' ? parseInt(point.epoch) : point.epoch;
+        const x = -plotWidth/2 + ((epoch - minEpoch) / (maxEpoch - minEpoch)) * plotWidth;
+        const y = ((point.value - minLoss) / (maxLoss - minLoss)) * plotHeight;
+        const z = 0;
+        points.push(new THREE.Vector3(x, y, z));
+    });
+    
+    // Create line geometry and material
+    const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+    const lineMaterial = new THREE.LineBasicMaterial({ 
+        color: 0x00ff88,
+        linewidth: 2
+    });
+    
+    sphere.lossPlotLine = new THREE.Line(lineGeometry, lineMaterial);
+    sphere.lossPlotGroup.add(sphere.lossPlotLine);
+    
+    // Create current epoch marker
+    const markerGeometry = new THREE.SphereGeometry(0.02, 8, 8);
+    const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xff4444 });
+    sphere.lossPlotCurrentMarker = new THREE.Mesh(markerGeometry, markerMaterial);
+    sphere.lossPlotGroup.add(sphere.lossPlotCurrentMarker);
+    
+    // Add axes (simple lines)
+    const axisPoints = [
+        new THREE.Vector3(-plotWidth/2, 0, 0),
+        new THREE.Vector3(plotWidth/2, 0, 0),
+        new THREE.Vector3(-plotWidth/2, 0, 0),
+        new THREE.Vector3(-plotWidth/2, plotHeight, 0)
+    ];
+    
+    const axisGeometry = new THREE.BufferGeometry().setFromPoints(axisPoints);
+    const axisMaterial = new THREE.LineBasicMaterial({ color: 0x666666 });
+    const axisLines = new THREE.LineSegments(axisGeometry, axisMaterial);
+    sphere.lossPlotGroup.add(axisLines);
+    
+    // Add the group to the scene
+    sphere.scene.add(sphere.lossPlotGroup);
+}
+
+export function update_3d_loss_plot_marker(sphere: SphereData, currentEpoch?: string) {
+    if (!sphere.lossPlotCurrentMarker || !sphere.lossData || !currentEpoch) {
+        return;
+    }
+    
+    const lossArray = sphere.lossData.validation_loss;
+    if (!lossArray || !Array.isArray(lossArray)) return;
+    
+    // Find current epoch data
+    const currentEpochNum = parseInt(currentEpoch);
+    const currentPoint = lossArray.find((d: any) => 
+        (typeof d.epoch === 'string' ? parseInt(d.epoch) : d.epoch) === currentEpochNum
+    );
+    
+    if (currentPoint) {
+        // Find min/max for scaling (same as when creating)
+        const epochs = lossArray.map((d: any) => typeof d.epoch === 'string' ? parseInt(d.epoch) : d.epoch);
+        const losses = lossArray.map((d: any) => d.value);
+        const minEpoch = Math.min(...epochs);
+        const maxEpoch = Math.max(...epochs);
+        const minLoss = Math.min(...losses);
+        const maxLoss = Math.max(...losses);
+        
+        const plotWidth = 3;
+        const plotHeight = 1;
+        
+        const x = -plotWidth/2 + ((currentEpochNum - minEpoch) / (maxEpoch - minEpoch)) * plotWidth;
+        const y = ((currentPoint.value - minLoss) / (maxLoss - minLoss)) * plotHeight;
+        const z = 0;
+        
+        sphere.lossPlotCurrentMarker.position.set(x, y, z);
+    }
+}
+
+export function clear_all_points(sphere: SphereData) {
+ 
+    
+    // Remove all point meshes from the scene
+    sphere.pointObjectsByRecordID.forEach((mesh, recordId) => {
+        sphere.scene.remove(mesh);
+        // Also dispose of the geometry and material to free memory
+        if (mesh.geometry) mesh.geometry.dispose();
+        if (mesh.material && typeof mesh.material.dispose === 'function') {
+            mesh.material.dispose();
+        }
+    });
+    
+    // Clear the tracking maps
+    sphere.pointObjectsByRecordID.clear();
+    sphere.pointRecordsByID.clear();
+    sphere.selectedRecords.clear();
+    
+    // Remove loss plot if it exists
+    if (sphere.lossPlotGroup) {
+        sphere.scene.remove(sphere.lossPlotGroup);
+        sphere.lossPlotGroup = undefined;
+        sphere.lossPlotLine = undefined;
+        sphere.lossPlotCurrentMarker = undefined;
+    }
+    
+
 }
 
 export function add_new_embedding(sphere: SphereData, new_record: SphereRecord) {

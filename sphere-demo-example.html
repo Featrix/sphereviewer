@@ -139,8 +139,8 @@
         }
         
         .sphere-container {
-            width: 600px;
-            height: 600px;
+            width: 800px;
+            height: 800px;
             background: #f9fafb;
             border: 2px solid #e5e7eb;
             border-radius: 8px;
@@ -233,12 +233,28 @@
 <body>
     <!-- Load React dependencies BEFORE sphere-viewer.js expects them -->
     <script>
-        // CACHE BUSTING - Load React and wait for it to be ready
+        // ROBUST REACT LOADING WITH RETRY MECHANISM
         const reactCacheBust = Date.now();
         console.log('🔥 CACHE BUSTING: Loading React with v=' + reactCacheBust);
         
         let reactLoaded = false;
         let reactDomLoaded = false;
+        let reactRetries = 0;
+        let reactDomRetries = 0;
+        const maxRetries = 3;
+        
+        // Alternative CDNs for fallback
+        const reactCdns = [
+            'https://unpkg.com/react@18/umd/react.production.min.js',
+            'https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js',
+            'https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js'
+        ];
+        
+        const reactDomCdns = [
+            'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
+            'https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js',
+            'https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js'
+        ];
         
         function checkReactReady() {
             if (reactLoaded && reactDomLoaded && window.React && window.ReactDOM) {
@@ -249,52 +265,110 @@
             }
         }
         
-        const reactScript = document.createElement('script');
-        reactScript.crossOrigin = 'anonymous';
-        reactScript.src = `https://unpkg.com/react@18/umd/react.production.min.js?v=${reactCacheBust}`;
-        reactScript.onload = () => {
-            reactLoaded = true;
-            console.log('✅ React core loaded');
-            checkReactReady();
-        };
-        document.head.appendChild(reactScript);
-        
-        const reactDomScript = document.createElement('script');
-        reactDomScript.crossOrigin = 'anonymous';
-        reactDomScript.src = `https://unpkg.com/react-dom@18/umd/react-dom.production.min.js?v=${reactCacheBust}`;
-        reactDomScript.onload = () => {
-            reactDomLoaded = true;
-            console.log('✅ ReactDOM loaded');
-            
-            // CRITICAL: Ensure createRoot is available globally and add it to ReactDOM if missing
-            if (window.ReactDOM) {
-                if (!window.ReactDOM.createRoot && window.ReactDOM.createRoot === undefined) {
-                    // Fallback: use render method for older React compatibility
-                    console.log('⚠️ createRoot not found, checking for render method');
-                    if (window.ReactDOM.render) {
-                        // Create a createRoot shim that uses the old render method
-                        window.ReactDOM.createRoot = function(container) {
-                            return {
-                                render: function(element) {
-                                    window.ReactDOM.render(element, container);
-                                },
-                                unmount: function() {
-                                    window.ReactDOM.unmountComponentAtNode(container);
-                                }
-                            };
-                        };
-                        console.log('✅ createRoot shim created using render method');
-                    }
-                } else {
-                    console.log('✅ ReactDOM.createRoot confirmed available');
-                }
-            } else {
-                console.error('❌ ReactDOM not available!', window.ReactDOM);
+        function loadReactWithRetry(retryCount = 0) {
+            if (retryCount >= maxRetries) {
+                console.error('❌ Failed to load React after', maxRetries, 'attempts');
+                return;
             }
             
-            checkReactReady();
-        };
-        document.head.appendChild(reactDomScript);
+            const cdnIndex = retryCount % reactCdns.length;
+            const reactScript = document.createElement('script');
+            reactScript.crossOrigin = 'anonymous';
+            reactScript.src = `${reactCdns[cdnIndex]}?v=${reactCacheBust}&retry=${retryCount}`;
+            
+            reactScript.onload = () => {
+                if (window.React) {
+                    reactLoaded = true;
+                    console.log('✅ React core loaded from CDN', cdnIndex + 1);
+                    checkReactReady();
+                } else {
+                    console.warn('⚠️ React script loaded but window.React not available, retrying...');
+                    setTimeout(() => loadReactWithRetry(retryCount + 1), 1000 * (retryCount + 1));
+                }
+            };
+            
+            reactScript.onerror = () => {
+                console.warn(`⚠️ React load failed from CDN ${cdnIndex + 1}, retrying in ${retryCount + 1}s...`);
+                setTimeout(() => loadReactWithRetry(retryCount + 1), 1000 * (retryCount + 1));
+            };
+            
+            // Timeout fallback
+            setTimeout(() => {
+                if (!reactLoaded) {
+                    console.warn('⚠️ React load timeout, retrying...');
+                    loadReactWithRetry(retryCount + 1);
+                }
+            }, 10000);
+            
+            document.head.appendChild(reactScript);
+        }
+        
+        function loadReactDomWithRetry(retryCount = 0) {
+            if (retryCount >= maxRetries) {
+                console.error('❌ Failed to load ReactDOM after', maxRetries, 'attempts');
+                return;
+            }
+            
+            const cdnIndex = retryCount % reactDomCdns.length;
+            const reactDomScript = document.createElement('script');
+            reactDomScript.crossOrigin = 'anonymous';
+            reactDomScript.src = `${reactDomCdns[cdnIndex]}?v=${reactCacheBust}&retry=${retryCount}`;
+            
+            reactDomScript.onload = () => {
+                if (window.ReactDOM) {
+                    reactDomLoaded = true;
+                    console.log('✅ ReactDOM loaded from CDN', cdnIndex + 1);
+                    
+                    // CRITICAL: Ensure createRoot is available globally and add it to ReactDOM if missing
+                    if (!window.ReactDOM.createRoot && window.ReactDOM.createRoot === undefined) {
+                        // Fallback: use render method for older React compatibility
+                        console.log('⚠️ createRoot not found, creating shim using render method');
+                        if (window.ReactDOM.render) {
+                            // Create a createRoot shim that uses the old render method
+                            window.ReactDOM.createRoot = function(container) {
+                                return {
+                                    render: function(element) {
+                                        window.ReactDOM.render(element, container);
+                                    },
+                                    unmount: function() {
+                                        window.ReactDOM.unmountComponentAtNode(container);
+                                    }
+                                };
+                            };
+                            console.log('✅ createRoot shim created using render method');
+                        } else {
+                            console.error('❌ Neither createRoot nor render available!');
+                        }
+                    } else {
+                        console.log('✅ ReactDOM.createRoot confirmed available');
+                    }
+                    
+                    checkReactReady();
+                } else {
+                    console.warn('⚠️ ReactDOM script loaded but window.ReactDOM not available, retrying...');
+                    setTimeout(() => loadReactDomWithRetry(retryCount + 1), 1000 * (retryCount + 1));
+                }
+            };
+            
+            reactDomScript.onerror = () => {
+                console.warn(`⚠️ ReactDOM load failed from CDN ${cdnIndex + 1}, retrying in ${retryCount + 1}s...`);
+                setTimeout(() => loadReactDomWithRetry(retryCount + 1), 1000 * (retryCount + 1));
+            };
+            
+            // Timeout fallback
+            setTimeout(() => {
+                if (!reactDomLoaded) {
+                    console.warn('⚠️ ReactDOM load timeout, retrying...');
+                    loadReactDomWithRetry(retryCount + 1);
+                }
+            }, 10000);
+            
+            document.head.appendChild(reactDomScript);
+        }
+        
+        // Start loading React dependencies with retry logic
+        loadReactWithRetry();
+        loadReactDomWithRetry();
     </script>
     
     <!-- CRITICAL: Define onSphereReady BEFORE sphere-viewer.js loads -->
