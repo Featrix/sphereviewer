@@ -58,7 +58,14 @@ export async function fetch_training_metrics(session_id: string, apiBaseUrl?: st
     if (!trainingMetrics || !trainingMetrics.validation_loss) {
         console.log('🎭 Creating synthetic validation loss data for visualization');
         const epochKeys = Object.keys(projectionsData.epoch_projections || {});
-        const syntheticLoss = epochKeys.map((epochKey, index) => {
+        // CRITICAL: Sort epoch keys by numeric value to ensure correct order
+        const sortedEpochKeys = epochKeys.sort((a, b) => {
+            const epochA = parseInt(a.replace('epoch_', ''));
+            const epochB = parseInt(b.replace('epoch_', ''));
+            return epochA - epochB;
+        });
+        
+        const syntheticLoss = sortedEpochKeys.map((epochKey, index) => {
             const epoch = parseInt(epochKey.replace('epoch_', ''));
             // Create realistic decreasing loss with some noise
             const baseLoss = 2.0 * Math.exp(-index / 30) + 0.1; // Exponential decay
@@ -72,7 +79,7 @@ export async function fetch_training_metrics(session_id: string, apiBaseUrl?: st
         trainingMetrics = {
             validation_loss: syntheticLoss
         };
-        console.log(`🎭 Created ${syntheticLoss.length} synthetic loss points`);
+        console.log(`🎭 Created ${syntheticLoss.length} synthetic loss points in order`);
     }
     
     // Combine both datasets

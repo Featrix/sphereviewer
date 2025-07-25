@@ -93,6 +93,13 @@ const LossPlotOverlay: React.FC<{
         ctx.lineTo(leftPadding, topPadding + plotHeight);
         ctx.stroke();
         
+        // CRITICAL FIX: Sort loss data by epoch number before plotting!
+        const sortedLossData = [...lossData].sort((a, b) => {
+            const epochA = typeof a.epoch === 'string' ? parseInt(a.epoch) : a.epoch;
+            const epochB = typeof b.epoch === 'string' ? parseInt(b.epoch) : b.epoch;
+            return epochA - epochB;
+        });
+        
         // Draw smooth loss curve with gradient
         const gradient = ctx.createLinearGradient(0, topPadding, 0, topPadding + plotHeight);
         gradient.addColorStop(0, '#00ff88');
@@ -104,7 +111,7 @@ const LossPlotOverlay: React.FC<{
         ctx.lineJoin = 'round';
         ctx.beginPath();
         
-        lossData.forEach((point, i) => {
+        sortedLossData.forEach((point, i) => {
             const epoch = typeof point.epoch === 'string' ? parseInt(point.epoch) : point.epoch;
             const x = leftPadding + ((epoch - minEpoch) / (maxEpoch - minEpoch)) * plotWidth;
             const y = topPadding + (1 - (point.value - minLoss) / (maxLoss - minLoss)) * plotHeight;
@@ -119,7 +126,7 @@ const LossPlotOverlay: React.FC<{
         
         // Draw data points - make them more visible
         ctx.fillStyle = '#00ff88';
-        lossData.forEach((point, i) => {
+        sortedLossData.forEach((point, i) => {
             if (i % 3 === 0) { // Show every 3rd point for better visibility
                 const epoch = typeof point.epoch === 'string' ? parseInt(point.epoch) : point.epoch;
                 const x = leftPadding + ((epoch - minEpoch) / (maxEpoch - minEpoch)) * plotWidth;
