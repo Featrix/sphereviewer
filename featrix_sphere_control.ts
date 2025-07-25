@@ -2059,40 +2059,115 @@ function create_convex_hull_mesh(sphere: SphereData, hullPoints: THREE.Vector3[]
     if (!sphere.convexHullsGroup || hullPoints.length < 4) return;
     
     try {
-        // Create a simple wireframe connecting the extremal points
-        // This creates a rough "hull" visualization using line segments
+        // Create FILLED convex hull with triangulated faces
+        const filledGeometry = create_filled_hull_geometry(hullPoints);
         
-        // Create line segments connecting hull points
-        const geometry = new THREE.BufferGeometry();
-        const lines: THREE.Vector3[] = [];
-        
-        // Connect each point to every other point to create a wireframe hull
-        for (let i = 0; i < hullPoints.length; i++) {
-            for (let j = i + 1; j < hullPoints.length; j++) {
-                lines.push(hullPoints[i]);
-                lines.push(hullPoints[j]);
-            }
+        if (filledGeometry) {
+            // Create semi-transparent filled material
+            const filledMaterial = new THREE.MeshBasicMaterial({
+                color: clusterColor,
+                transparent: true,
+                opacity: 0.15,
+                side: THREE.DoubleSide,
+                wireframe: false
+            });
+            
+            // Create wireframe overlay for edges
+            const wireframeMaterial = new THREE.MeshBasicMaterial({
+                color: clusterColor,
+                transparent: true,
+                opacity: 0.6,
+                wireframe: true
+            });
+            
+            // Create both filled and wireframe meshes
+            const filledMesh = new THREE.Mesh(filledGeometry, filledMaterial);
+            const wireframeMesh = new THREE.Mesh(filledGeometry.clone(), wireframeMaterial);
+            
+            // Add both to convex hulls group
+            sphere.convexHullsGroup.add(filledMesh);
+            sphere.convexHullsGroup.add(wireframeMesh);
+            
+            console.log(`✨ Created FILLED convex hull for cluster ${cluster} with ${hullPoints.length} vertices`);
+        } else {
+            console.warn(`⚠️ Failed to create filled geometry for cluster ${cluster}`);
         }
-        
-        geometry.setFromPoints(lines);
-        
-        // Create wireframe material with cluster color
-        const wireframeMaterial = new THREE.LineBasicMaterial({
-            color: clusterColor,
-            transparent: true,
-            opacity: 0.3,
-            linewidth: 2
-        });
-        
-        // Create line segments mesh
-        const wireframeMesh = new THREE.LineSegments(geometry, wireframeMaterial);
-        
-        // Add to convex hulls group
-        sphere.convexHullsGroup.add(wireframeMesh);
-        
-        console.log(`Created simple hull wireframe for cluster ${cluster} with ${hullPoints.length} vertices`);
         
     } catch (error) {
         console.warn(`Failed to create convex hull for cluster ${cluster}:`, error);
+    }
+}
+
+function create_filled_hull_geometry(hullPoints: THREE.Vector3[]): THREE.BufferGeometry | null {
+    if (hullPoints.length < 4) return null;
+    
+    try {
+        // Create a simple convex polyhedron from extremal points
+        // For 6 extremal points (min/max X,Y,Z), create triangulated faces
+        
+        const geometry = new THREE.BufferGeometry();
+        const vertices: number[] = [];
+        const indices: number[] = [];
+        
+        // Add all hull points as vertices
+        hullPoints.forEach(point => {
+            vertices.push(point.x, point.y, point.z);
+        });
+        
+        // Create triangular faces connecting the points
+        // This creates a rough convex polyhedron
+        const numPoints = hullPoints.length;
+        
+        if (numPoints === 4) {
+            // Tetrahedron - 4 triangular faces
+            indices.push(
+                0, 1, 2,  // Face 1
+                0, 1, 3,  // Face 2  
+                0, 2, 3,  // Face 3
+                1, 2, 3   // Face 4
+            );
+        } else if (numPoints === 6) {
+            // Octahedron-like shape from 6 extremal points
+            // Connect points to form triangular faces
+            indices.push(
+                // Top pyramid (using first 3 points as base, 4th as apex)
+                0, 1, 2,  0, 2, 3,  0, 3, 1,
+                // Bottom pyramid (using last 3 points)
+                3, 4, 5,  3, 5, 2,  2, 5, 4,
+                // Side faces connecting top and bottom
+                0, 1, 4,  1, 2, 5,  2, 3, 4,
+                4, 0, 3,  5, 1, 0,  4, 5, 2
+            );
+        } else {
+            // For other counts, create a fan-like triangulation
+            // Connect first point to all other adjacent pairs
+            for (let i = 1; i < numPoints - 1; i++) {
+                indices.push(0, i, i + 1);
+            }
+            // Close the fan
+            indices.push(0, numPoints - 1, 1);
+            
+            // Add bottom faces if we have enough points
+            if (numPoints > 4) {
+                const center = numPoints - 1;
+                for (let i = 1; i < center - 1; i++) {
+                    indices.push(center, i + 1, i);
+                }
+                indices.push(center, 1, center - 1);
+            }
+        }
+        
+        // Set geometry data
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        geometry.setIndex(indices);
+        
+        // Compute normals for proper lighting
+        geometry.computeVertexNormals();
+        
+        return geometry;
+        
+    } catch (error) {
+        console.warn('Error creating filled hull geometry:', error);
+        return null;
     }
 }
