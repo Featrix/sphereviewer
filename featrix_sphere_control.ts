@@ -898,18 +898,20 @@ export function step_training_movie_frame(sphere: SphereData, direction: 'forwar
     
     const epochKeys = Object.keys(sphere.trainingMovieData).sort((a, b) => parseInt(a) - parseInt(b));
     const currentIndex = sphere.currentEpoch || 0;
+    const maxIndex = epochKeys.length - 1;
     
     let newIndex;
     if (direction === 'forward') {
-        newIndex = (currentIndex + 1) % epochKeys.length;
+        newIndex = Math.min(currentIndex + 1, maxIndex); // Don't wrap around
     } else {
-        newIndex = currentIndex <= 0 ? epochKeys.length - 1 : currentIndex - 1;
+        newIndex = Math.max(currentIndex - 1, 0); // Don't go below 0
     }
     
     sphere.currentEpoch = newIndex;
     const epochKey = epochKeys[newIndex];
     
-
+    console.log(`🎮 Step ${direction}: frame ${currentIndex} → ${newIndex} (epoch ${epochKey})`);
+    
     update_training_movie_frame(sphere, epochKey);
 }
 
@@ -936,7 +938,8 @@ export function goto_training_movie_frame(sphere: SphereData, frameNumber: numbe
     sphere.currentEpoch = targetIndex;
     const epochKey = epochKeys[targetIndex];
     
-
+    console.log(`🎯 Goto frame: ${frameNumber} → index ${targetIndex} (epoch ${epochKey})`);
+    
     update_training_movie_frame(sphere, epochKey);
 }
 
