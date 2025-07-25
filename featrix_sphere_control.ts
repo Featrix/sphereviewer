@@ -601,10 +601,7 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any, 
     sphere.lossData = lossData;
     sphere.currentEpoch = 0;
     
-    // Create 3D loss plot if loss data is available
-    if (lossData) {
-        create_3d_loss_plot(sphere, lossData);
-    }
+    // Note: Loss plot is now handled as 2D screen overlay, not 3D scene object
     
     // Initialize memory trails system
     create_memory_trails(sphere);
@@ -1068,8 +1065,7 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string) {
         });
     }
     
-    // Update 3D loss plot marker position
-    update_3d_loss_plot_marker(sphere, epochKey);
+    // Loss plot cursor now handled by 2D screen overlay
     
     // Collect target positions for smooth interpolation
     const targetPositions = new Map<string, THREE.Vector3>();
@@ -1283,6 +1279,56 @@ export function clear_colors(sphere: SphereData) {
     }
 }
 
+function createGreatCircleArc(start: THREE.Vector3, end: THREE.Vector3, segments: number = 16): THREE.Vector3[] {
+    // Calculate great circle arc between two points on a sphere
+    const points: THREE.Vector3[] = [];
+    
+    // Get the average radius to scale the arc
+    const avgRadius = (start.length() + end.length()) / 2;
+    
+    // Normalize vectors to ensure they're on unit sphere
+    const startNorm = start.clone().normalize();
+    const endNorm = end.clone().normalize();
+    
+    // Calculate the angle between the vectors
+    const angle = startNorm.angleTo(endNorm);
+    
+    // If points are very close, just return interpolated line
+    if (angle < 0.01) {
+        for (let i = 0; i <= segments; i++) {
+            const t = i / segments;
+            const point = new THREE.Vector3().lerpVectors(start, end, t);
+            points.push(point);
+        }
+        return points;
+    }
+    
+    // Use spherical linear interpolation (slerp) for smooth great circle arcs
+    for (let i = 0; i <= segments; i++) {
+        const t = i / segments;
+        
+        // Spherical linear interpolation
+        const point = new THREE.Vector3();
+        if (Math.abs(angle) < 0.001) {
+            // Linear interpolation for very small angles
+            point.lerpVectors(startNorm, endNorm, t);
+        } else {
+            // Slerp for proper great circle
+            const sinAngle = Math.sin(angle);
+            const a = Math.sin((1 - t) * angle) / sinAngle;
+            const b = Math.sin(t * angle) / sinAngle;
+            
+            point.copy(startNorm).multiplyScalar(a).addScaledVector(endNorm, b);
+        }
+        
+        // Scale to average radius and add to points
+        point.multiplyScalar(avgRadius);
+        points.push(point);
+    }
+    
+    return points;
+}
+
 export function create_memory_trails(sphere: SphereData) {
     // Remove existing trails if any
     if (sphere.memoryTrailsGroup) {
@@ -1322,19 +1368,41 @@ export function update_memory_trails(sphere: SphereData) {
         // Create trail segments (up to 5 segments)
         const maxSegments = Math.min(5, history.length - 1);
         
+        // First pass: calculate all distances to determine max distance for normalization
+        const distances: number[] = [];
         for (let i = 0; i < maxSegments; i++) {
-            // Alpha decreases as we go further back in time
-            // Most recent segment (i=0): alpha = 0.8
-            // Oldest segment (i=4): alpha = 0.1
-            const alpha = 0.8 - (i * 0.15);
+            const currentPos = history[0].clone();
+            const previousPos = history[i + 1].clone();
+            const distance = currentPos.distanceTo(previousPos);
+            distances.push(distance);
+        }
+        const maxDistance = Math.max(...distances);
+        const minDistance = Math.min(...distances);
+        const distanceRange = maxDistance - minDistance;
+        
+        for (let i = 0; i < maxSegments; i++) {
+            // Create great circle arc from current position to previous position
+            const currentPos = history[0].clone();
+            const previousPos = history[i + 1].clone();
+            const distance = distances[i];
             
-            // Create line from current position to previous position
-            const points = [
-                history[0].clone(), // Current position
-                history[i + 1].clone() // Previous position (1, 2, 3, 4, or 5 epochs ago)
-            ];
+            // Alpha decreases as distance increases (longer segments are lighter)
+            // Shorter segments: alpha = 0.9
+            // Longer segments: alpha = 0.2
+            let alpha;
+            if (distanceRange > 0.001) {
+                const normalizedDistance = (distance - minDistance) / distanceRange;
+                alpha = 0.9 - (normalizedDistance * 0.7); // 0.9 to 0.2
+            } else {
+                alpha = 0.9; // All segments same distance
+            }
             
-            const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+            // Generate great circle arc points
+            // Adjust segments based on arc length for efficiency
+            const segments = Math.max(4, Math.min(16, Math.floor(distance * 8))); // 4-16 segments based on distance
+            const arcPoints = createGreatCircleArc(currentPos, previousPos, segments);
+            
+            const lineGeometry = new THREE.BufferGeometry().setFromPoints(arcPoints);
             const lineMaterial = new THREE.LineBasicMaterial({
                 color: pointColor.clone(),
                 transparent: true,
@@ -1373,13 +1441,7 @@ export function create_3d_loss_plot(sphere: SphereData, lossData: any) {
         return;
     }
     
-    // Remove existing loss plot if any
-    if (sphere.lossPlotGroup) {
-        sphere.scene.remove(sphere.lossPlotGroup);
-        sphere.lossPlotGroup = undefined;
-        sphere.lossPlotLine = undefined;
-        sphere.lossPlotCurrentMarker = undefined;
-    }
+    // Loss plot is now 2D screen overlay - no 3D cleanup needed
     
     const lossArray = lossData.validation_loss;
     if (lossArray.length === 0) return;
@@ -1395,9 +1457,9 @@ export function create_3d_loss_plot(sphere: SphereData, lossData: any) {
     // Create group for loss plot elements
     sphere.lossPlotGroup = new THREE.Group();
     
-    // Position the plot at the bottom of the view
-    sphere.lossPlotGroup.position.set(0, -1.5, 0);
-    sphere.lossPlotGroup.scale.set(0.8, 0.8, 0.8);
+    // Position the plot above the sphere
+    sphere.lossPlotGroup.position.set(0, 2.0, 0);
+    sphere.lossPlotGroup.scale.set(1.2, 1.2, 1.2);
     
     // Create loss curve line
     const points: THREE.Vector3[] = [];
@@ -1422,61 +1484,52 @@ export function create_3d_loss_plot(sphere: SphereData, lossData: any) {
     sphere.lossPlotLine = new THREE.Line(lineGeometry, lineMaterial);
     sphere.lossPlotGroup.add(sphere.lossPlotLine);
     
-    // Create current epoch marker
-    const markerGeometry = new THREE.SphereGeometry(0.02, 8, 8);
-    const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xff4444 });
-    sphere.lossPlotCurrentMarker = new THREE.Mesh(markerGeometry, markerMaterial);
-    sphere.lossPlotGroup.add(sphere.lossPlotCurrentMarker);
-    
-    // Add axes (simple lines)
-    const axisPoints = [
-        new THREE.Vector3(-plotWidth/2, 0, 0),
-        new THREE.Vector3(plotWidth/2, 0, 0),
-        new THREE.Vector3(-plotWidth/2, 0, 0),
-        new THREE.Vector3(-plotWidth/2, plotHeight, 0)
+    // Create vertical cursor line (will be positioned by update function)
+    const cursorPoints = [
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(0, plotHeight, 0)
     ];
-    
-    const axisGeometry = new THREE.BufferGeometry().setFromPoints(axisPoints);
-    const axisMaterial = new THREE.LineBasicMaterial({ color: 0x666666 });
-    const axisLines = new THREE.LineSegments(axisGeometry, axisMaterial);
-    sphere.lossPlotGroup.add(axisLines);
+    const cursorGeometry = new THREE.BufferGeometry().setFromPoints(cursorPoints);
+    const cursorMaterial = new THREE.LineBasicMaterial({ 
+        color: 0xff4444,
+        linewidth: 3
+    });
+    sphere.lossPlotCursor = new THREE.Line(cursorGeometry, cursorMaterial);
+    sphere.lossPlotGroup.add(sphere.lossPlotCursor);
     
     // Add the group to the scene
     sphere.scene.add(sphere.lossPlotGroup);
 }
 
-export function update_3d_loss_plot_marker(sphere: SphereData, currentEpoch?: string) {
-    if (!sphere.lossPlotCurrentMarker || !sphere.lossData || !currentEpoch) {
+export function update_3d_loss_plot_cursor(sphere: SphereData, currentEpoch?: string) {
+    if (!sphere.lossPlotCursor || !sphere.lossData || !currentEpoch) {
         return;
     }
     
     const lossArray = sphere.lossData.validation_loss;
     if (!lossArray || !Array.isArray(lossArray)) return;
     
-    // Find current epoch data
+    // Find current epoch data for positioning cursor
     const currentEpochNum = parseInt(currentEpoch);
-    const currentPoint = lossArray.find((d: any) => 
-        (typeof d.epoch === 'string' ? parseInt(d.epoch) : d.epoch) === currentEpochNum
-    );
     
-    if (currentPoint) {
-        // Find min/max for scaling (same as when creating)
-        const epochs = lossArray.map((d: any) => typeof d.epoch === 'string' ? parseInt(d.epoch) : d.epoch);
-        const losses = lossArray.map((d: any) => d.value);
-        const minEpoch = Math.min(...epochs);
-        const maxEpoch = Math.max(...epochs);
-        const minLoss = Math.min(...losses);
-        const maxLoss = Math.max(...losses);
-        
-        const plotWidth = 3;
-        const plotHeight = 1;
-        
-        const x = -plotWidth/2 + ((currentEpochNum - minEpoch) / (maxEpoch - minEpoch)) * plotWidth;
-        const y = ((currentPoint.value - minLoss) / (maxLoss - minLoss)) * plotHeight;
-        const z = 0;
-        
-        sphere.lossPlotCurrentMarker.position.set(x, y, z);
-    }
+    // Find min/max epochs for scaling (same as when creating)
+    const epochs = lossArray.map((d: any) => typeof d.epoch === 'string' ? parseInt(d.epoch) : d.epoch);
+    const minEpoch = Math.min(...epochs);
+    const maxEpoch = Math.max(...epochs);
+    
+    const plotWidth = 3;
+    const plotHeight = 1;
+    
+    // Calculate x position for cursor based on current epoch
+    const x = -plotWidth/2 + ((currentEpochNum - minEpoch) / (maxEpoch - minEpoch)) * plotWidth;
+    
+    // Update cursor line position (vertical line from bottom to top of plot)
+    const cursorPoints = [
+        new THREE.Vector3(x, 0, 0),
+        new THREE.Vector3(x, plotHeight, 0)
+    ];
+    
+    sphere.lossPlotCursor.geometry.setFromPoints(cursorPoints);
 }
 
 export function clear_all_points(sphere: SphereData) {
@@ -1497,13 +1550,7 @@ export function clear_all_points(sphere: SphereData) {
     sphere.pointRecordsByID.clear();
     sphere.selectedRecords.clear();
     
-    // Remove loss plot if it exists
-    if (sphere.lossPlotGroup) {
-        sphere.scene.remove(sphere.lossPlotGroup);
-        sphere.lossPlotGroup = undefined;
-        sphere.lossPlotLine = undefined;
-        sphere.lossPlotCurrentMarker = undefined;
-    }
+    // Loss plot is now 2D screen overlay - no 3D cleanup needed
     
     // Remove memory trails if they exist
     if (sphere.memoryTrailsGroup) {

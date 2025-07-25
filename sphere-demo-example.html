@@ -233,9 +233,15 @@
 <body>
     <!-- Load React dependencies BEFORE sphere-viewer.js expects them -->
     <script>
+        // PERFORMANCE TIMING - Start overall timer
+        console.time('🕐 TOTAL_LOAD_TIME');
+        const loadStartTime = performance.now();
+        console.log('🚀 PAGE_LOAD_START:', performance.now() - loadStartTime + 'ms');
+        
         // ROBUST REACT LOADING WITH RETRY MECHANISM
         const reactCacheBust = Date.now();
         console.log('🔥 CACHE BUSTING: Loading React with v=' + reactCacheBust);
+        console.time('⚛️ REACT_LOADING_TIME');
         
         let reactLoaded = false;
         let reactDomLoaded = false;
@@ -258,7 +264,9 @@
         
         function checkReactReady() {
             if (reactLoaded && reactDomLoaded && window.React && window.ReactDOM) {
+                console.timeEnd('⚛️ REACT_LOADING_TIME');
                 console.log('✅ CACHE BUSTED: React dependencies fully loaded and ready');
+                console.log('⚛️ REACT_READY:', performance.now() - loadStartTime + 'ms');
                 window.reactReady = true;
                 // Trigger sphere-viewer.js loading
                 window.dispatchEvent(new Event('reactReady'));
@@ -1040,6 +1048,8 @@
             // CACHE BUSTING - Generate fresh timestamp every page load
             const cacheBust = Date.now();
             console.log('🔥 CACHE BUSTING: Loading sphere-viewer.js?v=' + cacheBust + ' (React is ready)');
+            console.time('📦 SPHERE_VIEWER_LOADING_TIME');
+            console.log('📦 SPHERE_VIEWER_START:', performance.now() - loadStartTime + 'ms');
             
             const script = document.createElement('script');
             script.src = `sphere-viewer.js?v=${cacheBust}`;
@@ -1050,7 +1060,11 @@
             script.setAttribute('data-rotation-speed', '0.1');
             script.setAttribute('data-animate-clusters', 'true');
             
-            script.onload = () => console.log('✅ CACHE BUSTED: sphere-viewer.js loaded with v=' + cacheBust);
+            script.onload = () => {
+                console.timeEnd('📦 SPHERE_VIEWER_LOADING_TIME');
+                console.log('✅ CACHE BUSTED: sphere-viewer.js loaded with v=' + cacheBust);
+                console.log('📦 SPHERE_VIEWER_LOADED:', performance.now() - loadStartTime + 'ms');
+            };
             script.onerror = () => console.error('❌ CACHE BUSTING FAILED: sphere-viewer.js failed to load');
             
             document.head.appendChild(script);
