@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Embeddable Widget Test - Training Movie</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #000;
+            color: #fff;
+            font-family: Arial, sans-serif;
+        }
+        
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .widget-container {
+            width: 100%;
+            height: 500px;
+            border: 2px solid #333;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        
+        .status {
+            background: #222;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🎬 Embeddable Widget Test - Training Movie</h1>
+        
+        <div class="status">
+            <h3>Testing Embeddable sphere-viewer.js Widget</h3>
+            <p>Expected: Training movie should automatically load and show ONLY the 10-second looping animation</p>
+            <p>Session: 20250716-142858_653c60 (461 frames, epochs 1-226)</p>
+        </div>
+
+        <div class="widget-container" id="widget-container">
+            <!-- Embeddable widget will load here -->
+        </div>
+        
+        <div class="status">
+            <div>Status: <span id="status">Loading...</span></div>
+            <div>Time: <span id="timestamp"></span></div>
+        </div>
+    </div>
+
+    <!-- Load React and ReactDOM first (required by webpack externals) -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+    <!-- Load the embeddable widget with cache busting -->
+    <script>
+        const timestamp = new Date().toISOString().slice(0,13).replace(/[-:T]/g, '');
+        document.getElementById('timestamp').textContent = new Date().toLocaleTimeString();
+        
+        const script = document.createElement('script');
+        script.src = `./sphere-viewer.js?v=${timestamp}`;
+        script.onload = function() {
+            document.getElementById('status').textContent = 'Widget loaded, initializing...';
+            
+            // Test data with session ID that has training movie data
+            const sessionData = {
+                session: {
+                    session_id: '20250716-142858_653c60',
+                    status: 'done'
+                }
+            };
+            
+            try {
+                const container = document.getElementById('widget-container');
+                
+                // Test the embeddable widget
+                const root = ReactDOM.createRoot(container);
+                root.render(
+                    React.createElement(FeatrixSphereViewer, {
+                        data: sessionData,
+                        apiBaseUrl: 'https://sphere-api.featrix.com'
+                    })
+                );
+                
+                document.getElementById('status').textContent = 'Widget initialized - should show training movie';
+                console.log('✅ Embeddable widget test initialized');
+                
+            } catch (error) {
+                document.getElementById('status').textContent = 'Error: ' + error.message;
+                console.error('❌ Widget test failed:', error);
+            }
+        };
+        
+        script.onerror = function() {
+            document.getElementById('status').textContent = 'Failed to load sphere-viewer.js';
+            console.error('❌ Failed to load embeddable widget');
+        };
+        
+        document.head.appendChild(script);
+    </script>
+</body>
+</html> 

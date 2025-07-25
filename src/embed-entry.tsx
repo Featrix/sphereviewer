@@ -1,6 +1,12 @@
 import React from 'react';
-import ReactDOM from 'react-dom/client';
-import FeatrixSphereViewerApp from './FeatrixSphereViewerApp';
+// Use global ReactDOM from CDN (webpack external)
+declare global {
+  interface Window {
+    ReactDOM: any;
+  }
+}
+const ReactDOM = (window as any).ReactDOM;
+import FeatrixSphereEmbedded from './FeatrixSphereEmbedded';
 import { set_animation_options, set_visual_options } from '../featrix_sphere_control';
 import './embed-styles-minimal.css';
 
@@ -23,7 +29,7 @@ interface FeatrixSphereViewerConfig {
 }
 
 class FeatrixSphereViewer {
-  private root: ReactDOM.Root | null = null;
+  private root: any | null = null;
   private container: HTMLElement | null = null;
   private currentConfig: FeatrixSphereViewerConfig = {};
   private sphereRef: any = null;
@@ -148,10 +154,13 @@ class FeatrixSphereViewer {
     this.container = container;
     this.root = ReactDOM.createRoot(container);
     
+    // CRITICAL: Always show ONLY training movie, never the finished sphere
+    // Construct data object with session info for training movie
+    const initial_data = data || { session: { session_id: sessionId } };
+    
     this.root.render(
-      <FeatrixSphereViewerApp 
-        data={data}
-        sessionId={sessionId} 
+      <FeatrixSphereEmbedded 
+        initial_data={initial_data}
         apiBaseUrl={apiBaseUrl}
         isRotating={config.isRotating}
         rotationSpeed={config.rotationSpeed}
@@ -180,14 +189,16 @@ class FeatrixSphereViewer {
 
   update(config: Partial<FeatrixSphereViewerConfig>) {
     if (this.root && (config.data || config.sessionId)) {
+      const initial_data = config.data || { session: { session_id: config.sessionId } };
       this.root.render(
-        <FeatrixSphereViewerApp 
-          data={config.data}
-          sessionId={config.sessionId} 
+        <FeatrixSphereEmbedded 
+          initial_data={initial_data}
           apiBaseUrl={config.apiBaseUrl}
           isRotating={config.isRotating}
           rotationSpeed={config.rotationSpeed}
           animateClusters={config.animateClusters}
+          pointSize={config.pointSize}
+          pointOpacity={config.pointOpacity}
         />
       );
     }
@@ -230,10 +241,10 @@ class FeatrixSphereViewer {
     
     // Fallback: re-render the entire component with new settings
     if (this.root) {
+      const initial_data = this.currentConfig.data || { session: { session_id: this.currentConfig.sessionId } };
       this.root.render(
-        <FeatrixSphereViewerApp 
-          data={this.currentConfig.data}
-          sessionId={this.currentConfig.sessionId} 
+        <FeatrixSphereEmbedded 
+          initial_data={initial_data}
           apiBaseUrl={this.currentConfig.apiBaseUrl}
           isRotating={this.currentConfig.isRotating}
           rotationSpeed={this.currentConfig.rotationSpeed}

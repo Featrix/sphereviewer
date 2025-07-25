@@ -29,6 +29,20 @@ export interface SphereData {
     pointObjectsByRecordID: Map<string, THREE.Mesh>;
     similaritySearchResults: Map<string, Array<string>>;
     recordFields: string[];
+    rotationSpeed: number;
+    animateClusters: boolean;
+    clusterAnimationRef: number;
+    currentCluster: number;
+    jsonData: any;
+    pointSize: number;
+    pointOpacity: number;
+    trainingMovieData: any;
+    currentEpoch: number;
+    isPlayingMovie: boolean;
+    movieAnimationRef: number;
+    trainingMovieMaxClusters: number;
+    trainingMovieStartClusters: number;
+    hasLoggedSizeIssue?: boolean;
 }
 export type SphereRecord = {
     coords: {
@@ -68,3 +82,6 @@ export declare function get_object_color_string(object: THREE.Mesh): string | nu
 export declare function add_selected_record(sphere: SphereData, record_id: string): void;
 export declare function remove_selected_record(sphere: SphereData, record_id: string): void;
 export declare function clear_selected_objects(sphere: SphereData): void;
+export declare function load_training_movie(sphere: SphereData, trainingMovieData: any): void;
+export declare function play_training_movie(sphere: SphereData, durationSeconds?: number): void;
+export declare function stop_training_movie(sphere: SphereData): void;

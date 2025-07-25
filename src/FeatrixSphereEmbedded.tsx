@@ -1,9 +1,12 @@
 import React, { Suspense, useEffect, useRef, useState } from "react";
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
-import { fetch_session_data, fetch_session_projections } from './embed-data-access';
-import { SphereRecord, SphereRecordIndex, remap_cluster_assignments } from '../featrix_sphere_control';
+import { fetch_session_data, fetch_session_projections, fetch_training_metrics } from './embed-data-access';
+import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
+
+// Build timestamp for cache busting verification
+const BUILD_TIMESTAMP = new Date().toISOString();
 
 // LocalStorage functions removed - direct data flow only
 
@@ -108,6 +111,258 @@ function fix_server_cluster_pre_assignments(serverData: any) {
     });
 }
 
+// Training Movie Component
+interface TrainingMovieProps {
+    sessionId: string;
+    apiBaseUrl?: string;
+}
+
+// Training Movie Sphere Component - handles everything internally
+const TrainingMovieSphere: React.FC<{ 
+    trainingData: any,
+    onReady?: (sphere: any) => void 
+}> = ({ trainingData, onReady }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const sphereRef = useRef<any>(null);
+
+    useEffect(() => {
+        if (!containerRef.current || !trainingData) {
+            console.log('🔴 TrainingMovieSphere: Missing container or training data');
+            return;
+        }
+
+        if (!sphereRef.current) {
+            console.log('🎬 TrainingMovieSphere: Initializing sphere and loading training movie');
+            
+            // Initialize empty sphere
+            sphereRef.current = initialize_sphere(containerRef.current, []);
+            
+            // Set up visual options for training movie
+            set_animation_options(sphereRef.current, true, 0.05, false, null);
+            set_visual_options(sphereRef.current, 0.08, 0.8);
+            
+            // Load training movie data into the sphere
+            load_training_movie(sphereRef.current, trainingData);
+            
+            // Start playing the training movie (10 second loop)
+            play_training_movie(sphereRef.current, 10);
+            
+            console.log('🎬 TrainingMovieSphere: Training movie started');
+            
+            // Notify parent that sphere is ready
+            if (onReady) {
+                onReady(sphereRef.current);
+            }
+        }
+    }, [trainingData, onReady]);
+
+    // Cleanup on unmount
+    useEffect(() => {
+        return () => {
+            if (sphereRef.current) {
+                stop_training_movie(sphereRef.current);
+            }
+        };
+    }, []);
+
+    return (
+        <div 
+            ref={containerRef} 
+            style={{ 
+                width: '100%', 
+                height: '100%',
+                background: 'transparent'
+            }}
+        />
+    );
+};
+
+const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) => {
+    const [trainingData, setTrainingData] = useState<any>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [sphereRef, setSphereRef] = useState<any>(null);
+
+    useEffect(() => {
+        const loadTrainingData = async () => {
+            try {
+                setLoading(true);
+                const data = await fetch_training_metrics(sessionId, apiBaseUrl);
+                
+                // TRAINING MOVIE: Get 3D coordinates for each epoch
+                console.log('🎬 Epoch projections data received:', data);
+                
+                // Get the epoch projections (3D coordinates per epoch)
+                if (data && data.epoch_projections) {
+                    const epochKeys = Object.keys(data.epoch_projections).sort((a, b) => parseInt(a) - parseInt(b));
+                    console.log(`✅ Found ${epochKeys.length} epoch projections for training movie`);
+                    setTrainingData(data.epoch_projections);
+                } else {
+                    console.error('❌ No epoch_projections found. Data structure:', Object.keys(data || {}));
+                    throw new Error('No epoch projections data available for training movie');
+                }
+            } catch (err) {
+                setError(err instanceof Error ? err.message : 'Failed to load training data');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        loadTrainingData();
+    }, [sessionId, apiBaseUrl]);
+
+    if (loading) {
+        return (
+            <div className="training-progress-display" style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: '400px',
+                background: '#000',
+                color: '#fff',
+                position: 'relative'
+            }}>
+                <div style={{
+                    position: 'absolute',
+                    top: '10px',
+                    right: '10px',
+                    fontSize: '12px',
+                    color: '#ff6b6b',
+                    fontFamily: 'monospace',
+                    background: 'rgba(255, 107, 107, 0.1)',
+                    padding: '4px 8px',
+                    borderRadius: '4px'
+                }}>
+                    Build: {BUILD_TIMESTAMP.slice(0, 16)}
+                </div>
+                <div style={{ marginBottom: '20px', fontSize: '18px' }}>🎬 Loading Training Movie...</div>
+                <div style={{ 
+                    width: '40px', 
+                    height: '40px', 
+                    border: '3px solid #333', 
+                    borderTop: '3px solid #fff',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite',
+                    marginBottom: '15px'
+                }}></div>
+                <div style={{ fontSize: '14px', color: '#ccc' }}>Session: {sessionId}</div>
+                <div style={{ fontSize: '12px', color: '#888', marginTop: '5px' }}>
+                    Fetching from {apiBaseUrl || 'default API'}
+                </div>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="training-progress-display" style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: '400px',
+                background: '#000',
+                color: '#ff4444',
+                position: 'relative'
+            }}>
+                <div style={{
+                    position: 'absolute',
+                    top: '10px',
+                    right: '10px',
+                    fontSize: '12px',
+                    color: '#ff6b6b',
+                    fontFamily: 'monospace',
+                    background: 'rgba(255, 107, 107, 0.1)',
+                    padding: '4px 8px',
+                    borderRadius: '4px'
+                }}>
+                    Build: {BUILD_TIMESTAMP.slice(0, 16)}
+                </div>
+                <div style={{ fontSize: '18px', marginBottom: '10px' }}>❌ Error loading training movie</div>
+                <div style={{ fontSize: '14px', marginTop: '10px', textAlign: 'center' }}>{error}</div>
+                <div style={{ fontSize: '12px', color: '#888', marginTop: '10px' }}>
+                    Session: {sessionId} | API: {apiBaseUrl || 'default'}
+                </div>
+            </div>
+        );
+    }
+
+    if (!trainingData || Object.keys(trainingData).length === 0) {
+        return (
+            <div className="training-progress-display" style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: '400px',
+                background: '#000',
+                color: '#fff'
+            }}>
+                No training movie data available
+            </div>
+        );
+    }
+
+    return (
+        <div className="training-progress-display" style={{
+            position: 'relative',
+            width: '100%',
+            height: '400px',
+            background: '#000',
+            color: '#fff',
+            overflow: 'hidden'
+        }}>
+            {/* Build timestamp ONLY - top right overlay */}
+            <div className="build-display" style={{
+                position: 'absolute',
+                top: '10px',
+                right: '10px',
+                fontSize: '10px',
+                color: '#ff0000',
+                fontFamily: 'monospace',
+                background: 'rgba(0,0,0,0.8)',
+                padding: '4px 6px',
+                borderRadius: '3px',
+                zIndex: 1000
+            }}>
+                v{BUILD_TIMESTAMP.slice(0, 19).replace('T', ' ')}
+            </div>
+
+            {/* ACTUAL 3D SPHERE VIEWER */}
+            <div id="training-movie-3d-container" style={{
+                width: '100%',
+                height: '100%',
+                position: 'absolute',
+                top: 0,
+                left: 0
+            }}>
+                {trainingData ? (
+                    <TrainingMovieSphere
+                        trainingData={trainingData}
+                        onReady={(sphere: any) => {
+                            console.log('🎬 Training movie sphere ready:', sphere);
+                            setSphereRef(sphere);
+                        }}
+                    />
+                ) : (
+                    <div style={{
+                        width: '100%',
+                        height: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '16px',
+                        color: '#666',
+                        background: '#111'
+                    }}>
+                        Initializing 3D sphere...
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
 interface SphereEmbeddedProps {
     initial_data: any;
     apiBaseUrl?: string;
@@ -120,94 +375,33 @@ interface SphereEmbeddedProps {
 }
 
 export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity, onSphereReady }: SphereEmbeddedProps) {
-    // Use the passed data directly - no localStorage
-    let init_projections = null;
-    
-    // Check if we have direct data (coords, entire_cluster_results)
-    if (initial_data && initial_data.coords && initial_data.entire_cluster_results) {
-        init_projections = initial_data;
-    }
-    
-    if (init_projections){
-        remap_server_cluster_assignments(init_projections?.entire_cluster_results);
-        fix_server_cluster_pre_assignments(init_projections);
-    }
-    const init_record_list = create_record_list(init_projections);
+    // TRAINING MOVIE SPECIFICATIONS: 
+    // 1. ON LOAD: Show NOTHING - no sphere, no points, no final data visualization
+    // 2. AUTOMATICALLY: Load training movie epoch data from /training_metrics endpoint
+    // 3. DISPLAY: Show ONLY the training movie animation once loaded - NOT the finished sphere
+    // 4. NEVER: Show training movie simultaneously with the finished sphere data
 
-    const [recordList, setRecordList] = useState<SphereRecord[]>(init_record_list);
-    const [columnTypes, setColumnTypes] = useState(null);
-    const [sessionData, setSessionData] = useState(initial_data);
-    const [projections, setProjections] = useState(init_projections);
-    const [isDone, setIsDone] = useState(initial_data.session.done);
-    const [isFailed, setIsFailed] = useState(initial_data.session.failed);
-    
-    const session_id = initial_data.session.session_id;
+    const session_id = initial_data?.session?.session_id;
 
-    useEffect(() => {
-        if (isDone) return;
-        if (isFailed) return;
-
-        const fetchProgress = async () => {
-            try {
-                const server_session_data = await fetch_session_data(session_id, apiBaseUrl);
-
-                const is_done = server_session_data.session.status === "done";
-                const is_failed = server_session_data.session.status === "failed";
-                
-                if (is_done) {
-                    setIsDone(true);
-
-                    const projections = await fetch_session_projections(session_id, apiBaseUrl);
-                    if (projections) {
-                        remap_server_cluster_assignments(projections?.entire_cluster_results);
-                        fix_server_cluster_pre_assignments(projections);
-                    }
-
-                    const recordList = create_record_list(projections);
-                    const columnTypes = getColumnTypes(projections);
-                    setRecordList(recordList);
-                    setColumnTypes(columnTypes);
-
-                    setProjections(projections);
-                    setSessionData(server_session_data);
-                } else if (is_failed) {
-                    setIsFailed(true);
-                    setSessionData(server_session_data);
-                } else {
-                    setSessionData(server_session_data);
-                }
-
-            } catch (error) {
-                console.error('Error fetching progress:', error);
-            }
-        };
-
-        const intervalId = setInterval(fetchProgress, 2000);
-        return () => clearInterval(intervalId);
-    }, [isDone, session_id, apiBaseUrl]);
-
-    const is_done = sessionData.session.status === "done";
-
+    // Show ONLY the training movie - never the sphere
     return (
         <div className="sphere-embedded-container">
             <div className="mx-auto">
-                {!is_done && <TrainingStatus data={sessionData} />}
+                {session_id ? (
+                    <TrainingMovie sessionId={session_id} apiBaseUrl={apiBaseUrl} />
+                ) : (
+                    <div className="training-progress-display" style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        height: '400px',
+                        background: '#000',
+                        color: '#fff'
+                    }}>
+                        No session ID available for training movie
+                    </div>
+                )}
             </div>
-
-            {is_done && (
-                <FeatrixEmbeddingsExplorer 
-                    data={sessionData} 
-                    jsonData={projections}
-                    columnTypes={columnTypes}
-                    recordList={recordList}
-                    isRotating={isRotating}
-                    rotationSpeed={rotationSpeed}
-                    animateClusters={animateClusters}
-                    pointSize={pointSize}
-                    pointOpacity={pointOpacity}
-                    onSphereReady={onSphereReady}
-                />
-            )}
         </div>
     );
 } 

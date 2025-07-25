@@ -16,7 +16,8 @@ export async function fetch_session_projections(session_id: string, apiBaseUrl?:
 
 export async function fetch_training_metrics(session_id: string, apiBaseUrl?: string) {
     const baseUrl = apiBaseUrl || 'https://sphere-api.featrix.com';
-    const data_raw = await fetch(`${baseUrl}/compute/session/${session_id}/training_metrics`);
+    // TRAINING MOVIE NEEDS 3D COORDINATES, NOT LOSS DATA!
+    const data_raw = await fetch(`${baseUrl}/compute/session/${session_id}/epoch_projections`);
     const data = await data_raw.json();
     return data;
 } 

@@ -15,7 +15,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "build:embed": "webpack --mode production",
+    "build:embed": "webpack --mode production && cp dist/sphere-viewer.js sphere-viewer.js && echo '🔥 CACHE BUSTING: Copied fresh build to root'",
     "build:types": "tsc --project tsconfig.package.json --emitDeclarationOnly",
     "build:esm": "webpack --config webpack.package.js --env module=esm",
     "build:cjs": "webpack --config webpack.package.js --env module=cjs",
