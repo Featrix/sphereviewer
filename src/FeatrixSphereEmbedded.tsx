@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect, useRef, useState } from "react";
+import React, { Suspense, useEffect, useRef, useState, useCallback } from "react";
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
 import { fetch_session_data, fetch_session_projections, fetch_training_metrics } from './embed-data-access';
@@ -433,8 +433,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [showCountdown, setShowCountdown] = useState(false);
     const [countdownText, setCountdownText] = useState('');
 
-    // Countdown function for initial pause
-    const startCountdown = () => {
+    // Countdown function for initial pause - using useCallback to ensure stable reference
+    const startCountdown = useCallback(() => {
+        console.log('🎯 Starting countdown sequence');
         setShowCountdown(true);
         setCountdownText('Ready!');
         
@@ -459,7 +460,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 }, 1000);
             }, 1000);
         }, 500);
-    };
+    }, [sphereRef]);
 
     useEffect(() => {
         const loadTrainingData = async () => {
@@ -1022,16 +1023,28 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             
                             // Start countdown after a brief delay
                             setTimeout(() => {
-                                startCountdown();
+                                try {
+                                    if (typeof startCountdown === 'function') {
+                                        startCountdown();
+                                    } else {
+                                        console.error('startCountdown is not a function:', typeof startCountdown);
+                                    }
+                                } catch (error) {
+                                    console.error('Error calling startCountdown:', error);
+                                }
                             }, 1000);
                         }}
                         onFrameUpdate={(info) => {
                             // Detect restart (frame went back to 1 from higher number)
                             const prevFrame = frameInfo?.current || 0;
-                            if (prevFrame > 1 && info.current === 1) {
+                            if (prevFrame > 1 && info.current === 1 && typeof startCountdown === 'function') {
                                 console.log('🔄 Training movie restarted - showing countdown');
                                 setTimeout(() => {
-                                    startCountdown();
+                                    try {
+                                        startCountdown();
+                                    } catch (error) {
+                                        console.error('Error calling startCountdown:', error);
+                                    }
                                 }, 500);
                             }
                             setFrameInfo(info);
