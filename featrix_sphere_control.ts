@@ -683,6 +683,67 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any, 
     } catch (error) {
         console.error('❌ Error loading final cluster results:', error);
     }
+    
+    // INITIALIZE SPHERE WITH FIRST EPOCH DATA
+    const epochKeys = Object.keys(trainingMovieData).sort((a, b) => {
+        const epochA = parseInt(a.replace('epoch_', ''));
+        const epochB = parseInt(b.replace('epoch_', ''));
+        return epochA - epochB;
+    });
+    
+    if (epochKeys.length === 0) {
+        console.error('❌ No epochs found in training movie data');
+        return;
+    }
+    
+    const firstEpochKey = epochKeys[0];
+    const firstEpochData = trainingMovieData[firstEpochKey];
+    
+    if (!firstEpochData || !firstEpochData.coords) {
+        console.error('❌ No coords found in first epoch data');
+        return;
+    }
+    
+    console.log(`🎬 Initializing sphere with ${firstEpochData.coords.length} points from ${firstEpochKey}`);
+    
+    // Convert first epoch coords to sphere records
+    const recordList: SphereRecord[] = firstEpochData.coords.map((entry: any, index: number) => {
+        // Handle both object format {x, y, z} and array format [x, y, z]
+        let x, y, z;
+        if (entry && typeof entry === 'object') {
+            if (Array.isArray(entry)) {
+                // Array format: [x, y, z]
+                x = entry[0];
+                y = entry[1]; 
+                z = entry[2];
+            } else {
+                // Object format: {x, y, z}
+                x = entry.x;
+                y = entry.y;
+                z = entry.z;
+            }
+        }
+
+        return {
+            coords: { x, y, z },
+            id: String(index),
+            featrix_meta: {
+                cluster_pre: 0,
+                webgl_id: null,
+                __featrix_row_id: index,
+                __featrix_row_offset: index,
+            },
+            original: {}
+        };
+    });
+    
+    // Add points to sphere
+    add_points_to_sphere(sphere, recordList);
+    
+    // Force initial render
+    render_sphere(sphere);
+    
+    console.log(`✅ Sphere initialized with ${recordList.length} points`);
 }
 
 export function play_training_movie(sphere: SphereData, durationSeconds: number = 10) {
