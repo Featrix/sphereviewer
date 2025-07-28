@@ -38,6 +38,7 @@ export interface SphereData {
     
     // Animation controls
     rotationSpeed: number;
+    rotationControlsEnabled: boolean; // Controls both auto-rotation and mouse dragging
     animateClusters: boolean;
     clusterAnimationRef: number;
     currentCluster: number;
@@ -132,6 +133,7 @@ function create_new_sphere(container: HTMLElement): SphereData {
         
         // Animation controls
         rotationSpeed: 0.1,
+        rotationControlsEnabled: true, // Default enabled
         animateClusters: false,
         clusterAnimationRef: 0,
         currentCluster: 2,
@@ -513,7 +515,10 @@ export function start_animation(sphere: SphereData) {
         }
 
         // revolutions per second - configurable
+        // Only auto-rotate if rotation controls are enabled
+    if (sphere.rotationControlsEnabled) {
         sphere.angle += sphere.rotationSpeed * dt / 1000  * Math.PI;
+    }
         render_sphere(sphere);
 
         sphere.cancelAnimationRef = requestAnimationFrame(animate);
@@ -540,6 +545,7 @@ export function toggle_animation(sphere: SphereData) {
 // New animation control functions
 export function set_animation_options(sphere: SphereData, isRotating: boolean = true, rotationSpeed: number = 0.1, animateClusters: boolean = false, jsonData?: any) {
     sphere.rotationSpeed = rotationSpeed;
+    sphere.rotationControlsEnabled = isRotating; // Control both auto-rotation and mouse dragging
     sphere.animateClusters = animateClusters;
     sphere.jsonData = jsonData;
     
@@ -1626,7 +1632,8 @@ const onMouseMove = (sphere: SphereData, event: MouseEvent) => {
     sphere.mouse.x = ((event.clientX - left) / width) * 2 - 1;
     sphere.mouse.y = -((event.clientY - top) / height) * 2 + 1;
 
-    if (sphere.isDragging) {
+    // Only allow drag rotation if rotation controls are enabled
+    if (sphere.isDragging && sphere.rotationControlsEnabled) {
 
         const deltaX = event.clientX - sphere.prevPos.x;
         const deltaY = event.clientY - sphere.prevPos.y;

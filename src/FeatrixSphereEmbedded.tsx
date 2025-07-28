@@ -344,8 +344,9 @@ const TrainingMovieSphere: React.FC<{
     lossData?: any,
     onReady?: (sphere: any) => void,
     onFrameUpdate?: (frameInfo: { current: number, total: number, visible: number, epoch?: string, validationLoss?: number }) => void,
-    onPointInspected?: (pointInfo: any) => void
-}> = ({ trainingData, sessionProjections, lossData, onReady, onFrameUpdate, onPointInspected }) => {
+    onPointInspected?: (pointInfo: any) => void,
+    rotationEnabled?: boolean
+}> = ({ trainingData, sessionProjections, lossData, onReady, onFrameUpdate, onPointInspected, rotationEnabled = true }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const sphereRef = useRef<any>(null);
 
@@ -385,7 +386,7 @@ const TrainingMovieSphere: React.FC<{
             }
             
             // Set up visual options for training movie - smaller points
-            set_animation_options(sphereRef.current, true, 0.02, false, sphereRef.current.jsonData);
+            set_animation_options(sphereRef.current, rotationEnabled, 0.02, false, sphereRef.current.jsonData);
             set_visual_options(sphereRef.current, 0.025, 0.9);
             
             // Load training movie data into the sphere (AFTER setting session data)
@@ -411,6 +412,13 @@ const TrainingMovieSphere: React.FC<{
             }, 100); // Small delay to ensure first frame is rendered
         }
     }, [trainingData, sessionProjections, onReady]);
+
+    // Update rotation controls when rotationEnabled changes
+    useEffect(() => {
+        if (sphereRef.current) {
+            set_animation_options(sphereRef.current, rotationEnabled, 0.02, false, sphereRef.current.jsonData);
+        }
+    }, [rotationEnabled]);
 
     // Cleanup on unmount
     useEffect(() => {
@@ -464,6 +472,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [selectedPointInfo, setSelectedPointInfo] = useState<any>(null);
     const [showColorLegend, setShowColorLegend] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
+    
+    // Rotation control state
+    const [rotationEnabled, setRotationEnabled] = useState(true); // Default enabled
 
     // Countdown function for initial pause - using useCallback to ensure stable reference
     const startCountdown = useCallback(() => {
@@ -1133,6 +1144,25 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         >
                             {isFullscreen ? '🪟 Exit' : '⛶ Full'}
                         </button>
+                        
+                        {/* Rotation Toggle */}
+                        <div style={{ margin: '0 8px', color: '#888' }}>|</div>
+                        
+                        <button
+                            onClick={() => setRotationEnabled(!rotationEnabled)}
+                            style={{
+                                background: rotationEnabled ? '#4c4' : '#c44',
+                                border: '1px solid #555',
+                                color: '#fff',
+                                padding: '4px 8px',
+                                borderRadius: '3px',
+                                cursor: 'pointer',
+                                fontSize: '11px'
+                            }}
+                            title={rotationEnabled ? "Disable Rotation" : "Enable Rotation"}
+                        >
+                            {rotationEnabled ? '🔒 Lock' : '🔓 Free'}
+                        </button>
                     </>
                 )}
                 </div>
@@ -1241,6 +1271,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         sessionProjections={sessionProjections}
                         lossData={lossData}
                         onPointInspected={setSelectedPointInfo}
+                        rotationEnabled={rotationEnabled}
                         onReady={(sphere: any) => {
                             // Training movie sphere ready
                             setSphereRef(sphere);
