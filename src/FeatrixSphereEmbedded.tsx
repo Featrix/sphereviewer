@@ -442,6 +442,7 @@ const TrainingMovieSphere: React.FC<{
 };
 
 const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) => {
+    // NOTE: sessionId and apiBaseUrl are ignored - we load from static training movie dump file
     const [trainingData, setTrainingData] = useState<any>(null);
     const [lossData, setLossData] = useState<any>(null);
     const [sessionProjections, setSessionProjections] = useState<any>(null);
@@ -511,23 +512,18 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         const loadTrainingData = async () => {
             try {
                 setLoading(true);
-                console.time('📊 DATA_FETCHING_TIME');
-                console.log('📊 DATA_FETCH_START:', performance.now() + 'ms');
+                console.time('📊 STATIC_FILE_LOADING');
+                console.log('📊 LOADING TRAINING MOVIE FROM STATIC FILE:', performance.now() + 'ms');
                 
-                // FETCH BOTH: Training movie epochs AND completed session projections
-                const [trainingMovieData, sessionProjections] = await Promise.all([
-                    fetch_training_metrics(sessionId, apiBaseUrl),
-                    fetch_session_projections(sessionId, apiBaseUrl)
-                ]);
+                // LOAD FROM STATIC FILE: Training movie dump (no API calls!)
+                const response = await fetch('logistics-featrix-data.json');
+                const trainingMovieData = await response.json();
                 
-                console.timeEnd('📊 DATA_FETCHING_TIME');
-                console.log('📊 DATA_FETCH_COMPLETE:', performance.now() + 'ms');
-                console.log('🎯 Session projections structure:', sessionProjections ? Object.keys(sessionProjections) : 'NULL');
+                console.timeEnd('📊 STATIC_FILE_LOADING');
+                console.log('📊 STATIC_FILE_LOADED:', performance.now() + 'ms');
+                console.log('🎯 Training movie data structure:', trainingMovieData ? Object.keys(trainingMovieData) : 'NULL');
                 
-                // TRAINING MOVIE: Get 3D coordinates for each epoch
-                // Epoch projections data received successfully
-                
-                // Get the epoch projections (3D coordinates per epoch)
+                // TRAINING MOVIE: Use epoch projections from the static dump
                 if (trainingMovieData && trainingMovieData.epoch_projections) {
                     const epochKeys = Object.keys(trainingMovieData.epoch_projections).sort((a, b) => {
                         const epochA = parseInt(a.replace('epoch_', ''));
@@ -538,25 +534,27 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     console.log('🎯 DEBUG: First few epoch data:', epochKeys.slice(0, 3).map(k => ({ epoch: k, count: trainingMovieData.epoch_projections[k]?.length || 0 })));
 
                     setTrainingData(trainingMovieData.epoch_projections);
-                    setSessionProjections(sessionProjections);
+                    
+                    // Use the static file's cluster results (this is the real training dump!)
+                    setSessionProjections(trainingMovieData);
                     
                     // Also extract training metrics (loss data) if available
                     if (trainingMovieData.training_metrics) {
                         setLossData(trainingMovieData.training_metrics);
                     }
                 } else {
-                    console.error('❌ No epoch_projections found. Data structure:', Object.keys(trainingMovieData || {}));
-                    throw new Error('No epoch projections data available for training movie');
+                    console.error('❌ No epoch_projections found in static file. Data structure:', Object.keys(trainingMovieData || {}));
+                    throw new Error('No epoch projections data available in training movie dump');
                 }
             } catch (err) {
-                setError(err instanceof Error ? err.message : 'Failed to load training data');
+                setError(err instanceof Error ? err.message : 'Failed to load training movie dump');
             } finally {
                 setLoading(false);
             }
         };
 
         loadTrainingData();
-    }, [sessionId, apiBaseUrl]);
+    }, []); // No dependencies - just load the static file once
 
     // Handle dynamic visualization feature changes
     useEffect(() => {
@@ -1364,30 +1362,15 @@ interface SphereEmbeddedProps {
 export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity, onSphereReady }: SphereEmbeddedProps) {
     // TRAINING MOVIE SPECIFICATIONS: 
     // 1. ON LOAD: Show NOTHING - no sphere, no points, no final data visualization
-    // 2. AUTOMATICALLY: Load training movie epoch data from /training_metrics endpoint
+    // 2. AUTOMATICALLY: Load training movie from STATIC FILE logistics-featrix-data.json (no API calls!)
     // 3. DISPLAY: Show ONLY the training movie animation once loaded - NOT the finished sphere
     // 4. NEVER: Show training movie simultaneously with the finished sphere data
 
-    const session_id = initial_data?.session?.session_id;
-
-    // Show ONLY the training movie - never the sphere
+    // Show ONLY the training movie - loads from static dump file
     return (
         <div className="sphere-embedded-container">
             <div className="mx-auto">
-                {session_id ? (
-                    <TrainingMovie sessionId={session_id} apiBaseUrl={apiBaseUrl} />
-                ) : (
-                    <div className="training-progress-display"                     style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        height: '770px',
-                        background: '#000',
-                        color: '#fff'
-                    }}>
-                        No session ID available for training movie
-                    </div>
-                )}
+                <TrainingMovie sessionId="static-dump" apiBaseUrl={apiBaseUrl} />
             </div>
         </div>
     );
