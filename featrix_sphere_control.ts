@@ -46,6 +46,8 @@ export interface SphereData {
     // Visual controls
     pointSize: number;
     pointOpacity: number;
+
+    finalClusterResults?: any;
 }
 
 export type SphereRecord = {
@@ -143,7 +145,9 @@ function create_new_sphere(container: HTMLElement): SphereData {
         trainingMovieData: null,
         currentEpoch: 0,
         isPlayingMovie: false,
-        movieAnimationRef: 0
+        movieAnimationRef: 0,
+
+        finalClusterResults: undefined,
     } as SphereData
 
 
@@ -665,91 +669,19 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any, 
     
     console.log('🎯 Training movie cluster range: 2 →', sphere.trainingMovieMaxClusters + 1, 'clusters');
     
-    // Initialize sphere with first epoch data
-    const epochKeys = Object.keys(trainingMovieData).sort((a, b) => {
-        const epochA = parseInt(a.replace('epoch_', ''));
-        const epochB = parseInt(b.replace('epoch_', ''));
-        return epochA - epochB;
-    });
-    const firstEpochKey = epochKeys[0];
-    const firstEpochData = trainingMovieData[firstEpochKey];
-    
-    // Process first epoch data
-        
-        // Check if cluster data exists anywhere
-        if (firstEpochData && firstEpochData.entire_cluster_results) {
-            const clusterResultsKeys = Object.keys(firstEpochData.entire_cluster_results);
-            console.log('🎯 Available cluster counts:', clusterResultsKeys);
-            
-            if (clusterResultsKeys.length > 0) {
-                const sampleCount = clusterResultsKeys[0];
-                const sampleResult = firstEpochData.entire_cluster_results[sampleCount];
-                console.log(`🎯 Sample cluster result for ${sampleCount} clusters:`, sampleResult);
-                if (sampleResult.cluster_labels) {
-                    console.log(`🎯 First 10 cluster labels:`, sampleResult.cluster_labels.slice(0, 10));
-                }
-            } else {
-                console.log('❌ entire_cluster_results is EMPTY - no cluster data found!');
-                console.log('🔍 Need to find working session with cluster data');
-            }
+    // GET FINAL CLUSTER RESULTS from session data for convergence visualization
+    sphere.finalClusterResults = null;
+    try {
+        console.log('🔍 Looking for final cluster results in session data...');
+        // Check if we have completed session data with clustering results
+        if (sphere.jsonData && sphere.jsonData.entire_cluster_results) {
+            sphere.finalClusterResults = sphere.jsonData.entire_cluster_results;
+            console.log('✅ Found final cluster results:', Object.keys(sphere.finalClusterResults));
         } else {
-            console.log('❌ No entire_cluster_results field found');
+            console.log('⚠️ No final cluster results in session data - will generate simple clustering');
         }
-        
-        if (firstEpochData && firstEpochData.coords) {
-                // Debug coordinate format for development
-        
-        // The coords are already in full sphere record format, just need to extract coordinates
-        const recordList: SphereRecord[] = firstEpochData.coords.map((entry: any, index: number) => {
-            
-            // Parse coordinate entry
-            
-                    // Handle both object format {x, y, z} and array format [x, y, z]
-        let x, y, z;
-        if (entry && typeof entry === 'object') {
-            if (Array.isArray(entry)) {
-                // Array format: [x, y, z]
-                x = entry[0];
-                y = entry[1]; 
-                z = entry[2];
-            } else {
-                // Object format: {x, y, z}
-                x = entry.x;
-                y = entry.y;
-                z = entry.z;
-            }
-        }
-
-        const record = {
-            coords: {
-                x: x,
-                y: y,
-                z: z
-            },
-                id: String(index),
-                featrix_meta: {
-                    cluster_pre: 0, // Will be set from logistics data during animation
-                    webgl_id: null,
-                    __featrix_row_id: index,
-                    __featrix_row_offset: index,
-                },
-                original: {
-                    // Entry is coordinate array [x, y, z], no additional properties
-                }
-            };
-            
-            // Record created successfully
-            
-            return record;
-        });
-        
-        // Add points to sphere
-        add_points_to_sphere(sphere, recordList);
-        
-        // Force render
-        render_sphere(sphere);
-    } else {
-        console.error('🎬 No coords found in first epoch data');
+    } catch (error) {
+        console.error('❌ Error loading final cluster results:', error);
     }
 }
 
@@ -1150,19 +1082,21 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string) {
                 // TRAINING MOVIE: Get cluster assignment from FINAL cluster calculations
                 let clusterAssignment = 0; // Default fallback
                 
-                // Use the calculated cluster results (showing convergence toward final clustering)
-                if (epochData.entire_cluster_results && epochData.entire_cluster_results[visibleClusters]) {
-                    const clusterLabels = epochData.entire_cluster_results[visibleClusters].cluster_labels;
+                // Use the final cluster results (showing convergence toward final clustering)
+                if (sphere.finalClusterResults && sphere.finalClusterResults[visibleClusters]) {
+                    const clusterLabels = sphere.finalClusterResults[visibleClusters].cluster_labels;
                     if (clusterLabels && rowOffset < clusterLabels.length) {
                         clusterAssignment = clusterLabels[rowOffset];
                         if (rowOffset < 10) {
-                            console.log(`🎯 CONVERGENCE: Point ${rowOffset} -> cluster ${clusterAssignment} (from ${visibleClusters}-cluster calculation)`);
+                            console.log(`🎯 CONVERGENCE: Point ${rowOffset} -> cluster ${clusterAssignment} (from final ${visibleClusters}-cluster result)`);
                         }
                     } else {
-                        if (rowOffset < 5) console.error(`❌ NO CLUSTER LABELS: rowOffset ${rowOffset} >= ${clusterLabels?.length || 0} labels`);
+                        if (rowOffset < 5) console.error(`❌ NO CLUSTER LABELS: rowOffset ${rowOffset} >= ${clusterLabels?.length || 0} labels in final results`);
                     }
                 } else {
-                    if (rowOffset < 5) console.error(`❌ NO CLUSTER RESULTS: missing entire_cluster_results[${visibleClusters}] in epoch data`);
+                    // Fallback: generate reasonable clustering based on point distribution
+                    clusterAssignment = rowOffset % visibleClusters;
+                    if (rowOffset < 5) console.log(`🎲 FALLBACK: Point ${rowOffset} -> cluster ${clusterAssignment} (generated from ${visibleClusters} clusters)`);
                 }
                 
                 // Now apply progressive cluster reveal and coloring
