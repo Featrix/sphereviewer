@@ -673,15 +673,42 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any, 
     sphere.finalClusterResults = null;
     try {
         console.log('🔍 Looking for final cluster results in session data...');
+        console.log('🔍 sphere.jsonData type:', typeof sphere.jsonData);
+        console.log('🔍 sphere.jsonData keys:', sphere.jsonData ? Object.keys(sphere.jsonData) : 'NULL');
+        
+        if (sphere.jsonData) {
+            console.log('🔍 sphere.jsonData structure:');
+            console.log('  - coords:', sphere.jsonData.coords ? `${sphere.jsonData.coords.length} items` : 'MISSING');
+            console.log('  - entire_cluster_results:', sphere.jsonData.entire_cluster_results ? Object.keys(sphere.jsonData.entire_cluster_results) : 'MISSING');
+            console.log('  - metadata:', sphere.jsonData.metadata ? 'present' : 'MISSING');
+            console.log('  - session:', sphere.jsonData.session ? 'present' : 'MISSING');
+            console.log('  - all keys:', Object.keys(sphere.jsonData));
+            
+            // DEEP INSPECTION: What's actually in sphere.jsonData?
+            console.log('🔍 DEEP INSPECT sphere.jsonData:', JSON.stringify(sphere.jsonData, null, 2).substring(0, 500) + '...');
+        } else {
+            console.error('❌ sphere.jsonData is completely NULL/undefined');
+            console.log('🔍 sphere object keys:', Object.keys(sphere));
+            console.log('🔍 sphere object sample:', { 
+                pointObjectsByRecordID: sphere.pointObjectsByRecordID?.size || 'undefined',
+                trainingMovieData: sphere.trainingMovieData ? 'present' : 'missing',
+                jsonData: sphere.jsonData
+            });
+        }
+        
         // Check if we have completed session data with clustering results
         if (sphere.jsonData && sphere.jsonData.entire_cluster_results) {
             sphere.finalClusterResults = sphere.jsonData.entire_cluster_results;
             console.log('✅ Found final cluster results:', Object.keys(sphere.finalClusterResults));
         } else {
-            console.log('⚠️ No final cluster results in session data - will generate simple clustering');
+            console.error('❌ CRITICAL: No final cluster results available in session data');
+            console.error('❌ Cannot show cluster convergence without real cluster data');
+            console.error('❌ Training movie requires session with entire_cluster_results field');
+            throw new Error('Missing entire_cluster_results - cannot proceed with training movie');
         }
     } catch (error) {
         console.error('❌ Error loading final cluster results:', error);
+        throw error; // Don't continue with broken data
     }
     
     // INITIALIZE SPHERE WITH FIRST EPOCH DATA
@@ -1149,20 +1176,31 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
                 let clusterAssignment = 0; // Default fallback
                 
                 // Use the final cluster results (showing convergence toward final clustering)
-                if (sphere.finalClusterResults && sphere.finalClusterResults[visibleClusters]) {
-                    const clusterLabels = sphere.finalClusterResults[visibleClusters].cluster_labels;
-                    if (clusterLabels && rowOffset < clusterLabels.length) {
-                        clusterAssignment = clusterLabels[rowOffset];
-                        if (rowOffset < 10) {
-                            console.log(`🎯 CONVERGENCE: Point ${rowOffset} -> cluster ${clusterAssignment} (from final ${visibleClusters}-cluster result)`);
-                        }
-                    } else {
-                        if (rowOffset < 5) console.error(`❌ NO CLUSTER LABELS: rowOffset ${rowOffset} >= ${clusterLabels?.length || 0} labels in final results`);
-                    }
-                } else {
-                    // Fallback: generate reasonable clustering based on point distribution
-                    clusterAssignment = rowOffset % visibleClusters;
-                    if (rowOffset < 5) console.log(`🎲 FALLBACK: Point ${rowOffset} -> cluster ${clusterAssignment} (generated from ${visibleClusters} clusters)`);
+                if (!sphere.finalClusterResults) {
+                    console.error(`❌ FATAL: sphere.finalClusterResults is NULL - cannot assign clusters`);
+                    throw new Error('No final cluster results available for point clustering');
+                }
+                
+                if (!sphere.finalClusterResults[visibleClusters]) {
+                    console.error(`❌ FATAL: Missing cluster results for ${visibleClusters} clusters`);
+                    console.error(`❌ Available cluster counts:`, Object.keys(sphere.finalClusterResults));
+                    throw new Error(`Missing cluster data for ${visibleClusters} clusters`);
+                }
+                
+                const clusterLabels = sphere.finalClusterResults[visibleClusters].cluster_labels;
+                if (!clusterLabels) {
+                    console.error(`❌ FATAL: Missing cluster_labels for ${visibleClusters} clusters`);
+                    throw new Error(`Missing cluster_labels array`);
+                }
+                
+                if (rowOffset >= clusterLabels.length) {
+                    console.error(`❌ FATAL: Point index ${rowOffset} >= cluster labels length ${clusterLabels.length}`);
+                    throw new Error(`Point index out of bounds for cluster labels`);
+                }
+                
+                clusterAssignment = clusterLabels[rowOffset];
+                if (rowOffset < 10) {
+                    console.log(`🎯 REAL CLUSTER: Point ${rowOffset} -> cluster ${clusterAssignment} (from final ${visibleClusters}-cluster result)`);
                 }
                 
                 // Now apply progressive cluster reveal and coloring

@@ -340,20 +340,29 @@ interface TrainingMovieProps {
 // Training Movie Sphere Component - handles everything internally
 const TrainingMovieSphere: React.FC<{ 
     trainingData: any,
+    sessionProjections?: any,
     lossData?: any,
     onReady?: (sphere: any) => void,
     onFrameUpdate?: (frameInfo: { current: number, total: number, visible: number, epoch?: string, validationLoss?: number }) => void
-}> = ({ trainingData, lossData, onReady, onFrameUpdate }) => {
+}> = ({ trainingData, sessionProjections, lossData, onReady, onFrameUpdate }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const sphereRef = useRef<any>(null);
 
     useEffect(() => {
+        console.log('🚀 TrainingMovieSphere useEffect triggered:', {
+            hasContainer: !!containerRef.current,
+            hasTrainingData: !!trainingData,
+            hasSessionProjections: !!sessionProjections,
+            sessionProjectionsKeys: sessionProjections ? Object.keys(sessionProjections) : null,
+            hasSphere: !!sphereRef.current
+        });
+        
         if (!containerRef.current || !trainingData) {
             console.log('🔴 TrainingMovieSphere: Missing container or training data');
             return;
         }
 
-        if (!sphereRef.current) {
+        if (!sphereRef.current && trainingData && sessionProjections) {
             // DIAGNOSTIC: Check if all required functions exist
             console.log('🔍 FUNCTION_CHECK:', {
                 initialize_sphere: typeof initialize_sphere,
@@ -369,6 +378,22 @@ const TrainingMovieSphere: React.FC<{
             
             // Initialize empty sphere
             sphereRef.current = initialize_sphere(containerRef.current, []);
+            
+            console.log('🔍 BEFORE ASSIGNMENT - sphere.jsonData:', sphereRef.current.jsonData);
+            console.log('🔍 ASSIGNMENT SOURCE - sessionProjections keys:', sessionProjections ? Object.keys(sessionProjections) : 'NULL');
+            console.log('🔍 ASSIGNMENT SOURCE - entire_cluster_results:', sessionProjections?.entire_cluster_results ? Object.keys(sessionProjections.entire_cluster_results) : 'MISSING');
+            
+            // CRITICAL: Set session projections data for cluster results FIRST
+            if (sessionProjections && sessionProjections.entire_cluster_results) {
+                sphereRef.current.jsonData = sessionProjections;
+                console.log('🔍 AFTER ASSIGNMENT - sphere.jsonData keys:', sphereRef.current.jsonData ? Object.keys(sphereRef.current.jsonData) : 'NULL');
+                console.log('🔍 AFTER ASSIGNMENT - sphere.jsonData.entire_cluster_results:', sphereRef.current.jsonData?.entire_cluster_results ? Object.keys(sphereRef.current.jsonData.entire_cluster_results) : 'MISSING');
+                console.log('✅ Session projections with cluster results loaded:', Object.keys(sessionProjections.entire_cluster_results));
+            } else {
+                console.error('❌ CRITICAL: No session projections or cluster results available');
+                return;
+            }
+            
             console.log('🌐 SPHERE_CREATED:', performance.now() + 'ms');
             
             // Set frame update callback
@@ -377,10 +402,13 @@ const TrainingMovieSphere: React.FC<{
             }
             
             // Set up visual options for training movie - smaller points
-            set_animation_options(sphereRef.current, true, 0.02, false, null);
+            set_animation_options(sphereRef.current, true, 0.02, false, sphereRef.current.jsonData);
             set_visual_options(sphereRef.current, 0.025, 0.9);
             
-            // Load training movie data into the sphere
+            console.log('🔍 BEFORE LOAD_TRAINING_MOVIE - sphere.jsonData keys:', sphereRef.current.jsonData ? Object.keys(sphereRef.current.jsonData) : 'NULL');
+            console.log('🔍 BEFORE LOAD_TRAINING_MOVIE - sphere.jsonData type:', typeof sphereRef.current.jsonData);
+            
+            // Load training movie data into the sphere (AFTER setting session data)
             load_training_movie(sphereRef.current, trainingData, lossData);
             
             // Start playing the training movie (10 second loop)
@@ -402,7 +430,7 @@ const TrainingMovieSphere: React.FC<{
                 console.timeEnd('🕐 TOTAL_LOAD_TIME');
             }, 100); // Small delay to ensure first frame is rendered
         }
-    }, [trainingData, onReady]);
+    }, [trainingData, sessionProjections, onReady]);
 
     // Cleanup on unmount
     useEffect(() => {
@@ -428,6 +456,7 @@ const TrainingMovieSphere: React.FC<{
 const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) => {
     const [trainingData, setTrainingData] = useState<any>(null);
     const [lossData, setLossData] = useState<any>(null);
+    const [sessionProjections, setSessionProjections] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     
@@ -487,31 +516,39 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 setLoading(true);
                 console.time('📊 DATA_FETCHING_TIME');
                 console.log('📊 DATA_FETCH_START:', performance.now() + 'ms');
-                const data = await fetch_training_metrics(sessionId, apiBaseUrl);
+                
+                // FETCH BOTH: Training movie epochs AND completed session projections
+                const [trainingMovieData, sessionProjections] = await Promise.all([
+                    fetch_training_metrics(sessionId, apiBaseUrl),
+                    fetch_session_projections(sessionId, apiBaseUrl)
+                ]);
+                
                 console.timeEnd('📊 DATA_FETCHING_TIME');
                 console.log('📊 DATA_FETCH_COMPLETE:', performance.now() + 'ms');
+                console.log('🎯 Session projections structure:', sessionProjections ? Object.keys(sessionProjections) : 'NULL');
                 
                 // TRAINING MOVIE: Get 3D coordinates for each epoch
                 // Epoch projections data received successfully
                 
                 // Get the epoch projections (3D coordinates per epoch)
-                if (data && data.epoch_projections) {
-                    const epochKeys = Object.keys(data.epoch_projections).sort((a, b) => {
+                if (trainingMovieData && trainingMovieData.epoch_projections) {
+                    const epochKeys = Object.keys(trainingMovieData.epoch_projections).sort((a, b) => {
                         const epochA = parseInt(a.replace('epoch_', ''));
                         const epochB = parseInt(b.replace('epoch_', ''));
                         return epochA - epochB;
                     });
                     console.log('🎯 DEBUG: Epoch keys found:', epochKeys.length, 'epochs:', epochKeys.slice(0, 10));
-                    console.log('🎯 DEBUG: First few epoch data:', epochKeys.slice(0, 3).map(k => ({ epoch: k, count: data.epoch_projections[k]?.length || 0 })));
+                    console.log('🎯 DEBUG: First few epoch data:', epochKeys.slice(0, 3).map(k => ({ epoch: k, count: trainingMovieData.epoch_projections[k]?.length || 0 })));
 
-                    setTrainingData(data.epoch_projections);
+                    setTrainingData(trainingMovieData.epoch_projections);
+                    setSessionProjections(sessionProjections);
                     
                     // Also extract training metrics (loss data) if available
-                    if (data.training_metrics) {
-                        setLossData(data.training_metrics);
+                    if (trainingMovieData.training_metrics) {
+                        setLossData(trainingMovieData.training_metrics);
                     }
                 } else {
-                    console.error('❌ No epoch_projections found. Data structure:', Object.keys(data || {}));
+                    console.error('❌ No epoch_projections found. Data structure:', Object.keys(trainingMovieData || {}));
                     throw new Error('No epoch projections data available for training movie');
                 }
             } catch (err) {
@@ -1035,6 +1072,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 {trainingData ? (
                     <TrainingMovieSphere
                         trainingData={trainingData}
+                        sessionProjections={sessionProjections}
                         lossData={lossData}
                         onReady={(sphere: any) => {
                             // Training movie sphere ready
