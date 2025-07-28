@@ -599,59 +599,7 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any, 
         store_point_position_in_history(sphere, recordId, mesh.position);
     });
     
-    // Load logistics cluster data from the actual JSON file
-    let logisticsClusterData = null;
-    try {
-        // Use fetch to load the actual logistics data file
-        fetch('/logistics-featrix-data.json')
-            .then(response => response.json())
-            .then(data => {
-                
-                if (data.entire_cluster_results) {
-                    // Use the logistics data but expand it to 12 clusters for the training movie
-                    const originalLabels = data.entire_cluster_results["2"] ? data.entire_cluster_results["2"].cluster_labels : [];
-                    
-                                         // Generate 12-cluster pattern with better distribution
-                     const expandedLabels = Array(500).fill(0).map((_, i) => {
-                         if (i < originalLabels.length && originalLabels[i] !== undefined) {
-                             // Mix original pattern with index-based distribution
-                             return (originalLabels[i] + Math.floor(i / 42)) % 12;
-                         }
-                         return i % 12;
-                     });
-                    
-                    sphere.logisticsClusterData = {
-                        "12": { "cluster_labels": expandedLabels }
-                    };
-                    
-
-                    sphere.trainingMovieMaxClusters = 11; // 0-11 = 12 clusters
-                } else {
-                    console.error('❌ No cluster results found in logistics data');
-                    // Fallback to 12-cluster pattern
-                    sphere.logisticsClusterData = {
-                        "12": { "cluster_labels": Array(500).fill(0).map((_, i) => i % 12) }
-                    };
-                }
-            })
-            .catch(error => {
-                console.error('❌ Failed to load logistics-featrix-data.json:', error);
-                // Fallback to 12-cluster pattern
-                sphere.logisticsClusterData = {
-                    "12": { "cluster_labels": Array(500).fill(0).map((_, i) => i % 12) }
-                };
-            });
-    } catch (error) {
-        console.error('❌ Error setting up logistics data fetch:', error);
-    }
-    
-    // Set cluster range for progressive reveal - TRAINING MOVIE NEEDS 12 CLUSTERS
-    // Don't use logistics data cluster range (which is only 0,1)
-    // Training movie shows progressive reveal from 2 to 12 clusters
-    sphere.trainingMovieMaxClusters = 11; // 0-11 = 12 clusters total
-    sphere.trainingMovieStartClusters = 2; // Start showing 2 clusters
-    
-    console.log('🎯 Training movie cluster range: 2 →', sphere.trainingMovieMaxClusters + 1, 'clusters');
+    // NO FAKE DATA - Use only real session cluster results
     
     // GET FINAL CLUSTER RESULTS from session data for convergence visualization
     sphere.finalClusterResults = null;
@@ -1060,14 +1008,13 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
     const currentFrameIndex = epochKeys.indexOf(epochKey);
     const totalFrames = epochKeys.length;
     
-    // Progressive cluster reveal: 2 to 12 clusters
-    const startClusters = 2;
-    const endClusters = 12;
+    // Get actual cluster count from real server data
+    const realClusterCount = Object.keys(sphere.finalClusterResults).length;
+    const maxClusters = Math.max(...Object.keys(sphere.finalClusterResults).map(k => parseInt(k)));
     
-    // Calculate how many clusters should be visible at this frame
+    // Progressive reveal based on REAL cluster count, not fake 12
     const progressRatio = currentFrameIndex / (totalFrames - 1);
-    const clusterRange = endClusters - startClusters;
-    const visibleClusters = forceFinalState ? 12 : (startClusters + Math.floor(progressRatio * clusterRange));
+    const visibleClusters = forceFinalState ? maxClusters : Math.ceil(2 + (progressRatio * (maxClusters - 2)));
     
     // DEBUG: Log cluster calculation for debugging
     console.log(`📊 Frame ${currentFrameIndex}/${totalFrames-1}: progress ${progressRatio.toFixed(3)} -> ${visibleClusters} visible clusters`);
@@ -1153,13 +1100,14 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
                 // TRAINING MOVIE: Get cluster assignment from FINAL 12-cluster results
                 let clusterAssignment = 0;
                 
-                // ALWAYS use the final 12-cluster results for consistency
-                if (!sphere.finalClusterResults || !sphere.finalClusterResults[12]) {
-                    console.error(`❌ FATAL: Missing final 12-cluster results`);
-                    throw new Error('No final 12-cluster results available');
+                // Use the highest cluster count available in real data
+                const maxClusterKey = Math.max(...Object.keys(sphere.finalClusterResults).map(k => parseInt(k))).toString();
+                if (!sphere.finalClusterResults || !sphere.finalClusterResults[maxClusterKey]) {
+                    console.error(`❌ FATAL: Missing final cluster results for ${maxClusterKey} clusters`);
+                    throw new Error(`No final cluster results available for ${maxClusterKey} clusters`);
                 }
                 
-                const finalClusterLabels = sphere.finalClusterResults[12].cluster_labels;
+                const finalClusterLabels = sphere.finalClusterResults[maxClusterKey].cluster_labels;
                 if (!finalClusterLabels || rowOffset >= finalClusterLabels.length) {
                     console.error(`❌ FATAL: Invalid cluster data for point ${rowOffset}`);
                     throw new Error(`Invalid cluster data`);
