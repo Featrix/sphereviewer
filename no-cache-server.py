@@ -109,41 +109,42 @@ def kill_existing_instances():
         print("⏳ Waiting for processes to terminate...")
         time.sleep(2)  # Give more time if we killed something
 
-def start_server():
+def start_server(port=8080):
     """Start the server with auto-restart on address conflicts"""
-    PORT = 8080
+    PORT = port
     Handler = NoCacheHTTPRequestHandler
-    
+
     max_retries = 3
     
     for attempt in range(max_retries):
         try:
-            print(f"🚀 Starting no-cache server on http://localhost:{PORT}/ (attempt {attempt + 1})")
-            print("📝 JS files will be served with no-cache headers")
-            
+            print(f"Starting no-cache server on http://localhost:{PORT}/ (attempt {attempt + 1})")
+            print("JS files will be served with no-cache headers")
+
             with socketserver.TCPServer(("", PORT), Handler) as httpd:
-                print(f"✅ Server successfully started on port {PORT}")
+                print(f"Server successfully started on port {PORT}")
                 httpd.serve_forever()
                 
         except OSError as e:
             if e.errno == 98:  # Address already in use
-                print(f"⚠️ Port {PORT} is already in use (attempt {attempt + 1}/{max_retries})")
+                print(f"Port {PORT} is already in use (attempt {attempt + 1}/{max_retries})")
                 
                 if attempt < max_retries - 1:
-                    print("🔄 Attempting to kill existing instances and retry...")
+                    print("Attempting to kill existing instances and retry...")
                     kill_existing_instances()
                     time.sleep(2)  # Wait before retry
                 else:
-                    print("❌ Failed to start server after multiple attempts")
-                    print("🔧 Try manually killing processes with: pkill -f 'python.*no-cache-server.py'")
+                    print("Failed to start server after multiple attempts")
+                    print("Try manually killing processes with: pkill -f 'python.*no-cache-server.py'")
                     sys.exit(1)
             else:
-                print(f"❌ Server error: {e}")
+                print(f"Server error: {e}")
                 sys.exit(1)
                 
         except KeyboardInterrupt:
-            print("\n🛑 Server stopped by user")
+            print("\nServer stopped by user")
             sys.exit(0)
 
 if __name__ == "__main__":
-    start_server() 
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
+    start_server(port) 
