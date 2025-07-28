@@ -448,6 +448,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [spotlightCluster, setSpotlightCluster] = useState<number>(-1); // -1 = off, 0+ = cluster number
     const [showCountdown, setShowCountdown] = useState(false);
     const [countdownText, setCountdownText] = useState('');
+    const sphereRefForCountdown = useRef<any>(null); // Add ref to store sphere for countdown
 
     // Countdown function for initial pause - using useCallback to ensure stable reference
     const startCountdown = useCallback(() => {
@@ -465,17 +466,20 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         setCountdownText('Go!');
                         setTimeout(() => {
                             setShowCountdown(false);
-                            // Start the training movie
-                            if (sphereRef) {
-                                resume_training_movie(sphereRef);
+                            // Start the training movie using the ref
+                            console.log('🎬 Countdown complete, starting movie with sphere:', sphereRefForCountdown.current);
+                            if (sphereRefForCountdown.current) {
+                                resume_training_movie(sphereRefForCountdown.current);
                                 setIsPlaying(true);
+                            } else {
+                                console.error('❌ No sphere reference available after countdown!');
                             }
                         }, 800);
                     }, 1000);
                 }, 1000);
             }, 1000);
         }, 500);
-    }, [sphereRef]);
+    }, []); // Remove sphereRef dependency since we're using the ref now
 
     useEffect(() => {
         const loadTrainingData = async () => {
@@ -524,12 +528,15 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     useEffect(() => {
         if (!sphereRef) return;
         
+        // Update the ref for countdown as well
+        sphereRefForCountdown.current = sphereRef;
+        
         // Update sphere settings based on features
         sphereRef.showDynamicPoints = showDynamicPoints;
         sphereRef.showDynamicHulls = showDynamicHulls;
         sphereRef.memoryTrailLength = trailLength;
         sphereRef.spotlightCluster = spotlightCluster;
-        
+
         // Call the unified compute function with all settings
         compute_cluster_convex_hulls(sphereRef);
         update_cluster_spotlight(sphereRef);
@@ -548,7 +555,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
             setIsPlaying(true);
         }
     };
-
+        
     const handleStepBackward = () => {
         if (!sphereRef) return;
         step_training_movie_frame(sphereRef, 'backward');
@@ -997,7 +1004,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         </label>
                     </>
                 )}
-            </div>
+                </div>
 
             {/* Loss Plot - fixed screen overlay at top */}
             {lossData && lossData.validation_loss && (
@@ -1032,6 +1039,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         onReady={(sphere: any) => {
                             // Training movie sphere ready
                             setSphereRef(sphere);
+                            sphereRefForCountdown.current = sphere; // Store sphere in ref
                             
                             // Start with paused state for countdown
                             setIsPlaying(false);
