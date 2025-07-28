@@ -657,11 +657,13 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any, 
         console.error('❌ Error setting up logistics data fetch:', error);
     }
     
-    // Set cluster range for progressive reveal
-    const maxCluster = 1; // Logistics data has clusters 0,1
-    // Logistics cluster analysis completed
-    sphere.trainingMovieMaxClusters = maxCluster;
+    // Set cluster range for progressive reveal - TRAINING MOVIE NEEDS 12 CLUSTERS
+    // Don't use logistics data cluster range (which is only 0,1)
+    // Training movie shows progressive reveal from 2 to 12 clusters
+    sphere.trainingMovieMaxClusters = 11; // 0-11 = 12 clusters total
     sphere.trainingMovieStartClusters = 2; // Start showing 2 clusters
+    
+    console.log('🎯 Training movie cluster range: 2 →', sphere.trainingMovieMaxClusters + 1, 'clusters');
     
     // Initialize sphere with first epoch data
     const epochKeys = Object.keys(trainingMovieData).sort((a, b) => {
@@ -1140,6 +1142,11 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string) {
                     // Distribute points across available clusters based on their index
                     // This creates a reasonable clustering pattern for the training visualization
                     clusterAssignment = rowOffset % visibleClusters;
+                    
+                    // Debug logging for first few points to track cluster assignments
+                    if (rowOffset < 5) {
+                        console.log(`🎯 Point ${rowOffset}: cluster ${clusterAssignment}/${visibleClusters-1} (visible: ${visibleClusters})`);
+                    }
                 } else {
                     // Fallback if no points data available
                     clusterAssignment = 0;
@@ -1154,19 +1161,26 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string) {
                 // PROGRESSIVE CLUSTER REVEAL with enhanced debugging
                 let newColor;
                 
-                // Cluster assignment calculated
+                // Debug cluster validation for first few points
+                if (rowOffset < 5) {
+                    console.log(`🎨 Point ${rowOffset}: cluster ${clusterAssignment}, visible ${visibleClusters}, kColorTable.length ${typeof kColorTable !== 'undefined' ? kColorTable.length : 'undefined'}`);
+                }
                 
                 // Check if cluster is valid first
                 if (clusterAssignment === undefined || clusterAssignment === null) {
                     newColor = 0xff0000; // Red for undefined clusters
-                } else if (clusterAssignment >= kColorTable.length) {
+                    if (rowOffset < 5) console.log(`🔴 Point ${rowOffset}: undefined cluster -> RED`);
+                } else if (typeof kColorTable === 'undefined' || clusterAssignment >= kColorTable.length) {
                     newColor = 0xff0000; // Red for out-of-range clusters
+                    if (rowOffset < 5) console.log(`🔴 Point ${rowOffset}: out-of-range cluster ${clusterAssignment} -> RED`);
                 } else if (clusterAssignment < visibleClusters) {
                     // Cluster is "revealed" - use its assigned color
                     newColor = kColorTable[clusterAssignment];
+                    if (rowOffset < 5) console.log(`🟢 Point ${rowOffset}: revealed cluster ${clusterAssignment} -> COLOR ${newColor.toString(16)}`);
                 } else {
                     // This should rarely happen now with remapping
                     newColor = 0x999999; // Gray for unrevealed clusters
+                    if (rowOffset < 5) console.log(`⚪ Point ${rowOffset}: unrevealed cluster ${clusterAssignment} -> GRAY`);
                 }
                 
                                      // Apply the new color
