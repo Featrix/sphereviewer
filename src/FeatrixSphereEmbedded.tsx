@@ -463,6 +463,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [showClusterDebug, setShowClusterDebug] = useState(false);
     const [selectedPointInfo, setSelectedPointInfo] = useState<any>(null);
     const [showColorLegend, setShowColorLegend] = useState(false);
+    const [isFullscreen, setIsFullscreen] = useState(false);
 
     // Countdown function for initial pause - using useCallback to ensure stable reference
     const startCountdown = useCallback(() => {
@@ -604,6 +605,33 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         stop_training_movie(sphereRef);
         setIsPlaying(false);
     };
+
+    const toggleFullscreen = () => {
+        if (!isFullscreen) {
+            // Enter fullscreen mode
+            if (document.documentElement.requestFullscreen) {
+                document.documentElement.requestFullscreen();
+            }
+            setIsFullscreen(true);
+        } else {
+            // Exit fullscreen mode
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            }
+            setIsFullscreen(false);
+        }
+    };
+
+    // Listen for fullscreen changes (user pressing ESC)
+    useEffect(() => {
+        const handleFullscreenChange = () => {
+            const isCurrentlyFullscreen = !!document.fullscreenElement;
+            setIsFullscreen(isCurrentlyFullscreen);
+        };
+
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    }, []);
 
     if (loading) {
         return (
@@ -1085,6 +1113,25 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             title="Toggle Color Legend"
                         >
                             🎨 Colors
+                        </button>
+                        
+                        {/* Fullscreen Toggle */}
+                        <div style={{ margin: '0 8px', color: '#888' }}>|</div>
+                        
+                        <button
+                            onClick={toggleFullscreen}
+                            style={{
+                                background: isFullscreen ? '#4c4' : '#333',
+                                border: '1px solid #555',
+                                color: '#fff',
+                                padding: '4px 8px',
+                                borderRadius: '3px',
+                                cursor: 'pointer',
+                                fontSize: '11px'
+                            }}
+                            title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+                        >
+                            {isFullscreen ? '🪟 Exit' : '⛶ Full'}
                         </button>
                     </>
                 )}

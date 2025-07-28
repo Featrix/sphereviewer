@@ -1097,32 +1097,29 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
                 targetPositions.set(recordId, new THREE.Vector3(x, y, z));
                 validPoints++;
                 
-                // TRAINING MOVIE: Get cluster assignment from FINAL 12-cluster results
+                // TRAINING MOVIE: Use REAL cluster assignments from server data
+                const record = sphere.pointRecordsByID.get(recordId);
                 let clusterAssignment = 0;
                 
-                // Use the highest cluster count available in real data
-                const maxClusterKey = Math.max(...Object.keys(sphere.finalClusterResults).map(k => parseInt(k))).toString();
-                if (!sphere.finalClusterResults || !sphere.finalClusterResults[maxClusterKey]) {
-                    console.error(`❌ FATAL: Missing final cluster results for ${maxClusterKey} clusters`);
-                    throw new Error(`No final cluster results available for ${maxClusterKey} clusters`);
-                }
-                
-                const finalClusterLabels = sphere.finalClusterResults[maxClusterKey].cluster_labels;
-                if (!finalClusterLabels || rowOffset >= finalClusterLabels.length) {
-                    console.error(`❌ FATAL: Invalid cluster data for point ${rowOffset}`);
-                    throw new Error(`Invalid cluster data`);
-                }
-                
-                clusterAssignment = finalClusterLabels[rowOffset];
-                
-                // Progressive reveal: show only the first N clusters as visible
-                // Final 12-cluster data has IDs 0-11, we reveal them progressively
-                let newColor;
-                if (clusterAssignment < visibleClusters) {
-                    // This cluster is revealed - use color offset by +2 to start at cluster color 2
-                    newColor = kColorTable[clusterAssignment + 2];
+                // Get the actual cluster assignment from real server data
+                if (sphere.finalClusterResults && sphere.finalClusterResults[12] && sphere.finalClusterResults[12].cluster_labels) {
+                    const rowOffset = record?.featrix_meta?.__featrix_row_offset;
+                    if (rowOffset !== undefined && rowOffset < sphere.finalClusterResults[12].cluster_labels.length) {
+                        clusterAssignment = sphere.finalClusterResults[12].cluster_labels[rowOffset];
+                    } else {
+                        console.warn(`No valid rowOffset for record ${recordId}, using 0`);
+                    }
                 } else {
-                    // Cluster not yet revealed - use gray
+                    console.warn(`No finalClusterResults available for record ${recordId}, using 0`);
+                }
+                
+                // Use direct color mapping like the working version
+                let newColor;
+                if (clusterAssignment < visibleClusters && clusterAssignment < kColorTable.length) {
+                    // Direct mapping - no offset!
+                    newColor = kColorTable[clusterAssignment];
+                } else {
+                    // Not yet revealed or invalid cluster
                     newColor = 0x999999;
                 }
                 
