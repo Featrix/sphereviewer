@@ -1066,6 +1066,9 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string) {
     const clusterRange = endClusters - startClusters;
     const visibleClusters = startClusters + Math.floor(progressRatio * clusterRange);
     
+    // DEBUG: Log cluster calculation for debugging
+    console.log(`📊 Frame ${currentFrameIndex}/${totalFrames-1}: progress ${progressRatio.toFixed(3)} -> ${visibleClusters} visible clusters`);
+    
     // Progressive cluster reveal calculation
     
     // Call frame update callback if available
@@ -1100,10 +1103,23 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string) {
     let validPoints = 0;
     let invalidPoints = 0;
     
+    // DEBUG: Check point processing
+    console.log(`🔄 Processing ${sphere.pointObjectsByRecordID.size} points for epoch ${epochKey}`);
+    if (sphere.pointObjectsByRecordID.size === 0) {
+        console.error('❌ NO POINTS TO PROCESS - sphere.pointObjectsByRecordID is empty!');
+        return;
+    }
+    
     // Update positions and colors of existing points
     sphere.pointObjectsByRecordID.forEach((mesh: any, recordId: string) => {
         totalPoints++;
         const rowOffset = parseInt(recordId); // We used index as record ID
+        
+        // DEBUG: Show rowOffset calculation for first few points
+        if (totalPoints <= 10) {
+            console.log(`🔢 Point ${totalPoints-1}: recordId="${recordId}" -> rowOffset=${rowOffset} (type: ${typeof rowOffset})`);
+        }
+        
         if (rowOffset < epochData.coords.length) {
             const newCoords = epochData.coords[rowOffset];
             
@@ -1131,64 +1147,42 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string) {
                 targetPositions.set(recordId, new THREE.Vector3(x, y, z));
                 validPoints++;
                 
-                // TRAINING MOVIE: Generate cluster assignments based on data distribution
-                // Instead of using logistics data, create clusters based on point indices
+                // TRAINING MOVIE: Get cluster assignment from FINAL cluster calculations
                 let clusterAssignment = 0; // Default fallback
                 
-                // For training movie, we need to create meaningful clusters
-                // Use a simple but effective clustering based on point index distribution
-                const totalPoints = Object.keys(sphere.pointObjectsByRecordID).length;
-                if (totalPoints > 0) {
-                    // Distribute points across available clusters based on their index
-                    // This creates a reasonable clustering pattern for the training visualization
-                    clusterAssignment = rowOffset % visibleClusters;
-                    
-                    // Debug logging for first few points to track cluster assignments
-                    if (rowOffset < 5) {
-                        console.log(`🎯 Point ${rowOffset}: cluster ${clusterAssignment}/${visibleClusters-1} (visible: ${visibleClusters})`);
+                // Use the calculated cluster results (showing convergence toward final clustering)
+                if (epochData.entire_cluster_results && epochData.entire_cluster_results[visibleClusters]) {
+                    const clusterLabels = epochData.entire_cluster_results[visibleClusters].cluster_labels;
+                    if (clusterLabels && rowOffset < clusterLabels.length) {
+                        clusterAssignment = clusterLabels[rowOffset];
+                        if (rowOffset < 10) {
+                            console.log(`🎯 CONVERGENCE: Point ${rowOffset} -> cluster ${clusterAssignment} (from ${visibleClusters}-cluster calculation)`);
+                        }
+                    } else {
+                        if (rowOffset < 5) console.error(`❌ NO CLUSTER LABELS: rowOffset ${rowOffset} >= ${clusterLabels?.length || 0} labels`);
                     }
                 } else {
-                    // Fallback if no points data available
-                    clusterAssignment = 0;
+                    if (rowOffset < 5) console.error(`❌ NO CLUSTER RESULTS: missing entire_cluster_results[${visibleClusters}] in epoch data`);
                 }
                 
-                // Update the record's cluster assignment
-                const record = sphere.pointRecordsByID.get(recordId);
-                if (record) {
-                    record.featrix_meta.cluster_pre = clusterAssignment;
-                }
-                
-                // PROGRESSIVE CLUSTER REVEAL with enhanced debugging
+                // Now apply progressive cluster reveal and coloring
                 let newColor;
-                
-                // Debug cluster validation for first few points
-                if (rowOffset < 5) {
-                    console.log(`🎨 Point ${rowOffset}: cluster ${clusterAssignment}, visible ${visibleClusters}, kColorTable.length ${typeof kColorTable !== 'undefined' ? kColorTable.length : 'undefined'}`);
-                }
-                
-                // Check if cluster is valid first
-                if (clusterAssignment === undefined || clusterAssignment === null) {
-                    newColor = 0xff0000; // Red for undefined clusters
-                    if (rowOffset < 5) console.log(`🔴 Point ${rowOffset}: undefined cluster -> RED`);
-                } else if (typeof kColorTable === 'undefined' || clusterAssignment >= kColorTable.length) {
-                    newColor = 0xff0000; // Red for out-of-range clusters
-                    if (rowOffset < 5) console.log(`🔴 Point ${rowOffset}: out-of-range cluster ${clusterAssignment} -> RED`);
-                } else if (clusterAssignment < visibleClusters) {
+                if (clusterAssignment < visibleClusters) {
                     // Cluster is "revealed" - use its assigned color
                     newColor = kColorTable[clusterAssignment];
-                    if (rowOffset < 5) console.log(`🟢 Point ${rowOffset}: revealed cluster ${clusterAssignment} -> COLOR ${newColor.toString(16)}`);
+                    if (rowOffset < 5) console.log(`🟢 REVEALED: Point ${rowOffset} cluster ${clusterAssignment} -> COLOR ${newColor.toString(16)}`);
                 } else {
-                    // This should rarely happen now with remapping
-                    newColor = 0x999999; // Gray for unrevealed clusters
-                    if (rowOffset < 5) console.log(`⚪ Point ${rowOffset}: unrevealed cluster ${clusterAssignment} -> GRAY`);
+                    // Cluster not yet revealed - use gray
+                    newColor = 0x999999;
+                    if (rowOffset < 5) console.log(`⚪ HIDDEN: Point ${rowOffset} cluster ${clusterAssignment} -> GRAY (only ${visibleClusters} visible)`);
                 }
                 
-                                     // Apply the new color
-                     if (mesh.material instanceof THREE.MeshBasicMaterial) {
-                         mesh.material.color.set(newColor);
-                         mesh.material.needsUpdate = true;
-                     }
-                 } else {
+                // Apply the color to the mesh
+                if (mesh.material instanceof THREE.MeshBasicMaterial) {
+                    mesh.material.color.set(newColor);
+                    mesh.material.needsUpdate = true;
+                }
+            } else {
                      // Invalid coordinates detected - provide detailed diagnosis
                      if (rowOffset < 5) { // Show more examples
                          let issues = [];
