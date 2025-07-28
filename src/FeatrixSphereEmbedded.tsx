@@ -349,46 +349,21 @@ const TrainingMovieSphere: React.FC<{
     const sphereRef = useRef<any>(null);
 
     useEffect(() => {
-        console.log('🚀 TrainingMovieSphere useEffect triggered:', {
-            hasContainer: !!containerRef.current,
-            hasTrainingData: !!trainingData,
-            hasSessionProjections: !!sessionProjections,
-            sessionProjectionsKeys: sessionProjections ? Object.keys(sessionProjections) : null,
-            hasSphere: !!sphereRef.current
-        });
-        
         if (!containerRef.current || !trainingData) {
-            console.log('🔴 TrainingMovieSphere: Missing container or training data');
             return;
         }
 
         if (!sphereRef.current && trainingData && sessionProjections) {
-            // DIAGNOSTIC: Check if all required functions exist
-            console.log('🔍 FUNCTION_CHECK:', {
-                initialize_sphere: typeof initialize_sphere,
-                load_training_movie: typeof load_training_movie,
-                play_training_movie: typeof play_training_movie,
-                set_animation_options: typeof set_animation_options,
-                set_visual_options: typeof set_visual_options
-            });
             
             // Initializing sphere and loading training movie
             console.time('🌐 SPHERE_INITIALIZATION');
-            console.log('🌐 SPHERE_INIT_START:', performance.now() + 'ms');
             
             // Initialize empty sphere
             sphereRef.current = initialize_sphere(containerRef.current, []);
             
-            console.log('🔍 BEFORE ASSIGNMENT - sphere.jsonData:', sphereRef.current.jsonData);
-            console.log('🔍 ASSIGNMENT SOURCE - sessionProjections keys:', sessionProjections ? Object.keys(sessionProjections) : 'NULL');
-            console.log('🔍 ASSIGNMENT SOURCE - entire_cluster_results:', sessionProjections?.entire_cluster_results ? Object.keys(sessionProjections.entire_cluster_results) : 'MISSING');
-            
             // CRITICAL: Set session projections data for cluster results FIRST
             if (sessionProjections && sessionProjections.entire_cluster_results) {
                 sphereRef.current.jsonData = sessionProjections;
-                console.log('🔍 AFTER ASSIGNMENT - sphere.jsonData keys:', sphereRef.current.jsonData ? Object.keys(sphereRef.current.jsonData) : 'NULL');
-                console.log('🔍 AFTER ASSIGNMENT - sphere.jsonData.entire_cluster_results:', sphereRef.current.jsonData?.entire_cluster_results ? Object.keys(sphereRef.current.jsonData.entire_cluster_results) : 'MISSING');
-                console.log('✅ Session projections with cluster results loaded:', Object.keys(sessionProjections.entire_cluster_results));
             } else {
                 console.error('❌ CRITICAL: No session projections or cluster results available');
                 return;
@@ -404,9 +379,6 @@ const TrainingMovieSphere: React.FC<{
             // Set up visual options for training movie - smaller points
             set_animation_options(sphereRef.current, true, 0.02, false, sphereRef.current.jsonData);
             set_visual_options(sphereRef.current, 0.025, 0.9);
-            
-            console.log('🔍 BEFORE LOAD_TRAINING_MOVIE - sphere.jsonData keys:', sphereRef.current.jsonData ? Object.keys(sphereRef.current.jsonData) : 'NULL');
-            console.log('🔍 BEFORE LOAD_TRAINING_MOVIE - sphere.jsonData type:', typeof sphereRef.current.jsonData);
             
             // Load training movie data into the sphere (AFTER setting session data)
             load_training_movie(sphereRef.current, trainingData, lossData);
@@ -429,6 +401,13 @@ const TrainingMovieSphere: React.FC<{
                 console.log('🎉 ANIMATION_STARTED:', performance.now() + 'ms');
                 console.timeEnd('🕐 TOTAL_LOAD_TIME');
             }, 100); // Small delay to ensure first frame is rendered
+        } else {
+            console.log('🛑 SKIPPING RE-INITIALIZATION:', {
+                hasSphere: !!sphereRef.current,
+                hasTrainingData: !!trainingData,
+                hasSessionProjections: !!sessionProjections,
+                reason: !sphereRef.current ? 'no sphere' : !trainingData ? 'no training data' : !sessionProjections ? 'no session data' : 'sphere already exists'
+            });
         }
     }, [trainingData, sessionProjections, onReady]);
 

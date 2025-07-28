@@ -359,83 +359,67 @@ export function remap_cluster_assignments(base_assignments: any, new_assignments
 
     // Case 1: increasing the number of clusters
     // For each old cluster, find the new cluster that contains the most points from
-    // the old cluster.
-    if (new_n_clusters > base_n_clusters) {
-        // for every old cluster, figure out which new cluster contains the most points
-        // from the old cluster. Then, remap the cluster idx of that new cluster to
-        // the cluster idx of the old cluster.
-        // After we've gone through all the old clusters, assign any unused cluster ids
-        // to the new clusters.
-        const remap: any = {};
-        const used_new_clusters = new Set();
+    // the old cluster. Then, remap the cluster idx of that new cluster to
+    // the cluster idx of the old cluster.
+    // After we've gone through all the old clusters, assign any unused cluster ids
+    // to the new clusters.
+    const remap: any = {};
+    const used_new_clusters = new Set();
 
-        // iterate over the old cluster indices to find which new index has the largest
-        // overlap
-        for (let base_cluster_idx = 0; base_cluster_idx < base_n_clusters; base_cluster_idx++) {
+    // iterate over the old cluster indices to find which new index has the largest
+    // overlap
+    for (let base_cluster_idx = 0; base_cluster_idx < base_n_clusters; base_cluster_idx++) {
 
-            const new_cluster_counts = new_assignments_by_base_cluster_idx[base_cluster_idx];
-            let max_count = 0;
-            let best_new_cluster_idx = -1;
+        const new_cluster_counts = new_assignments_by_base_cluster_idx[base_cluster_idx];
+        let max_count = 0;
+        let best_new_cluster_idx = -1;
 
-            for (const [new_cluster_idx, count] of Object.entries(new_cluster_counts) as [string, number][]) {
-                if (count > max_count && !used_new_clusters.has(Number(new_cluster_idx))) {
-                    max_count = count;
-                    best_new_cluster_idx = Number(new_cluster_idx);
-                }
-            }
-
-            if (best_new_cluster_idx !== -1) {
-                remap[best_new_cluster_idx] = base_cluster_idx;
-                used_new_clusters.add(best_new_cluster_idx);
+        for (const [new_cluster_idx, count] of Object.entries(new_cluster_counts) as [string, number][]) {
+            if (count > max_count && !used_new_clusters.has(Number(new_cluster_idx))) {
+                max_count = count;
+                best_new_cluster_idx = Number(new_cluster_idx);
             }
         }
 
-        // At this point, we have remapped the new clusters to the old clusters, but only for the 
-        // new clusters that map to the old clusters. Now we need to figure out which new clusters
-        // have not yet been asssigned, and which new cluster indices are left to be assinged.
-
-        // Figure out which indices are not in remap keys
-        // These are the new cluster indices that have not been assigned to a new cluster index.
-        const missing_from_keys = [];
-        for (let new_cluster_idx = 0; new_cluster_idx < new_n_clusters; new_cluster_idx++) {
-            if (!remap.hasOwnProperty(new_cluster_idx)) {
-                missing_from_keys.push(new_cluster_idx);
-            }
+        if (best_new_cluster_idx !== -1) {
+            remap[best_new_cluster_idx] = base_cluster_idx;
+            used_new_clusters.add(best_new_cluster_idx);
         }
-
-        // Figure out which values are not in remap values
-        // These are the cluster indices that are still "free" to be assigned to.
-        // If base_n_clusters is 3 and new_n_clusters is 5, this should be [3, 4].
-        const missing_from_values = [];
-        for (let new_cluster_idx = 0; new_cluster_idx < new_n_clusters; new_cluster_idx++) {
-            if (!Object.values(remap).includes(new_cluster_idx)) {
-                missing_from_values.push(new_cluster_idx);
-            }
-        }
-
-        if (missing_from_keys.length !== missing_from_values.length) {
-            throw new Error("missing_from_keys and missing_from_values should have the same length");
-        }
-
-        // Assign the missing keys to the missing values in first-come first-served order.
-        for (let i = 0; i < missing_from_keys.length; i++) {
-            remap[missing_from_keys[i]] = missing_from_values[i];
-        }
-
-        return remap
-
     }
 
-    // Case 2: decreasing the number of clusters
-    else if (new_n_clusters < base_n_clusters) {
-        throw new Error("Decreasing the number of clusters is not yet supported");
+    // At this point, we have remapped the new clusters to the old clusters, but only for the 
+    // new clusters that map to the old clusters. Now we need to figure out which new clusters
+    // have not yet been asssigned, and which new cluster indices are left to be assinged.
+
+    // Figure out which indices are not in remap keys
+    // These are the new cluster indices that have not been assigned to a new cluster index.
+    const missing_from_keys = [];
+    for (let new_cluster_idx = 0; new_cluster_idx < new_n_clusters; new_cluster_idx++) {
+        if (!remap.hasOwnProperty(new_cluster_idx)) {
+            missing_from_keys.push(new_cluster_idx);
+        }
     }
 
-    // Case 3: keeping the number of clusters the same
-    // This can happen when we change the clustering criterion.
-    else if (new_n_clusters === base_n_clusters) {
-        throw new Error("Keeping the number of clusters the same is not yet supported");
+    // Figure out which values are not in remap values
+    // These are the cluster indices that are still "free" to be assigned to.
+    // If base_n_clusters is 3 and new_n_clusters is 5, this should be [3, 4].
+    const missing_from_values = [];
+    for (let new_cluster_idx = 0; new_cluster_idx < new_n_clusters; new_cluster_idx++) {
+        if (!Object.values(remap).includes(new_cluster_idx)) {
+            missing_from_values.push(new_cluster_idx);
+        }
     }
+
+    if (missing_from_keys.length !== missing_from_values.length) {
+        throw new Error("missing_from_keys and missing_from_values should have the same length");
+    }
+
+    // Assign the missing keys to the missing values in first-come first-served order.
+    for (let i = 0; i < missing_from_keys.length; i++) {
+        remap[missing_from_keys[i]] = missing_from_values[i];
+    }
+
+    return remap
 }
 
 
@@ -809,47 +793,36 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
                 console.warn(`⚠️ Skipping problematic epoch ${currentEpochKey} (frame ${sphere.currentEpoch})`);
             }
         } else {
-            // Rotation phase - 8 full rotations over ~4 seconds
-            const rotationDuration = 4000; // 4 seconds for 8 rotations
-            const totalRotations = 8;
+            // Rotation phase - 1 degree per frame at 30fps
+            const frameRate = 30; // 30 fps
+            const degreesPerFrame = 1; // 1 degree per frame
             const elapsed = Date.now() - (sphere.rotationStartTime || 0);
-            const rotationProgress = Math.min(elapsed / rotationDuration, 1.0);
             
-            if (rotationProgress < 1.0) {
-                // Still rotating - update camera angle
-                const rotationAmount = totalRotations * 2 * Math.PI * rotationProgress; // 8 full rotations
-                sphere.angle = (sphere.rotationStartAngle || 0) + rotationAmount;
-                
-                render_sphere(sphere);
-                
-                // Update frame counter for rotation
-                if (sphere.frameUpdateCallback) {
-                    sphere.frameUpdateCallback({
-                        current: totalFrames,
-                        total: totalFrames,
-                        visible: 12, // Show all clusters during rotation
-                        phase: `rotating (${(rotationProgress * 100).toFixed(0)}%)`
-                    });
-                }
-                
-                // Rotation in progress
-            } else {
-                // Rotation complete, restart training
-                
-                sphere.currentEpoch = 0;
-                sphere.isInRotationPhase = false;
-                sphere.rotationStartTime = undefined;
-                sphere.rotationStartAngle = undefined;
-                
-                // Reset frame counter display for restart
-                if (sphere.frameUpdateCallback) {
-                    sphere.frameUpdateCallback({
-                        current: 1,
-                        total: totalFrames,
-                        visible: 2 // Starting clusters
-                    });
-                }
+            // Calculate how many frames should have passed
+            const expectedFrames = Math.floor((elapsed / 1000) * frameRate);
+            const currentAngle = expectedFrames * (degreesPerFrame * Math.PI / 180); // Convert degrees to radians
+            
+            // Update camera angle smoothly
+            sphere.angle = (sphere.rotationStartAngle || 0) + currentAngle;
+            
+            // Minimal rotation logging every 10 seconds
+            if (Math.floor(elapsed / 10000) !== Math.floor((elapsed - 33) / 10000)) {
+                console.log(`🔄 ROTATION: ${(currentAngle * 180 / Math.PI).toFixed(0)}°`);
             }
+            
+            render_sphere(sphere);
+            
+            // Update frame counter for rotation
+            if (sphere.frameUpdateCallback) {
+                sphere.frameUpdateCallback({
+                    current: totalFrames,
+                    total: totalFrames,
+                    visible: 12, // Show all clusters during rotation
+                    phase: `rotating (${(currentAngle * 180 / Math.PI).toFixed(0)}°)`
+                });
+            }
+            
+            // Continue rotation indefinitely at 30fps
         }
         
         // Only increment epoch during training phase, not during rotation
@@ -859,8 +832,7 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
             if (sphere.currentEpoch >= totalFrames) {
                 // Training complete, start rotation phase
                 
-                // CRITICAL: Set final converged state before rotation
-                console.log('🎯 Training complete - setting final converged state for rotation');
+                // Set final converged state before rotation
                 const finalEpochKey = epochKeys[epochKeys.length - 1];
                 update_training_movie_frame(sphere, finalEpochKey, true); // Force final state
                 
@@ -872,7 +844,13 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
         
         // Schedule next frame or rotation update
         if (sphere.isPlayingMovie) {
-            sphere.movieAnimationRef = setTimeout(animate, frameDelay);
+            if (sphere.isInRotationPhase) {
+                // 30fps for smooth rotation (33.33ms per frame)
+                sphere.movieAnimationRef = setTimeout(animate, 1000 / 30);
+            } else {
+                // Normal training frame rate
+                sphere.movieAnimationRef = setTimeout(animate, frameDelay);
+            }
         }
     };
     
@@ -1129,7 +1107,7 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
     let invalidPoints = 0;
     
     // DEBUG: Check point processing
-    console.log(`🔄 Processing ${sphere.pointObjectsByRecordID.size} points for epoch ${epochKey}`);
+
     if (sphere.pointObjectsByRecordID.size === 0) {
         console.error('❌ NO POINTS TO PROCESS - sphere.pointObjectsByRecordID is empty!');
         return;
@@ -1172,47 +1150,32 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
                 targetPositions.set(recordId, new THREE.Vector3(x, y, z));
                 validPoints++;
                 
-                // TRAINING MOVIE: Get cluster assignment from FINAL cluster calculations
-                let clusterAssignment = 0; // Default fallback
+                // TRAINING MOVIE: Get cluster assignment from FINAL 12-cluster results
+                let clusterAssignment = 0;
                 
-                // Use the final cluster results (showing convergence toward final clustering)
-                if (!sphere.finalClusterResults) {
-                    console.error(`❌ FATAL: sphere.finalClusterResults is NULL - cannot assign clusters`);
-                    throw new Error('No final cluster results available for point clustering');
+                // ALWAYS use the final 12-cluster results for consistency
+                if (!sphere.finalClusterResults || !sphere.finalClusterResults[12]) {
+                    console.error(`❌ FATAL: Missing final 12-cluster results`);
+                    throw new Error('No final 12-cluster results available');
                 }
                 
-                if (!sphere.finalClusterResults[visibleClusters]) {
-                    console.error(`❌ FATAL: Missing cluster results for ${visibleClusters} clusters`);
-                    console.error(`❌ Available cluster counts:`, Object.keys(sphere.finalClusterResults));
-                    throw new Error(`Missing cluster data for ${visibleClusters} clusters`);
+                const finalClusterLabels = sphere.finalClusterResults[12].cluster_labels;
+                if (!finalClusterLabels || rowOffset >= finalClusterLabels.length) {
+                    console.error(`❌ FATAL: Invalid cluster data for point ${rowOffset}`);
+                    throw new Error(`Invalid cluster data`);
                 }
                 
-                const clusterLabels = sphere.finalClusterResults[visibleClusters].cluster_labels;
-                if (!clusterLabels) {
-                    console.error(`❌ FATAL: Missing cluster_labels for ${visibleClusters} clusters`);
-                    throw new Error(`Missing cluster_labels array`);
-                }
+                clusterAssignment = finalClusterLabels[rowOffset];
                 
-                if (rowOffset >= clusterLabels.length) {
-                    console.error(`❌ FATAL: Point index ${rowOffset} >= cluster labels length ${clusterLabels.length}`);
-                    throw new Error(`Point index out of bounds for cluster labels`);
-                }
-                
-                clusterAssignment = clusterLabels[rowOffset];
-                if (rowOffset < 10) {
-                    console.log(`🎯 REAL CLUSTER: Point ${rowOffset} -> cluster ${clusterAssignment} (from final ${visibleClusters}-cluster result)`);
-                }
-                
-                // Now apply progressive cluster reveal and coloring
+                // Progressive reveal: show only the first N clusters as visible
+                // Final 12-cluster data has IDs 0-11, we reveal them progressively
                 let newColor;
                 if (clusterAssignment < visibleClusters) {
-                    // Cluster is "revealed" - use its assigned color
-                    newColor = kColorTable[clusterAssignment];
-                    if (rowOffset < 5) console.log(`🟢 REVEALED: Point ${rowOffset} cluster ${clusterAssignment} -> COLOR ${newColor.toString(16)}`);
+                    // This cluster is revealed - use color offset by +2 to start at cluster color 2
+                    newColor = kColorTable[clusterAssignment + 2];
                 } else {
                     // Cluster not yet revealed - use gray
                     newColor = 0x999999;
-                    if (rowOffset < 5) console.log(`⚪ HIDDEN: Point ${rowOffset} cluster ${clusterAssignment} -> GRAY (only ${visibleClusters} visible)`);
                 }
                 
                 // Apply the color to the mesh
