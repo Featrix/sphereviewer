@@ -831,7 +831,12 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
             
             if (sphere.currentEpoch >= totalFrames) {
                 // Training complete, start rotation phase
-
+                
+                // CRITICAL: Set final converged state before rotation
+                console.log('🎯 Training complete - setting final converged state for rotation');
+                const finalEpochKey = epochKeys[epochKeys.length - 1];
+                update_training_movie_frame(sphere, finalEpochKey, true); // Force final state
+                
                 sphere.isInRotationPhase = true;
                 sphere.rotationStartTime = Date.now();
                 sphere.rotationStartAngle = sphere.angle; // Current camera angle
@@ -1028,7 +1033,7 @@ function stop_point_interpolation(sphere: SphereData) {
     sphere.pointStartPositions = undefined;
 }
 
-function update_training_movie_frame(sphere: SphereData, epochKey: string) {
+function update_training_movie_frame(sphere: SphereData, epochKey: string, forceFinalState: boolean = false) {
     const epochData = sphere.trainingMovieData?.[epochKey];
     
     if (!epochData || !epochData.coords) {
@@ -1057,7 +1062,7 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string) {
     // Calculate how many clusters should be visible at this frame
     const progressRatio = currentFrameIndex / (totalFrames - 1);
     const clusterRange = endClusters - startClusters;
-    const visibleClusters = startClusters + Math.floor(progressRatio * clusterRange);
+    const visibleClusters = forceFinalState ? 12 : (startClusters + Math.floor(progressRatio * clusterRange));
     
     // DEBUG: Log cluster calculation for debugging
     console.log(`📊 Frame ${currentFrameIndex}/${totalFrames-1}: progress ${progressRatio.toFixed(3)} -> ${visibleClusters} visible clusters`);
