@@ -689,17 +689,11 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any, 
             }
         }
 
-        // Get REAL cluster assignment from server data, not fake 0!
-        let realClusterAssignment = 0;
-        if (sphere.finalClusterResults && sphere.finalClusterResults[12] && sphere.finalClusterResults[12].cluster_labels) {
-            realClusterAssignment = sphere.finalClusterResults[12].cluster_labels[index] || 0;
-        }
-
         return {
             coords: { x, y, z },
             id: String(index),
             featrix_meta: {
-                cluster_pre: realClusterAssignment, // Use REAL cluster assignment!
+                // Don't use deprecated cluster_pre - use direct lookup from finalClusterResults
                 webgl_id: null,
                 __featrix_row_id: index,
                 __featrix_row_offset: index,
@@ -1109,15 +1103,20 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
                 targetPositions.set(recordId, new THREE.Vector3(x, y, z));
                 validPoints++;
                 
-                // TRAINING MOVIE: Use the cluster_pre that was set during initialization (like working getColor function)
+                // TRAINING MOVIE: Use direct lookup from finalClusterResults (no deprecated cluster_pre)
                 const record = sphere.pointRecordsByID.get(recordId);
                 let clusterAssignment = 0;
                 
-                // Use the cluster_pre that was correctly set during initialization
-                if (record && record.featrix_meta?.cluster_pre !== undefined) {
-                    clusterAssignment = record.featrix_meta.cluster_pre;
+                // Use direct lookup from server data like other working parts of the code
+                if (sphere.finalClusterResults && sphere.finalClusterResults[12] && sphere.finalClusterResults[12].cluster_labels) {
+                    const rowOffset = record?.featrix_meta?.__featrix_row_offset;
+                    if (rowOffset !== undefined && rowOffset < sphere.finalClusterResults[12].cluster_labels.length) {
+                        clusterAssignment = sphere.finalClusterResults[12].cluster_labels[rowOffset];
+                    } else {
+                        console.warn(`No valid rowOffset for record ${recordId}, using 0`);
+                    }
                 } else {
-                    console.warn(`No cluster_pre for record ${recordId}, using 0`);
+                    console.warn(`No finalClusterResults available for record ${recordId}, using 0`);
                 }
                 
                 // Use direct color mapping like the working version
