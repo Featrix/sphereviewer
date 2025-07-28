@@ -793,9 +793,9 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
                 console.warn(`⚠️ Skipping problematic epoch ${currentEpochKey} (frame ${sphere.currentEpoch})`);
             }
         } else {
-            // Rotation phase - 1 degree per frame at 30fps
+            // Rotation phase - 0.5 degrees per frame at 30fps
             const frameRate = 30; // 30 fps
-            const degreesPerFrame = 1; // 1 degree per frame
+            const degreesPerFrame = 0.5; // 0.5 degrees per frame
             const elapsed = Date.now() - (sphere.rotationStartTime || 0);
             
             // Calculate how many frames should have passed
@@ -1947,6 +1947,26 @@ function handle_mouse_highlight(sphere: SphereData) {
             return;
         }
 
+        // Send point inspection event with detailed info
+        const record = sphere.pointRecordsByID.get(record_id);
+        const pointInfo = {
+            recordId: record_id,
+            rowOffset: record?.featrix_meta?.__featrix_row_offset || 'unknown',
+            clusterId: 'unknown',
+            color: `#${closestObject.material?.color?.getHex()?.toString(16).padStart(6, '0') || '000000'}`,
+            position: `(${closestObject.position.x.toFixed(2)}, ${closestObject.position.y.toFixed(2)}, ${closestObject.position.z.toFixed(2)})`
+        };
+        
+        // Get cluster assignment from final results if available
+        if (sphere.finalClusterResults && sphere.finalClusterResults[12] && sphere.finalClusterResults[12].cluster_labels) {
+            const rowOffset = record?.featrix_meta?.__featrix_row_offset;
+            if (rowOffset !== undefined) {
+                pointInfo.clusterId = sphere.finalClusterResults[12].cluster_labels[rowOffset];
+            }
+        }
+        
+        send_event(sphere, 'pointInspected', { detail: pointInfo });
+
         const object_is_selected = sphere.selectedRecords.has(record_id);
         if (object_is_selected) {
             // If the closest object is already selected, then unselect it.
@@ -2228,11 +2248,26 @@ export function update_cluster_spotlight(sphere: SphereData) {
     const clusterPoints: { position: THREE.Vector3, color: THREE.Color }[] = [];
     sphere.pointObjectsByRecordID.forEach((pointMesh, recordId) => {
         const record = sphere.pointRecordsByID.get(recordId);
-        if (record && record.featrix_meta.cluster_pre === spotlightCluster) {
-            clusterPoints.push({
-                position: pointMesh.position.clone(),
-                color: pointMesh.material.color.clone()
-            });
+        if (record) {
+            let clusterAssignment = -1;
+            
+            // Use final cluster results if available (training movie)
+            if (sphere.finalClusterResults && sphere.finalClusterResults[12] && sphere.finalClusterResults[12].cluster_labels) {
+                const rowOffset = record.featrix_meta?.__featrix_row_offset;
+                if (rowOffset !== undefined) {
+                    clusterAssignment = sphere.finalClusterResults[12].cluster_labels[rowOffset];
+                }
+            } else if (record.featrix_meta.cluster_pre !== undefined) {
+                // Fallback to cluster_pre
+                clusterAssignment = record.featrix_meta.cluster_pre;
+            }
+            
+            if (clusterAssignment === spotlightCluster) {
+                clusterPoints.push({
+                    position: pointMesh.position.clone(),
+                    color: pointMesh.material.color.clone()
+                });
+            }
         }
     });
     

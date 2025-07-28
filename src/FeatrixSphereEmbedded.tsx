@@ -343,8 +343,9 @@ const TrainingMovieSphere: React.FC<{
     sessionProjections?: any,
     lossData?: any,
     onReady?: (sphere: any) => void,
-    onFrameUpdate?: (frameInfo: { current: number, total: number, visible: number, epoch?: string, validationLoss?: number }) => void
-}> = ({ trainingData, sessionProjections, lossData, onReady, onFrameUpdate }) => {
+    onFrameUpdate?: (frameInfo: { current: number, total: number, visible: number, epoch?: string, validationLoss?: number }) => void,
+    onPointInspected?: (pointInfo: any) => void
+}> = ({ trainingData, sessionProjections, lossData, onReady, onFrameUpdate, onPointInspected }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const sphereRef = useRef<any>(null);
 
@@ -376,6 +377,13 @@ const TrainingMovieSphere: React.FC<{
                 sphereRef.current.frameUpdateCallback = onFrameUpdate;
             }
             
+            // Set point inspection callback
+            if (onPointInspected) {
+                sphereRef.current.event_listeners.pointInspected = (event: any) => {
+                    onPointInspected(event.detail);
+                };
+            }
+            
             // Set up visual options for training movie - smaller points
             set_animation_options(sphereRef.current, true, 0.02, false, sphereRef.current.jsonData);
             set_visual_options(sphereRef.current, 0.025, 0.9);
@@ -401,13 +409,6 @@ const TrainingMovieSphere: React.FC<{
                 console.log('🎉 ANIMATION_STARTED:', performance.now() + 'ms');
                 console.timeEnd('🕐 TOTAL_LOAD_TIME');
             }, 100); // Small delay to ensure first frame is rendered
-        } else {
-            console.log('🛑 SKIPPING RE-INITIALIZATION:', {
-                hasSphere: !!sphereRef.current,
-                hasTrainingData: !!trainingData,
-                hasSessionProjections: !!sessionProjections,
-                reason: !sphereRef.current ? 'no sphere' : !trainingData ? 'no training data' : !sessionProjections ? 'no session data' : 'sphere already exists'
-            });
         }
     }, [trainingData, sessionProjections, onReady]);
 
@@ -457,6 +458,11 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [showCountdown, setShowCountdown] = useState(false);
     const [countdownText, setCountdownText] = useState('');
     const sphereRefForCountdown = useRef<any>(null); // Add ref to store sphere for countdown
+    
+    // Cluster debugging state
+    const [showClusterDebug, setShowClusterDebug] = useState(false);
+    const [selectedPointInfo, setSelectedPointInfo] = useState<any>(null);
+    const [showColorLegend, setShowColorLegend] = useState(false);
 
     // Countdown function for initial pause - using useCallback to ensure stable reference
     const startCountdown = useCallback(() => {
@@ -1000,6 +1006,13 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     const cluster = parseInt(e.target.value);
                                     console.log('🎯 Spotlight cluster changed:', cluster);
                                     setSpotlightCluster(cluster);
+                                    
+                                    // Update spotlight on the sphere
+                                    if (sphereRef) {
+                                        sphereRef.spotlightCluster = cluster;
+                                        update_cluster_spotlight(sphereRef);
+                                        render_sphere(sphereRef);
+                                    }
                                 }}
                                 style={{
                                     marginLeft: '4px',
@@ -1013,11 +1026,47 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 }}
                             >
                                 <option value={-1}>Off</option>
-                                {Array.from({length: frameInfo.visible}, (_, i) => (
+                                {frameInfo.visible > 0 && Array.from({length: frameInfo.visible}, (_, i) => (
                                     <option key={i} value={i}>C{i}</option>
                                 ))}
                             </select>
                         </label>
+                        
+                        {/* Cluster Debugging Tools */}
+                        <div style={{ margin: '0 8px', color: '#888' }}>|</div>
+                        
+                        <button
+                            onClick={() => setShowClusterDebug(!showClusterDebug)}
+                            style={{
+                                background: showClusterDebug ? '#4c4' : '#333',
+                                border: '1px solid #555',
+                                color: '#fff',
+                                padding: '4px 8px',
+                                borderRadius: '3px',
+                                cursor: 'pointer',
+                                fontSize: '11px'
+                            }}
+                            title="Toggle Cluster Inspector"
+                        >
+                            🔍 Debug
+                        </button>
+                        
+                        <button
+                            onClick={() => setShowColorLegend(!showColorLegend)}
+                            style={{
+                                background: showColorLegend ? '#4c4' : '#333',
+                                border: '1px solid #555',
+                                color: '#fff',
+                                padding: '4px 8px',
+                                borderRadius: '3px',
+                                cursor: 'pointer',
+                                fontSize: '11px',
+                                marginLeft: '4px'
+                            }}
+                            title="Toggle Color Legend"
+                        >
+                            🎨 Colors
+                        </button>
                     </>
                 )}
                 </div>
@@ -1053,6 +1102,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         trainingData={trainingData}
                         sessionProjections={sessionProjections}
                         lossData={lossData}
+                        onPointInspected={setSelectedPointInfo}
                         onReady={(sphere: any) => {
                             // Training movie sphere ready
                             setSphereRef(sphere);
@@ -1082,6 +1132,15 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             }, 1000);
                         }}
                         onFrameUpdate={(info) => {
+                            // DEBUG: Log frameInfo for troubleshooting focus dropdown
+                            console.log('🎯 Frame update received:', {
+                                current: info.current,
+                                total: info.total,
+                                visible: info.visible,
+                                epoch: info.epoch,
+                                type: typeof info.visible
+                            });
+                            
                             // Detect restart (frame went back to 1 from higher number)
                             const prevFrame = frameInfo?.current || 0;
                             if (prevFrame > 1 && info.current === 1 && typeof startCountdown === 'function') {
@@ -1116,6 +1175,93 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     </div>
                 )}
             </div>
+
+            {/* Cluster Debug Panel */}
+            {showClusterDebug && (
+                <div style={{
+                    position: 'absolute',
+                    top: '10px',
+                    left: '10px',
+                    background: 'rgba(0,0,0,0.9)',
+                    color: '#fff',
+                    padding: '12px',
+                    borderRadius: '6px',
+                    fontFamily: 'monospace',
+                    fontSize: '11px',
+                    maxWidth: '300px',
+                    zIndex: 1500,
+                    border: '1px solid #555'
+                }}>
+                    <div style={{ color: '#4c4', fontWeight: 'bold', marginBottom: '8px' }}>🔍 Cluster Inspector</div>
+                    
+                    {frameInfo && (
+                        <div style={{ marginBottom: '8px' }}>
+                            <div>Frame: {frameInfo.current}/{frameInfo.total}</div>
+                            <div>Visible Clusters: {frameInfo.visible}</div>
+                            <div>Epoch: {frameInfo.epoch || 'unknown'}</div>
+                        </div>
+                    )}
+                    
+                    {selectedPointInfo && (
+                        <div style={{ marginTop: '8px', borderTop: '1px solid #444', paddingTop: '8px' }}>
+                            <div style={{ color: '#ff4', fontWeight: 'bold' }}>Selected Point:</div>
+                            <div>Record ID: {selectedPointInfo.recordId}</div>
+                            <div>Row Offset: {selectedPointInfo.rowOffset}</div>
+                            <div>Cluster ID: {selectedPointInfo.clusterId}</div>
+                            <div>Color: <span style={{ background: selectedPointInfo.color, padding: '2px 6px', borderRadius: '2px' }}>{selectedPointInfo.color}</span></div>
+                            <div>Position: {selectedPointInfo.position}</div>
+                        </div>
+                    )}
+                    
+                    <div style={{ marginTop: '8px', fontSize: '10px', color: '#888' }}>
+                        Click points on sphere to inspect
+                    </div>
+                </div>
+            )}
+
+            {/* Color Legend Panel */}
+            {showColorLegend && frameInfo && (
+                <div style={{
+                    position: 'absolute',
+                    top: '10px',
+                    right: '320px', // Position left of build info
+                    background: 'rgba(0,0,0,0.9)',
+                    color: '#fff',
+                    padding: '12px',
+                    borderRadius: '6px',
+                    fontFamily: 'monospace',
+                    fontSize: '11px',
+                    zIndex: 1500,
+                    border: '1px solid #555'
+                }}>
+                    <div style={{ color: '#4c4', fontWeight: 'bold', marginBottom: '8px' }}>🎨 Color Legend</div>
+                    
+                    <div style={{ display: 'grid', gridTemplateColumns: 'auto auto auto', gap: '4px', alignItems: 'center' }}>
+                        {frameInfo.visible > 0 && Array.from({length: frameInfo.visible}, (_, i) => {
+                            // This matches the kColorTable mapping from the sphere code
+                            const colorIndex = i + 2; // Map cluster 0,1,2... to kColorTable[2,3,4...]
+                            const kColorTable = [
+                                '#888888', '#ffcccc', '#ff0000', '#ff8800', '#ffff00', '#88ff00',
+                                '#00ff00', '#00ff88', '#00ffff', '#0088ff', '#0000ff', '#8800ff',
+                                '#ff00ff', '#ff0088'
+                            ];
+                            const color = kColorTable[colorIndex] || '#888888';
+                            
+                            return [
+                                <div key={`cluster-${i}`} style={{ textAlign: 'right' }}>C{i}:</div>,
+                                <div key={`color-${i}`} style={{ 
+                                    background: color, 
+                                    width: '20px', 
+                                    height: '12px', 
+                                    border: '1px solid #555',
+                                    borderRadius: '2px'
+                                }}></div>,
+                                <div key={`hex-${i}`} style={{ fontSize: '10px', color: '#ccc' }}>{color}</div>
+                            ];
+                        })}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
