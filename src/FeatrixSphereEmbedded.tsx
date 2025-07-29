@@ -357,15 +357,21 @@ const TrainingMovieSphere: React.FC<{
 
         if (!sphereRef.current && trainingData && sessionProjections) {
             
-            // Initializing sphere and loading training movie
+            // Initialize sphere with real coordinates data
             console.time('🌐 SPHERE_INITIALIZATION');
             
-            // Initialize empty sphere
-            sphereRef.current = initialize_sphere(containerRef.current, []);
+            // Convert coords to sphere records
+            const recordList = create_record_list(sessionProjections);
+            console.log('📊 Created record list:', recordList.length, 'points');
             
-            // CRITICAL: Set session projections data for cluster results FIRST
+            // Initialize sphere with the actual data
+            sphereRef.current = initialize_sphere(containerRef.current, recordList);
+            
+            // CRITICAL: Set session projections data for cluster results
             if (sessionProjections && sessionProjections.entire_cluster_results) {
                 sphereRef.current.jsonData = sessionProjections;
+                fix_server_cluster_pre_assignments(sessionProjections);
+                remap_server_cluster_assignments(sessionProjections.entire_cluster_results);
             } else {
                 console.error('❌ CRITICAL: No session projections or cluster results available');
                 return;
@@ -385,31 +391,21 @@ const TrainingMovieSphere: React.FC<{
                 };
             }
             
-            // Set up visual options for training movie - smaller points
+            // Set up normal sphere options
             set_animation_options(sphereRef.current, rotationEnabled, 0.02, false, sphereRef.current.jsonData);
             set_visual_options(sphereRef.current, 0.025, 0.9);
             
-            // Load training movie data into the sphere (AFTER setting session data)
-            load_training_movie(sphereRef.current, trainingData, lossData);
-            
-            // Start playing the training movie (10 second loop)
-            console.log('🎬 TRAINING_MOVIE_START:', performance.now() + 'ms');
-            play_training_movie(sphereRef.current, 10);
+            // Just render the sphere normally - no training movie
+            render_sphere(sphereRef.current);
             console.timeEnd('🌐 SPHERE_INITIALIZATION');
             
-            // Training movie started successfully
-            console.log('🎉 FIRST_PAINT_READY:', performance.now() + 'ms');
+            // Sphere ready
+            console.log('🎉 SPHERE_READY:', performance.now() + 'ms');
             
             // Notify parent that sphere is ready
             if (onReady) {
                 onReady(sphereRef.current);
             }
-            
-            // Final timing log
-            setTimeout(() => {
-                console.log('🎉 ANIMATION_STARTED:', performance.now() + 'ms');
-                console.timeEnd('🕐 TOTAL_LOAD_TIME');
-            }, 100); // Small delay to ensure first frame is rendered
         }
     }, [trainingData, sessionProjections, onReady]);
 
@@ -442,7 +438,7 @@ const TrainingMovieSphere: React.FC<{
 };
 
 const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) => {
-    // NOTE: sessionId and apiBaseUrl are ignored - we load from static training movie dump file
+    // NOTE: Just showing the regular sphere with the logistics data
     const [trainingData, setTrainingData] = useState<any>(null);
     const [lossData, setLossData] = useState<any>(null);
     const [sessionProjections, setSessionProjections] = useState<any>(null);
@@ -523,28 +519,21 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 console.log('📊 STATIC_FILE_LOADED:', performance.now() + 'ms');
                 console.log('🎯 Training movie data structure:', trainingMovieData ? Object.keys(trainingMovieData) : 'NULL');
                 
-                // TRAINING MOVIE: Use epoch projections from the static dump
-                if (trainingMovieData && trainingMovieData.epoch_projections) {
-                    const epochKeys = Object.keys(trainingMovieData.epoch_projections).sort((a, b) => {
-                        const epochA = parseInt(a.replace('epoch_', ''));
-                        const epochB = parseInt(b.replace('epoch_', ''));
-                        return epochA - epochB;
-                    });
-                    console.log('🎯 DEBUG: Epoch keys found:', epochKeys.length, 'epochs:', epochKeys.slice(0, 10));
-                    console.log('🎯 DEBUG: First few epoch data:', epochKeys.slice(0, 3).map(k => ({ epoch: k, count: trainingMovieData.epoch_projections[k]?.length || 0 })));
-
-                    setTrainingData(trainingMovieData.epoch_projections);
+                // TRAINING MOVIE: Use the real data structure as it was working yesterday
+                if (trainingMovieData) {
+                    console.log('✅ Loading training movie with real data structure:', Object.keys(trainingMovieData));
                     
-                    // Use the static file's cluster results (this is the real training dump!)
+                    // Pass the whole data structure - let the training movie function figure it out
+                    setTrainingData(trainingMovieData);
                     setSessionProjections(trainingMovieData);
                     
-                    // Also extract training metrics (loss data) if available
+                    // Check for training metrics
                     if (trainingMovieData.training_metrics) {
                         setLossData(trainingMovieData.training_metrics);
                     }
                 } else {
-                    console.error('❌ No epoch_projections found in static file. Data structure:', Object.keys(trainingMovieData || {}));
-                    throw new Error('No epoch projections data available in training movie dump');
+                    console.error('❌ No training movie data loaded');
+                    throw new Error('Failed to load training movie data');
                 }
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'Failed to load training movie dump');
@@ -1360,13 +1349,7 @@ interface SphereEmbeddedProps {
 }
 
 export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity, onSphereReady }: SphereEmbeddedProps) {
-    // TRAINING MOVIE SPECIFICATIONS: 
-    // 1. ON LOAD: Show NOTHING - no sphere, no points, no final data visualization
-    // 2. AUTOMATICALLY: Load training movie from STATIC FILE logistics-featrix-data.json (no API calls!)
-    // 3. DISPLAY: Show ONLY the training movie animation once loaded - NOT the finished sphere
-    // 4. NEVER: Show training movie simultaneously with the finished sphere data
-
-    // Show ONLY the training movie - loads from static dump file
+    // SPHERE VIEWER: Show the logistics data as a regular 3D sphere visualization
     return (
         <div className="sphere-embedded-container">
             <div className="mx-auto">
