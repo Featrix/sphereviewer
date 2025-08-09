@@ -22,27 +22,32 @@ class NoCacheHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 def kill_existing_instances():
     """Kill existing instances of this server and other servers on port 8080"""
     killed_any = False
+    current_pid = os.getpid()
     
     # Method 1: Use lsof to find processes using port 8080
     try:
         result = subprocess.run(['lsof', '-t', '-i:8080'], capture_output=True, text=True)
-        if result.returncode == 0:
-            pids = [p for p in result.stdout.strip().split('\n') if p and p != str(os.getpid())]
+        if result.returncode == 0 and result.stdout.strip():
+            pids = [p.strip() for p in result.stdout.strip().split('\n') if p.strip() and p.strip() != str(current_pid)]
             for pid in pids:
                 try:
-                    print(f"🔪 Killing process using port 8080 (PID: {pid})")
-                    os.kill(int(pid), signal.SIGTERM)
-                    killed_any = True
-                    time.sleep(0.2)
+                    pid_int = int(pid)
+                    if pid_int != current_pid:
+                        print(f"🔪 Killing process using port 8080 (PID: {pid})")
+                        os.kill(pid_int, signal.SIGTERM)
+                        killed_any = True
+                        time.sleep(0.5)
+                        # Check if still alive and force kill
+                        try:
+                            os.kill(pid_int, 0)  # Test if process exists
+                            os.kill(pid_int, signal.SIGKILL)
+                            print(f"💀 Force killed PID {pid}")
+                        except ProcessLookupError:
+                            pass  # Process already dead
                 except (ProcessLookupError, ValueError):
                     pass
                 except Exception as e:
                     print(f"⚠️ Failed to kill PID {pid}: {e}")
-                    try:
-                        os.kill(int(pid), signal.SIGKILL)  # Force kill if SIGTERM fails
-                        killed_any = True
-                    except:
-                        pass
     except FileNotFoundError:
         pass  # lsof not available
     

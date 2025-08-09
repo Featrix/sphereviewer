@@ -76,3 +76,4 @@ temp/
 # Customer data files - DO NOT COMMIT
 *featrix-data.json
 logistics-*.json
+*.json

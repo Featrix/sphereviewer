@@ -1,4 +1,13 @@
-// Simplified data access for embeddable version
+/**
+ * @license
+ * Featrix Sphere Viewer - Data Access Layer
+ * 
+ * Copyright (c) 2024-2025 Featrix
+ * Licensed under the MIT License
+ * 
+ * Simplified data access for embeddable version
+ */
+
 export async function fetch_session_data(session_id: string, apiBaseUrl?: string) {
     const baseUrl = apiBaseUrl || 'https://sphere-api.featrix.com';
     const data_raw = await fetch(`${baseUrl}/compute/session/${session_id}`);

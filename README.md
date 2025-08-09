@@ -1,215 +1,207 @@
 # @featrix/sphere-viewer
 
-[![npm version](https://badge.fury.io/js/@featrix%2Fsphere-viewer.svg)](https://badge.fury.io/js/@featrix%2Fsphere-viewer)
+🌐 **Professional 3D Data Visualization Component**
 
-A powerful, embeddable 3D sphere data visualization component built with React and Three.js. Display your data in an interactive 3D space with clustering, selection, and real-time training status.
+An embeddable, high-performance 3D sphere visualization component for data exploration and analysis. Features interactive WebGL rendering, dynamic clustering, and training movie playback.
 
-![Sphere Viewer Demo](https://img.shields.io/badge/3D%20Sphere-Visualization-blue?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMTAiIHN0cm9rZT0iI2ZmZmZmZiIgc3Ryb2tlLXdpZHRoPSIyIi8+CjxwYXRoIGQ9Im0xMiAyYTEwIDEwIDAgMCAwIDAgMjAgMTAgMTAgMCAwIDAgMC0yMCIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIwLjIiLz4KPHBhdGggZD0iTTEyIDJhMTAgMTAgMCAwIDEgMCAyMCIgc3Ryb2tlPSIjZmZmZmZmIiBzdHJva2Utd2lkdGg9IjIiLz4KPHN2Zz4K)
+## ✨ Features
+
+- 🌟 **Interactive 3D Sphere Visualization** - Smooth WebGL rendering with Three.js
+- 🎬 **Training Movie Playback** - Watch ML training convergence in real-time
+- 🎯 **Dynamic Clustering** - Live cluster assignment and color coding
+- 📱 **Mobile Responsive** - Touch controls and adaptive layouts
+- ⚡ **High Performance** - Optimized for large datasets (1000+ points)
+- 🔗 **Easy Embedding** - Drop-in script tag or React component
+- 🎨 **Customizable** - Configurable colors, animations, and interactions
 
 ## 🚀 Quick Start
 
-### NPM Installation (Recommended)
-
-```bash
-npm install @featrix/sphere-viewer
-```
-
-### Usage in React/Next.js Apps
-
-```tsx
-import React from 'react';
-import { SphereViewer } from '@featrix/sphere-viewer';
-
-function MyApp() {
-  return (
-    <div style={{ height: '500px' }}>
-      <SphereViewer 
-        sessionId="your-session-id-here"
-        apiBaseUrl="https://sphere-api.featrix.com" // optional
-      />
-    </div>
-  );
-}
-```
-
-### Embeddable Script (Any Website)
-
-For WordPress, Squarespace, documentation sites, or any webpage:
+### Method 1: Script Tag (Recommended)
 
 ```html
 <!-- Load React dependencies -->
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 
-<!-- Auto-initialize sphere viewer -->
+<!-- Embed sphere viewer -->
+<script>
+window.myData = {
+  session: { session_id: "your-session-id", status: "done", done: true },
+  coords: [/* your 3D coordinates */],
+  entire_cluster_results: {/* clustering data */}
+};
+</script>
 <script src="https://unpkg.com/@featrix/sphere-viewer@latest/dist/sphere-viewer.js" 
-        data-session-id="your-session-id-here"></script>
+        data-use-window-data="myData"></script>
 ```
 
-## 📦 Installation Options
+### Method 2: JavaScript API
 
-### 1. NPM Package (React/Next.js Projects)
+```html
+<script src="https://unpkg.com/@featrix/sphere-viewer@latest/dist/sphere-viewer.js"></script>
+<div id="sphere-container"></div>
+
+<script>
+const viewer = new window.FeatrixSphereViewer();
+viewer.init({
+  data: yourDataObject,
+  containerId: 'sphere-container',
+  isRotating: true,
+  pointSize: 0.05,
+  pointOpacity: 0.7
+});
+</script>
+```
+
+### Method 3: NPM Install
+
 ```bash
 npm install @featrix/sphere-viewer
 ```
 
-### 2. CDN (Any Website)
-```html
-<script src="https://unpkg.com/@featrix/sphere-viewer@latest/dist/sphere-viewer.js"></script>
-```
+## 📊 Data Format
 
-### 3. Download Direct
-Download `sphere-viewer.js` from the [releases page](https://github.com/Featrix/sphereviewer/releases).
+Your data should follow this structure:
 
-## 🎯 Features
-
-- **🌐 3D Visualization** - Interactive sphere rendering with Three.js
-- **⚡ Real-time Updates** - Live training status and progress indicators  
-- **🎨 Clustering** - Visual cluster analysis with 12+ distinct colors
-- **🔍 Interactive Selection** - Click points for detailed data views
-- **📱 Responsive** - Works on desktop and mobile devices
-- **🔗 Embeddable** - Drop into any website with a simple script tag
-- **🎛️ Customizable** - Configurable API endpoints and styling
-- **📊 Data Tables** - Detailed data exploration with sortable tables
-
-## 🛠️ API Reference
-
-### React Component Props
-
-```tsx
-interface SphereViewerProps {
-  sessionId: string;        // Required: Your session ID
-  apiBaseUrl?: string;      // Optional: Custom API endpoint
+```javascript
+{
+  session: {
+    session_id: "unique-session-id",
+    status: "done", 
+    done: true
+  },
+  coords: [
+    {
+      __featrix_row_id: 0,
+      __featrix_row_offset: 0,
+      cluster_pre: 2,
+      scalar_columns: { "feature1": 1.5, "feature2": 2.3 },
+      set_columns: { "category": "A", "type": "premium" }
+    }
+    // ... more data points
+  ],
+  entire_cluster_results: {
+    "12": {
+      cluster_labels: [2, 1, 0, 2, 1, ...] // cluster assignment per point
+    }
+  }
 }
 ```
 
-### Embeddable Script Options
+## ⚙️ Configuration Options
 
-| Attribute | Required | Description |
-|-----------|----------|-------------|
-| `data-session-id` | ✅ | The session ID to load |
-| `data-container-id` | ❌ | Target container ID (auto-created if not provided) |
-| `data-api-base-url` | ❌ | Custom API base URL |
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `data` | Object | required | Your formatted data object |
+| `containerId` | string | `'sphere-viewer-container'` | Target DOM element ID |
+| `isRotating` | boolean | `true` | Enable automatic rotation |
+| `rotationSpeed` | number | `0.1` | Rotation speed (radians/sec) |
+| `pointSize` | number | `0.05` | Size of data points |
+| `pointOpacity` | number | `0.5` | Transparency of points |
+| `animateClusters` | boolean | `false` | Enable cluster animations |
 
-### JavaScript API
+## 🎬 Training Movies
+
+For ML training visualization, provide epoch progression data:
 
 ```javascript
-// Manual initialization
-const viewer = new window.SphereViewer();
-viewer.init({
-  sessionId: 'your-session-id',
-  containerId: 'my-container',
-  apiBaseUrl: 'https://api.example.com'
-});
+const trainingData = {
+  "epoch_1": { coords: [[x1,y1,z1], [x2,y2,z2], ...] },
+  "epoch_2": { coords: [[x1,y1,z1], [x2,y2,z2], ...] },
+  // ... more epochs
+};
 
-// Update session
-viewer.update({ sessionId: 'new-session-id' });
+viewer.init({
+  data: {
+    session: { session_id: "training-session" },
+    trainingMovieData: trainingData
+  }
+});
+```
+
+## 🎨 Advanced Features
+
+### Dynamic Point Sizing
+```javascript
+viewer.updateAnimationSettings({
+  pointSize: 0.08,
+  pointOpacity: 0.9
+});
+```
+
+### Cluster Spotlight
+```javascript
+viewer.sphereRef.spotlightCluster = 2; // Highlight cluster 2
+```
+
+### Memory Trails
+```javascript
+viewer.sphereRef.showDynamicPoints = true;
+viewer.sphereRef.memoryTrailLength = 10;
+```
+
+## 🔧 API Methods
+
+```javascript
+const viewer = new FeatrixSphereViewer();
+
+// Initialize
+viewer.init(config);
+
+// Update data
+viewer.update({ data: newData });
+
+// Update settings
+viewer.updateAnimationSettings({
+  isRotating: false,
+  pointSize: 0.1
+});
 
 // Cleanup
 viewer.destroy();
 ```
 
-## 💡 Examples
+## 📱 Mobile Support
 
-### React/Next.js Integration
+- ✅ Touch gestures (pinch to zoom, drag to rotate)
+- ✅ Responsive layouts
+- ✅ Optimized rendering for mobile GPUs
+- ✅ Adaptive point sizes and UI elements
 
-```tsx
-import { SphereViewer } from '@featrix/sphere-viewer';
+## 🌐 Browser Support
 
-export default function DataVisualization() {
-  const [sessionId, setSessionId] = useState('initial-session');
-  
-  return (
-    <div className="w-full h-96 border rounded-lg">
-      <SphereViewer 
-        sessionId={sessionId}
-        apiBaseUrl="https://your-api.com"
-      />
-    </div>
-  );
-}
-```
+- Chrome 60+
+- Firefox 55+ 
+- Safari 12+
+- Edge 79+
 
-### WordPress Integration
+## 📈 Performance
 
-```html
-<!-- In your WordPress post/page -->
-<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@featrix/sphere-viewer@latest/dist/sphere-viewer.js" 
-        data-session-id="abc123"></script>
-```
+- **Bundle Size**: 567KB (minified)
+- **Gzipped**: ~180KB 
+- **Load Time**: <2s on 3G
+- **Max Points**: 5000+ (smooth 60fps)
 
-### Documentation Sites
-
-```html
-<div style="height: 500px; border: 1px solid #ddd; border-radius: 8px;">
-  <script src="https://unpkg.com/@featrix/sphere-viewer@latest/dist/sphere-viewer.js" 
-          data-session-id="demo-session"></script>
-</div>
-```
-
-## 🔧 Development
-
-### Building from Source
+## 🛠️ Development
 
 ```bash
 git clone https://github.com/Featrix/sphereviewer.git
 cd sphereviewer
 npm install
-
-# Build React package
-npm run build:package
-
-# Build embeddable script  
-npm run build:embed
-
-# Build everything
-npm run build:all
+npm run build:embed  # Build embeddable version
+npm run dev          # Development server
 ```
-
-### Project Structure
-
-```
-src/
-├── index.ts                 # NPM package entry point
-├── SphereViewerApp.tsx      # Main React component
-├── SphereEmbedded.tsx       # Embeddable version
-├── embed-entry.tsx          # Script tag entry point
-└── embed-data-access.ts     # API utilities
-
-dist/
-├── index.js                 # CommonJS build
-├── index.esm.js             # ES modules build
-├── index.d.ts               # TypeScript definitions
-└── sphere-viewer.js         # Embeddable script
-```
-
-## 📈 Performance
-
-- **Bundle Size**: ~180KB gzipped for React component
-- **Embeddable Script**: 585KB (includes React and all dependencies)
-- **Browser Support**: Chrome 60+, Firefox 55+, Safari 12+, Edge 79+
-- **Mobile**: Optimized for touch controls and mobile GPUs
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License - Copyright (c) 2024-2025 Featrix
 
-## 🆘 Support
+## 🤝 Support
 
-- **Documentation**: [Full documentation](./EMBED_README.md)
-- **Issues**: [GitHub Issues](https://github.com/Featrix/sphereviewer/issues)
-- **Email**: hello@featrix.ai
+- 📧 Email: support@featrix.com
+- 🐛 Issues: [GitHub Issues](https://github.com/Featrix/sphereviewer/issues)
+- 📖 Docs: [Full Documentation](https://github.com/Featrix/sphereviewer)
 
 ---
 
-Made with ❤️ by [Featrix](https://featrix.ai) 
+**Made with ❤️ by [Featrix](https://featrix.com)** - Professional ML Data Visualization

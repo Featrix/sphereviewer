@@ -1,3 +1,13 @@
+/**
+ * @license
+ * Featrix Sphere Viewer - Embeddable 3D Data Visualization Component
+ * 
+ * Copyright (c) 2024-2025 Featrix
+ * Licensed under the MIT License
+ * 
+ * This file contains the main React component for embedded sphere visualization.
+ */
+
 import React, { Suspense, useEffect, useRef, useState, useCallback } from "react";
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
@@ -279,9 +289,9 @@ function create_record_list(server_data: any): SphereRecord[] {
         const uuid = String(uuid4());
         const sphere_record = {
             coords: {
-                x: entry[0],
-                y: entry[1],
-                z: entry[2],
+                x: entry["0"],
+                y: entry["1"],
+                z: entry["2"],
             },
             id: uuid,
             featrix_meta: {
@@ -357,21 +367,35 @@ const TrainingMovieSphere: React.FC<{
 
         if (!sphereRef.current && trainingData && sessionProjections) {
             
-            // Initialize sphere with real coordinates data
+            // Initialize sphere for training movie (as it was working)
             console.time('🌐 SPHERE_INITIALIZATION');
             
-            // Convert coords to sphere records
-            const recordList = create_record_list(sessionProjections);
-            console.log('📊 Created record list:', recordList.length, 'points');
+            // Get training movie record IDs to filter static data
+            const firstEpoch = Object.keys(trainingData)[0];
+            const trainingRecordIds = new Set(trainingData[firstEpoch].coords.map((c: any) => c.__featrix_row_id));
+            console.log('🎬 Training movie contains', trainingRecordIds.size, 'unique records');
             
-            // Initialize sphere with the actual data
+            // Filter static data to only include records that appear in training movie
+            const filteredSessionData = {
+                ...sessionProjections,
+                coords: sessionProjections.coords.filter((record: any) => 
+                    trainingRecordIds.has(record.__featrix_row_id)
+                )
+            };
+            console.log('🎬 Filtered static data to', filteredSessionData.coords.length, 'records matching training movie');
+            
+            // Initialize sphere with filtered records that match training movie
+            const recordList = create_record_list(filteredSessionData);
+            console.log('🌐 Created record list with', recordList.length, 'points for training movie');
             sphereRef.current = initialize_sphere(containerRef.current, recordList);
             
-            // CRITICAL: Set session projections data for cluster results
-            if (sessionProjections && sessionProjections.entire_cluster_results) {
-                sphereRef.current.jsonData = sessionProjections;
-                fix_server_cluster_pre_assignments(sessionProjections);
-                remap_server_cluster_assignments(sessionProjections.entire_cluster_results);
+            // CRITICAL: Set filtered session projections data for cluster results
+            if (filteredSessionData && sessionProjections.entire_cluster_results) {
+                sphereRef.current.jsonData = {
+                    ...filteredSessionData,
+                    entire_cluster_results: sessionProjections.entire_cluster_results
+                };
+                console.log('✅ Set filtered session projections data for cluster results');
             } else {
                 console.error('❌ CRITICAL: No session projections or cluster results available');
                 return;
@@ -391,16 +415,20 @@ const TrainingMovieSphere: React.FC<{
                 };
             }
             
-            // Set up normal sphere options
+            // Set up training movie visual options
             set_animation_options(sphereRef.current, rotationEnabled, 0.02, false, sphereRef.current.jsonData);
             set_visual_options(sphereRef.current, 0.025, 0.9);
             
-            // Just render the sphere normally - no training movie
-            render_sphere(sphereRef.current);
+            // Load training movie data (like it was working)
+            load_training_movie(sphereRef.current, trainingData, lossData);
+            
+            // Start playing the training movie
+            console.log('🎬 TRAINING_MOVIE_START:', performance.now() + 'ms');
+            play_training_movie(sphereRef.current, 10);
             console.timeEnd('🌐 SPHERE_INITIALIZATION');
             
-            // Sphere ready
-            console.log('🎉 SPHERE_READY:', performance.now() + 'ms');
+            // Training movie ready
+            console.log('🎉 TRAINING_MOVIE_READY:', performance.now() + 'ms');
             
             // Notify parent that sphere is ready
             if (onReady) {
@@ -438,7 +466,7 @@ const TrainingMovieSphere: React.FC<{
 };
 
 const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) => {
-    // NOTE: Just showing the regular sphere with the logistics data
+    // NOTE: Loading training movie from API (the working version)
     const [trainingData, setTrainingData] = useState<any>(null);
     const [lossData, setLossData] = useState<any>(null);
     const [sessionProjections, setSessionProjections] = useState<any>(null);
@@ -519,21 +547,26 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 console.log('📊 STATIC_FILE_LOADED:', performance.now() + 'ms');
                 console.log('🎯 Training movie data structure:', trainingMovieData ? Object.keys(trainingMovieData) : 'NULL');
                 
-                // TRAINING MOVIE: Use the real data structure as it was working yesterday
-                if (trainingMovieData) {
-                    console.log('✅ Loading training movie with real data structure:', Object.keys(trainingMovieData));
+                // TRAINING MOVIE: Load from API - ignore deprecated cluster_pre, use finalClusterResults
+                console.log('🔗 Loading training movie from API (cluster_pre ignored - using finalClusterResults)');
+                
+                // Use the session ID that matches the static file  
+                const apiTrainingData = await fetch_training_metrics(sessionId, apiBaseUrl);
+                
+                if (apiTrainingData && apiTrainingData.epoch_projections) {
+                    console.log('✅ Got training movie data from API:', Object.keys(apiTrainingData.epoch_projections).length, 'epochs');
+                    console.log('✅ Using finalClusterResults for cluster assignments, ignoring deprecated cluster_pre');
                     
-                    // Pass the whole data structure - let the training movie function figure it out
-                    setTrainingData(trainingMovieData);
-                    setSessionProjections(trainingMovieData);
+                    setTrainingData(apiTrainingData.epoch_projections);
+                    setSessionProjections(trainingMovieData); // Use static file for cluster results
                     
-                    // Check for training metrics
-                    if (trainingMovieData.training_metrics) {
-                        setLossData(trainingMovieData.training_metrics);
+                    // Use API training metrics for loss plot
+                    if (apiTrainingData.training_metrics) {
+                        setLossData(apiTrainingData.training_metrics);
                     }
                 } else {
-                    console.error('❌ No training movie data loaded');
-                    throw new Error('Failed to load training movie data');
+                    console.error('❌ No epoch_projections in API response');
+                    throw new Error('No training movie data from API');
                 }
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'Failed to load training movie dump');
@@ -1289,13 +1322,13 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         }}
                         onFrameUpdate={(info) => {
                             // DEBUG: Log frameInfo for troubleshooting focus dropdown
-                            console.log('🎯 Frame update received:', {
-                                current: info.current,
-                                total: info.total,
-                                visible: info.visible,
-                                epoch: info.epoch,
-                                type: typeof info.visible
-                            });
+                            // console.log('🎯 Frame update received:', {
+                            //     current: info.current,
+                            //     total: info.total,
+                            //     visible: info.visible,
+                            //     epoch: info.epoch,
+                            //     type: typeof info.visible
+                            // });
                             
                             // Detect restart (frame went back to 1 from higher number)
                             const prevFrame = frameInfo?.current || 0;
@@ -1349,11 +1382,11 @@ interface SphereEmbeddedProps {
 }
 
 export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity, onSphereReady }: SphereEmbeddedProps) {
-    // SPHERE VIEWER: Show the logistics data as a regular 3D sphere visualization
+    // TRAINING MOVIE: Load epoch projections from API and show training progression - FIXED DATA MAPPING
     return (
         <div className="sphere-embedded-container">
             <div className="mx-auto">
-                <TrainingMovie sessionId="static-dump" apiBaseUrl={apiBaseUrl} />
+                <TrainingMovie sessionId="20250716-141152_ea6613" apiBaseUrl={apiBaseUrl} />
             </div>
         </div>
     );

@@ -1,3 +1,13 @@
+/**
+ * @license
+ * Featrix Sphere Viewer - Embeddable 3D Data Visualization Component
+ * 
+ * Copyright (c) 2024-2025 Featrix
+ * Licensed under the MIT License
+ * 
+ * This file contains the main entry point for the embeddable sphere viewer component.
+ */
+
 import React from 'react';
 // Use global ReactDOM from CDN (webpack external)
 declare global {

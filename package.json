@@ -1,12 +1,11 @@
 {
   "name": "@featrix/sphere-viewer",
   "version": "1.0.0",
-  "description": "Embeddable 3D sphere data visualization component using Three.js and React",
-  "main": "dist/index.js",
-  "module": "dist/index.esm.js",
-  "types": "dist/index.d.ts",
+  "description": "Embeddable 3D sphere data visualization component using Three.js and React. Copyright (c) 2024-2025 Featrix.",
+  "main": "dist/sphere-viewer.js",
   "files": [
-    "dist",
+    "dist/sphere-viewer.js",
+    "dist/sphere-viewer.js.LICENSE.txt",
     "README.md",
     "LICENSE"
   ],
@@ -16,10 +15,7 @@
     "start": "next start",
     "lint": "next lint",
     "build:embed": "webpack --mode production && cp dist/sphere-viewer.js sphere-viewer.js && echo '🔥 CACHE BUSTING: Copied fresh build to root'",
-    "build:types": "tsc --project tsconfig.package.json --emitDeclarationOnly",
-    "build:esm": "webpack --config webpack.package.js --env module=esm",
-    "build:cjs": "webpack --config webpack.package.js --env module=cjs",
-    "build:package": "npm run build:types && npm run build:esm && npm run build:cjs",
+    "prepublishOnly": "npm run build:embed",
     "deploy": "./deploy-to-bits.sh",
     "deploy:full": "npm run build:embed && npm run deploy"
   },
@@ -33,11 +29,11 @@
     "embeddable",
     "component"
   ],
-  "author": "Featrix",
+  "author": "Featrix <support@featrix.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Featrix/sphereviewer.git"
+    "url": "git+https://github.com/Featrix/sphereviewer.git"
   },
   "homepage": "https://github.com/Featrix/sphereviewer#readme",
   "bugs": {
