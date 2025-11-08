@@ -370,36 +370,36 @@ const TrainingMovieSphere: React.FC<{
             // Initialize sphere for training movie (as it was working)
             console.time('🌐 SPHERE_INITIALIZATION');
             
-            // Get training movie record IDs to filter static data
+            // Get training movie record IDs from first epoch
             const firstEpoch = Object.keys(trainingData)[0];
-            const trainingRecordIds = new Set(trainingData[firstEpoch].coords.map((c: any) => c.__featrix_row_id));
+            const firstEpochData = trainingData[firstEpoch];
+            const trainingRecordIds = new Set(firstEpochData.coords.map((c: any) => c.__featrix_row_id || c.__featrix_row_offset));
             console.log('🎬 Training movie contains', trainingRecordIds.size, 'unique records');
             
-            // Filter static data to only include records that appear in training movie
+            // Extract cluster results from first epoch (each epoch has its own cluster results)
+            const clusterResults = firstEpochData.entire_cluster_results || sessionProjections.entire_cluster_results || {};
+            console.log('🎬 Cluster results available:', Object.keys(clusterResults).length > 0 ? `Yes (${Object.keys(clusterResults).length} cluster counts)` : 'No');
+            
+            // Use the first epoch's coords as the base data structure
+            // The training movie will update these coords over time
             const filteredSessionData = {
                 ...sessionProjections,
-                coords: sessionProjections.coords.filter((record: any) => 
-                    trainingRecordIds.has(record.__featrix_row_id)
-                )
+                coords: firstEpochData.coords || [],
+                entire_cluster_results: clusterResults
             };
-            console.log('🎬 Filtered static data to', filteredSessionData.coords.length, 'records matching training movie');
+            console.log('🎬 Using first epoch data with', filteredSessionData.coords.length, 'records for training movie');
             
             // Initialize sphere with filtered records that match training movie
             const recordList = create_record_list(filteredSessionData);
             console.log('🌐 Created record list with', recordList.length, 'points for training movie');
             sphereRef.current = initialize_sphere(containerRef.current, recordList);
             
-            // CRITICAL: Set filtered session projections data for cluster results
-            if (filteredSessionData && sessionProjections.entire_cluster_results) {
-                sphereRef.current.jsonData = {
-                    ...filteredSessionData,
-                    entire_cluster_results: sessionProjections.entire_cluster_results
-                };
-                console.log('✅ Set filtered session projections data for cluster results');
-            } else {
-                console.error('❌ CRITICAL: No session projections or cluster results available');
-                return;
-            }
+            // Set session projections data for training movie with cluster results from first epoch
+            sphereRef.current.jsonData = {
+                ...filteredSessionData,
+                entire_cluster_results: clusterResults
+            };
+            console.log('✅ Set session projections data for training movie with cluster results');
             
             console.log('🌐 SPHERE_CREATED:', performance.now() + 'ms');
             
@@ -536,29 +536,41 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         const loadTrainingData = async () => {
             try {
                 setLoading(true);
-                console.time('📊 STATIC_FILE_LOADING');
-                console.log('📊 LOADING TRAINING MOVIE FROM STATIC FILE:', performance.now() + 'ms');
-                
-                // LOAD FROM STATIC FILE: Training movie dump (no API calls!)
-                const response = await fetch('logistics-featrix-data.json');
-                const trainingMovieData = await response.json();
-                
-                console.timeEnd('📊 STATIC_FILE_LOADING');
-                console.log('📊 STATIC_FILE_LOADED:', performance.now() + 'ms');
-                console.log('🎯 Training movie data structure:', trainingMovieData ? Object.keys(trainingMovieData) : 'NULL');
                 
                 // TRAINING MOVIE: Load from API - ignore deprecated cluster_pre, use finalClusterResults
                 console.log('🔗 Loading training movie from API (cluster_pre ignored - using finalClusterResults)');
                 
-                // Use the session ID that matches the static file  
+                // Use the session ID to fetch training data from API
                 const apiTrainingData = await fetch_training_metrics(sessionId, apiBaseUrl);
                 
                 if (apiTrainingData && apiTrainingData.epoch_projections) {
                     console.log('✅ Got training movie data from API:', Object.keys(apiTrainingData.epoch_projections).length, 'epochs');
                     console.log('✅ Using finalClusterResults for cluster assignments, ignoring deprecated cluster_pre');
                     
+                    // Try to fetch final projections for cluster results
+                    let clusterResults = {};
+                    try {
+                        const baseUrl = apiBaseUrl || (window.location.hostname === 'localhost' 
+                            ? window.location.origin + '/proxy/featrix'
+                            : 'https://sphere-api.featrix.com');
+                        const projectionsResponse = await fetch(`${baseUrl}/compute/session/${sessionId}/projections`);
+                        if (projectionsResponse.ok) {
+                            const projectionsData = await projectionsResponse.json();
+                            if (projectionsData.projections?.entire_cluster_results) {
+                                clusterResults = projectionsData.projections.entire_cluster_results;
+                                console.log('✅ Found cluster results in final projections:', Object.keys(clusterResults).length, 'cluster counts');
+                            }
+                        }
+                    } catch (err) {
+                        console.warn('⚠️ Could not fetch final projections for cluster results:', err);
+                    }
+                    
                     setTrainingData(apiTrainingData.epoch_projections);
-                    setSessionProjections(trainingMovieData); // Use static file for cluster results
+                    // Use API data for session projections with cluster results
+                    setSessionProjections({
+                        ...apiTrainingData,
+                        entire_cluster_results: clusterResults
+                    });
                     
                     // Use API training metrics for loss plot
                     if (apiTrainingData.training_metrics) {
@@ -569,14 +581,15 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     throw new Error('No training movie data from API');
                 }
             } catch (err) {
-                setError(err instanceof Error ? err.message : 'Failed to load training movie dump');
+                console.error('❌ Error loading training movie:', err);
+                setError(err instanceof Error ? err.message : 'Failed to load training movie');
             } finally {
                 setLoading(false);
             }
         };
 
         loadTrainingData();
-    }, []); // No dependencies - just load the static file once
+    }, [sessionId, apiBaseUrl]); // Load when sessionId or apiBaseUrl changes
 
     // Handle dynamic visualization feature changes
     useEffect(() => {

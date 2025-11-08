@@ -62,6 +62,29 @@ def index():
         </html>
         """, 404
 
+@app.route('/training', strict_slashes=False)
+@app.route('/training/', strict_slashes=False)
+@app.route('/training/<session_id>', strict_slashes=False)
+def training(session_id=None):
+    """Serve the training movie viewer page"""
+    html_file = STATIC_DIR / 'training.html'
+    if html_file.exists():
+        return send_from_directory(STATIC_DIR, 'training.html')
+    else:
+        return f"""
+        <html>
+            <head><title>Training Movie Viewer</title></head>
+            <body style="font-family: Arial, sans-serif; padding: 40px;">
+                <h1>🎬 Training Movie Viewer</h1>
+                <p><strong>training.html</strong> not found in {STATIC_DIR}</p>
+                <p>Available HTML files:</p>
+                <ul>
+                    {''.join([f'<li><a href="/{f.name}">{f.name}</a></li>' for f in STATIC_DIR.glob('*.html')])}
+                </ul>
+            </body>
+        </html>
+        """, 404
+
 @app.route('/proxy/external', methods=['GET', 'POST', 'PUT', 'DELETE'])
 def proxy_external():
     """
@@ -242,10 +265,20 @@ def health():
         'featrix_api': FEATRIX_API_BASE
     })
 
-# Serve static files (sphere-viewer.js, etc.)
+# Custom 404 handler to return JSON instead of HTML
+@app.errorhandler(404)
+def not_found(error):
+    """Return JSON for 404 errors instead of HTML"""
+    return jsonify({'error': 'File not found'}), 404
+
+# Serve static files (sphere-viewer.js, etc.) - must be last to avoid conflicts
 @app.route('/<path:filename>')
 def serve_static(filename):
     """Serve static files from the current directory"""
+    # Skip if it's a route we've already handled
+    if filename in ['training'] or filename.startswith('training/'):
+        return jsonify({'error': 'File not found'}), 404
+    
     if Path(STATIC_DIR / filename).exists():
         return send_from_directory(STATIC_DIR, filename)
     else:

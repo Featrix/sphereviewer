@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎬 Featrix Training Movie Viewer</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        .header {
+            background: #2a2a2a;
+            border-bottom: 2px solid #444;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 1.5em;
+            color: #4ade80;
+        }
+        .session-input {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex: 1;
+            max-width: 600px;
+        }
+        .session-input input {
+            flex: 1;
+            padding: 10px 15px;
+            background: #1a1a1a;
+            border: 2px solid #444;
+            border-radius: 6px;
+            color: #e0e0e0;
+            font-size: 14px;
+        }
+        .session-input input:focus {
+            outline: none;
+            border-color: #4ade80;
+        }
+        .session-input button {
+            padding: 10px 20px;
+            background: #4ade80;
+            color: #1a1a1a;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .session-input button:hover {
+            background: #22c55e;
+        }
+        .session-input button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        .status {
+            padding: 10px 15px;
+            background: #2a2a2a;
+            border-radius: 6px;
+            font-size: 14px;
+            min-width: 200px;
+            text-align: center;
+        }
+        .status.loading {
+            color: #fbbf24;
+        }
+        .status.error {
+            color: #ef4444;
+        }
+        .status.success {
+            color: #4ade80;
+        }
+        .session-display {
+            padding: 8px 12px;
+            background: #2a2a2a;
+            border-radius: 6px;
+            font-size: 12px;
+            font-family: monospace;
+            color: #4ade80;
+            min-width: 200px;
+            text-align: center;
+        }
+        .sphere-container {
+            flex: 1;
+            position: relative;
+            min-height: 0;
+            background: #1a1a1a;
+        }
+        .error-message {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            padding: 40px;
+            text-align: center;
+            color: #ef4444;
+        }
+        .error-message h2 {
+            margin: 0 0 20px 0;
+        }
+        .error-message p {
+            color: #999;
+            max-width: 600px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎬 Training Movie Viewer</h1>
+            <div class="session-input">
+                <input 
+                    type="text" 
+                    id="sessionIdInput" 
+                    placeholder="Enter Featrix Session ID (e.g. 20251103-184708_3dde68)"
+                    value="20251103-184708_3dde68"
+                />
+                <button id="loadButton" onclick="loadTrainingMovie()">Load Training Movie</button>
+            </div>
+            <div id="sessionDisplay" class="session-display">Session: <span id="currentSessionId">-</span></div>
+            <div id="status" class="status">Ready</div>
+        </div>
+        <div class="sphere-container">
+            <div id="sphere-viewer-container"></div>
+            <div id="error-container" style="display: none;"></div>
+        </div>
+    </div>
+
+    <!-- Load React dependencies first -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="/sphere-viewer.js"></script>
+    <script>
+        let viewer = null;
+        let currentSessionId = null;
+
+        // Default session ID
+        const DEFAULT_SESSION_ID = '20251103-184708_3dde68';
+
+        // Get session ID from URL if provided
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionIdFromUrl = urlParams.get('session_id') || urlParams.get('id');
+        if (sessionIdFromUrl) {
+            document.getElementById('sessionIdInput').value = sessionIdFromUrl;
+            currentSessionId = sessionIdFromUrl;
+        } else {
+            // Also check if we're on /training/<session_id> route
+            const pathParts = window.location.pathname.split('/');
+            if (pathParts.length > 2 && pathParts[1] === 'training' && pathParts[2]) {
+                const sessionIdFromPath = pathParts[2];
+                document.getElementById('sessionIdInput').value = sessionIdFromPath;
+                currentSessionId = sessionIdFromPath;
+            } else {
+                // Use default session ID
+                document.getElementById('sessionIdInput').value = DEFAULT_SESSION_ID;
+                currentSessionId = DEFAULT_SESSION_ID;
+            }
+        }
+
+        // Update session display
+        function updateSessionDisplay(sessionId) {
+            const displayEl = document.getElementById('currentSessionId');
+            if (displayEl) {
+                displayEl.textContent = sessionId || '-';
+            }
+        }
+        updateSessionDisplay(currentSessionId);
+
+        function setStatus(message, type = 'info') {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = `status ${type}`;
+        }
+
+        function showError(message) {
+            const errorContainer = document.getElementById('error-container');
+            errorContainer.innerHTML = `
+                <div class="error-message">
+                    <h2>❌ Error</h2>
+                    <p>${message}</p>
+                </div>
+            `;
+            errorContainer.style.display = 'block';
+            document.getElementById('sphere-viewer-container').style.display = 'none';
+        }
+
+        function hideError() {
+            document.getElementById('error-container').style.display = 'none';
+            document.getElementById('sphere-viewer-container').style.display = 'block';
+        }
+
+        async function waitForFeatrixSphereViewer(maxWait = 5000) {
+            const startTime = Date.now();
+            while (typeof window.FeatrixSphereViewer === 'undefined') {
+                if (Date.now() - startTime > maxWait) {
+                    throw new Error('FeatrixSphereViewer not found. Make sure sphere-viewer.js is loaded.');
+                }
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            return window.FeatrixSphereViewer;
+        }
+
+        async function loadTrainingMovie() {
+            const sessionId = document.getElementById('sessionIdInput').value.trim();
+            
+            if (!sessionId) {
+                setStatus('Please enter a Session ID', 'error');
+                return;
+            }
+
+            try {
+                setStatus('Loading training movie...', 'loading');
+                hideError();
+                
+                // Destroy existing viewer if any
+                if (viewer) {
+                    try {
+                        viewer.destroy();
+                    } catch (e) {
+                        console.warn('Error destroying viewer:', e);
+                    }
+                    viewer = null;
+                }
+
+                // Clear container
+                const container = document.getElementById('sphere-viewer-container');
+                container.innerHTML = '';
+
+                // Wait for sphere-viewer.js to be ready
+                await waitForFeatrixSphereViewer();
+
+                // Create initial_data with just session ID
+                // FeatrixSphereEmbedded will detect this and load TrainingMovie component
+                const initialData = {
+                    session: {
+                        session_id: sessionId
+                    }
+                };
+
+                // Initialize the sphere viewer using the class API
+                // Use proxy endpoint for localhost to avoid CORS issues
+                const apiBaseUrl = window.location.hostname === 'localhost' 
+                    ? window.location.origin + '/proxy/featrix'
+                    : 'https://sphere-api.featrix.com';
+                
+                viewer = new window.FeatrixSphereViewer();
+                viewer.init({
+                    data: initialData,
+                    containerId: 'sphere-viewer-container',
+                    apiBaseUrl: apiBaseUrl,
+                    onSphereReady: (ref) => {
+                        console.log('Training movie sphere ready:', ref);
+                        setStatus(`✅ Loaded: ${sessionId}`, 'success');
+                    }
+                });
+
+                currentSessionId = sessionId;
+                updateSessionDisplay(sessionId);
+
+                // Update URL without reload
+                const newUrl = `/training/${sessionId}`;
+                window.history.pushState({ sessionId }, '', newUrl);
+
+            } catch (error) {
+                console.error('Error loading training movie:', error);
+                setStatus(`Error: ${error.message}`, 'error');
+                showError(error.message);
+            }
+        }
+
+        // Load automatically if session ID is in URL
+        if (currentSessionId) {
+            // Wait for all scripts to load
+            window.addEventListener('load', () => {
+                // Give scripts time to execute
+                setTimeout(() => {
+                    loadTrainingMovie();
+                }, 1000);
+            });
+        }
+
+        // Allow Enter key to load
+        document.getElementById('sessionIdInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                loadTrainingMovie();
+            }
+        });
+    </script>
+</body>
+</html>
+

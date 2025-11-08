@@ -8,8 +8,20 @@
  * Simplified data access for embeddable version
  */
 
+// Helper to get the API base URL - use proxy if on localhost
+function getApiBaseUrl(apiBaseUrl?: string): string {
+    if (apiBaseUrl) {
+        return apiBaseUrl;
+    }
+    // If we're on localhost, use the proxy endpoint
+    if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+        return window.location.origin + '/proxy/featrix';
+    }
+    return 'https://sphere-api.featrix.com';
+}
+
 export async function fetch_session_data(session_id: string, apiBaseUrl?: string) {
-    const baseUrl = apiBaseUrl || 'https://sphere-api.featrix.com';
+    const baseUrl = getApiBaseUrl(apiBaseUrl);
     const data_raw = await fetch(`${baseUrl}/compute/session/${session_id}`);
 
     const data = await data_raw.json();
@@ -17,19 +29,28 @@ export async function fetch_session_data(session_id: string, apiBaseUrl?: string
 }
 
 export async function fetch_session_projections(session_id: string, apiBaseUrl?: string) {
-    const baseUrl = apiBaseUrl || 'https://sphere-api.featrix.com';
+    const baseUrl = getApiBaseUrl(apiBaseUrl);
     const data_raw = await fetch(`${baseUrl}/compute/session/${session_id}/projections`);
     const data = await data_raw.json();
     return data.projections;
 }
 
 export async function fetch_training_metrics(session_id: string, apiBaseUrl?: string) {
-    const baseUrl = apiBaseUrl || 'https://sphere-api.featrix.com';
+    const baseUrl = getApiBaseUrl(apiBaseUrl);
     
     // Fetch epoch projections (3D coordinates) - CRITICAL for training movie
     console.time('🔗 API_EPOCH_PROJECTIONS');
     console.log('🔗 API_CALL_START: epoch_projections');
-    const projectionsResponse = await fetch(`${baseUrl}/compute/session/${session_id}/epoch_projections`);
+    const projectionsUrl = `${baseUrl}/compute/session/${session_id}/epoch_projections`;
+    console.log('🔗 Fetching from:', projectionsUrl);
+    const projectionsResponse = await fetch(projectionsUrl);
+    
+    if (!projectionsResponse.ok) {
+        const errorText = await projectionsResponse.text();
+        console.error('❌ API Error:', projectionsResponse.status, errorText);
+        throw new Error(`API request failed: ${projectionsResponse.status} ${projectionsResponse.statusText}`);
+    }
+    
     const projectionsData = await projectionsResponse.json();
     console.timeEnd('🔗 API_EPOCH_PROJECTIONS');
     console.log('🎯 DEBUG: API Response keys:', Object.keys(projectionsData));
@@ -52,7 +73,9 @@ export async function fetch_training_metrics(session_id: string, apiBaseUrl?: st
     try {
         console.time('🔗 API_TRAINING_METRICS');
         console.log('🔗 API_CALL_START: training_metrics');
-        const metricsResponse = await fetch(`${baseUrl}/compute/session/${session_id}/training_metrics`);
+        const metricsUrl = `${baseUrl}/compute/session/${session_id}/training_metrics`;
+        console.log('🔗 Fetching training metrics from:', metricsUrl);
+        const metricsResponse = await fetch(metricsUrl);
         if (metricsResponse.ok) {
             trainingMetrics = await metricsResponse.json();
             console.timeEnd('🔗 API_TRAINING_METRICS');
