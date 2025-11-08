@@ -1381,13 +1381,211 @@ interface SphereEmbeddedProps {
     onSphereReady?: (sphereRef: any) => void;
 }
 
-export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity, onSphereReady }: SphereEmbeddedProps) {
-    // TRAINING MOVIE: Load epoch projections from API and show training progression - FIXED DATA MAPPING
-    return (
-        <div className="sphere-embedded-container">
-            <div className="mx-auto">
-                <TrainingMovie sessionId="20250716-141152_ea6613" apiBaseUrl={apiBaseUrl} />
+// Final Sphere View Component - shows the completed sphere with all points
+const FinalSphereView: React.FC<{
+    data: any;
+    isRotating?: boolean;
+    rotationSpeed?: number;
+    animateClusters?: boolean;
+    pointSize?: number;
+    pointOpacity?: number;
+    onSphereReady?: (sphereRef: any) => void;
+}> = ({ data, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity, onSphereReady }) => {
+    // Process the data to create recordList and columnTypes
+    const [recordList, setRecordList] = useState<SphereRecord[]>([]);
+    const [columnTypes, setColumnTypes] = useState<any>(null);
+    const [jsonData, setJsonData] = useState<any>(null);
+    
+    useEffect(() => {
+        if (!data || !data.coords || data.coords.length === 0) {
+            return;
+        }
+        
+        // Remap cluster assignments for consistency
+        if (data.entire_cluster_results) {
+            remap_server_cluster_assignments(data.entire_cluster_results);
+        }
+        
+        // Fix cluster_pre assignments
+        if (data.coords) {
+            data.coords.forEach((entry: any) => {
+                if (data.entire_cluster_results && data.entire_cluster_results['12']) {
+                    const rowOffset = entry.__featrix_row_offset;
+                    if (rowOffset !== undefined && data.entire_cluster_results['12'].cluster_labels) {
+                        entry.cluster_pre = data.entire_cluster_results['12'].cluster_labels[rowOffset];
+                    }
+                }
+            });
+        }
+        
+        // Create record list
+        const records = create_record_list(data);
+        setRecordList(records);
+        
+        // Get column types
+        const types = getColumnTypes(data);
+        setColumnTypes(types);
+        
+        // Set jsonData
+        setJsonData(data);
+        
+        console.log('✅ Final sphere data processed:', {
+            points: records.length,
+            clusters: Object.keys(data.entire_cluster_results || {}).length
+        });
+    }, [data]);
+    
+    // Get column types helper
+    const getColumnTypes = (projections: any) => {
+        try {
+            const d: any = {};
+            const items = projections.coords;
+            for (const entry of items) {
+                if (entry.scalar_columns) {
+                    const ks = Object.keys(entry.scalar_columns);
+                    for (const k of ks) {
+                        if (d[k] === undefined) {
+                            d[k] = 'scalar';
+                        }
+                    }
+                }
+                if (entry.set_columns) {
+                    const ks = Object.keys(entry.set_columns);
+                    for (const k of ks) {
+                        if (d[k] === undefined) {
+                            d[k] = 'set';
+                        }
+                    }
+                }
+                if (entry.string_columns) {
+                    const ks = Object.keys(entry.string_columns);
+                    for (const k of ks) {
+                        if (d[k] === undefined) {
+                            d[k] = 'string';
+                        }
+                    }
+                }
+            }
+            return d;
+        } catch (error) {
+            console.error("Error getting column types:", error);
+            return null;
+        }
+    };
+    
+    // Create record list helper
+    const create_record_list = (server_data: any): SphereRecord[] => {
+        const recordIndex: SphereRecord[] = [];
+        if (!server_data || !server_data.coords) {
+            return recordIndex;
+        }
+        
+        for (const entry of server_data.coords) {
+            const uuid = String(uuid4());
+            const sphere_record: SphereRecord = {
+                coords: {
+                    x: entry["0"],
+                    y: entry["1"],
+                    z: entry["2"],
+                },
+                id: uuid,
+                featrix_meta: {
+                    cluster_pre: entry.cluster_pre,
+                    webgl_id: null,
+                    __featrix_row_id: entry.__featrix_row_id,
+                    __featrix_row_offset: entry.__featrix_row_offset,
+                },
+                original: {
+                    ...(entry.set_columns || {}),
+                    ...(entry.scalar_columns || {}),
+                    ...(entry.string_columns || {})
+                },
+            };
+            recordIndex.push(sphere_record);
+        }
+        return recordIndex;
+    };
+    
+    // Remap cluster assignments helper
+    const remap_server_cluster_assignments = (clusterInfoByClusterCount: any) => {
+        if (!clusterInfoByClusterCount) return;
+        const max_clusters = Object.keys(clusterInfoByClusterCount).length;
+        for (let base_n_clusters = 2; base_n_clusters < max_clusters + 1; base_n_clusters++) {
+            const base_clusters = clusterInfoByClusterCount[base_n_clusters]?.cluster_labels;
+            const new_clusters = clusterInfoByClusterCount[base_n_clusters + 1]?.cluster_labels;
+            if (!base_clusters || !new_clusters) continue;
+            
+            const remap = remap_cluster_assignments(base_clusters, new_clusters);
+            clusterInfoByClusterCount[base_n_clusters + 1].cluster_labels = new_clusters.map((label: number) => remap[label]);
+        }
+    };
+    
+    if (!recordList.length || !jsonData) {
+        return (
+            <div style={{ padding: '40px', textAlign: 'center', color: '#666' }}>
+                <p>Processing sphere data...</p>
             </div>
-        </div>
+        );
+    }
+    
+    return (
+        <FeatrixEmbeddingsExplorer
+            recordList={recordList}
+            columnTypes={columnTypes}
+            data={data}
+            jsonData={jsonData}
+            isRotating={isRotating}
+            rotationSpeed={rotationSpeed}
+            animateClusters={animateClusters}
+            pointSize={pointSize}
+            pointOpacity={pointOpacity}
+            onSphereReady={onSphereReady}
+        />
     );
+};
+
+export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity, onSphereReady }: SphereEmbeddedProps) {
+    // Check if we have final sphere data (coords + cluster_results) or just a session ID
+    const hasFinalData = initial_data?.coords && initial_data?.coords.length > 0 && initial_data?.entire_cluster_results;
+    const sessionId = initial_data?.session?.session_id;
+    
+    // If we have final sphere data, show the final sphere
+    // Otherwise, show training movie (if sessionId provided)
+    if (hasFinalData) {
+        // Show final sphere with provided data
+        return (
+            <div className="sphere-embedded-container">
+                <div className="mx-auto">
+                    <FinalSphereView 
+                        data={initial_data}
+                        isRotating={isRotating}
+                        rotationSpeed={rotationSpeed}
+                        animateClusters={animateClusters}
+                        pointSize={pointSize}
+                        pointOpacity={pointOpacity}
+                        onSphereReady={onSphereReady}
+                    />
+                </div>
+            </div>
+        );
+    } else if (sessionId) {
+        // Show training movie for the provided session ID
+        return (
+            <div className="sphere-embedded-container">
+                <div className="mx-auto">
+                    <TrainingMovie sessionId={sessionId} apiBaseUrl={apiBaseUrl} />
+                </div>
+            </div>
+        );
+    } else {
+        // No data and no session ID - show error
+        return (
+            <div className="sphere-embedded-container">
+                <div style={{ padding: '40px', textAlign: 'center', color: '#666' }}>
+                    <p>No data or session ID provided</p>
+                    <p style={{ fontSize: '12px', marginTop: '10px' }}>Please provide sphere data or a session ID</p>
+                </div>
+            </div>
+        );
+    }
 } 

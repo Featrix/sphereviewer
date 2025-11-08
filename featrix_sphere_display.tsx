@@ -714,7 +714,13 @@ const FeatrixSphereMouseOverPanel = ({ sphereRef, sessionId, selectedRecords }: 
                 <div className="flex gap-4">
                     {
                         selectedRecords.length > 0 &&
-                        <Button outline onClick={onResetClick}>clear all</Button>
+                        <button 
+                            onClick={onResetClick}
+                            className="bg-white hover:bg-gray-50 border border-gray-300 rounded-lg px-3 py-1.5 text-sm shadow-sm"
+                            style={{ cursor: 'pointer', width: 'auto', flexShrink: 0 }}
+                        >
+                            clear all
+                        </button>
                     }
                 </div>
             </div>
@@ -770,8 +776,14 @@ const ChevronToggleGroup = ({ sphereRef, data, jsonData, columnTypes }: any) => 
         <div className="text-gray-500 flex flex-col gap-6">
             <div className="flex w-full flex-wrap items-center justify-between gap-4 border-b border-zinc-950/10 pb-2 dark:border-white/10">
                 <Subheading>Color Settings</Subheading>
-                <div className="flex gap-4">
-                    <Button outline onClick={clearColors}>reset</Button>
+                <div className="flex gap-4 flex-shrink-0">
+                    <button 
+                        onClick={clearColors}
+                        className="bg-white hover:bg-gray-50 border border-gray-300 rounded-lg px-3 py-1.5 text-sm shadow-sm whitespace-nowrap"
+                        style={{ cursor: 'pointer' }}
+                    >
+                        reset
+                    </button>
                 </div>
             </div>
 
@@ -932,22 +944,26 @@ export function find_best_cluster_number(clusterInfoByClusterCount: any): string
 const FeatrixEmbeddingsExplorer: React.FC<Props> = ({ recordList, columnTypes, data, jsonData, isRotating = true, rotationSpeed = 0.1, animateClusters = false, pointSize = 0.05, pointOpacity = 0.5, onSphereReady }: any) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const sphereRef = useRef<SphereData | null>(null);
+    const jsonDataRef = useRef<any>(null);
+    const [isInitialized, setIsInitialized] = useState<boolean>(false);
 
     const [isAnimating, setIsAnimating] = useState<boolean>(false);
     const [selectedRecords, setselectedRecords] = useState<any[]>([]);
 
+    // Store jsonData in ref and initialize sphere when ready
     useEffect(() => {
-        if (!jsonData) return;
-        if (!containerRef.current) {
-            return;
+        if (jsonData && !jsonDataRef.current) {
+            jsonDataRef.current = jsonData;
         }
-
-        if (!sphereRef.current) {
+        
+        // Initialize sphere once when jsonData is available
+        if (jsonDataRef.current && containerRef.current && !sphereRef.current && !isInitialized) {
+            setIsInitialized(true);
             sphereRef.current = initialize_sphere(containerRef.current, recordList);
             render_sphere(sphereRef.current);
             
             // Set up animation options
-            set_animation_options(sphereRef.current, isRotating, rotationSpeed, animateClusters, jsonData);
+            set_animation_options(sphereRef.current, isRotating, rotationSpeed, animateClusters, jsonDataRef.current);
             
             // Set up visual options
             set_visual_options(sphereRef.current, pointSize, pointOpacity);
@@ -967,17 +983,27 @@ const FeatrixEmbeddingsExplorer: React.FC<Props> = ({ recordList, columnTypes, d
                     // make sure the FeatrixSphereMouseOverPanel component re-renders.
                     setselectedRecords([...event.detail]);
                 }
-            )
-        }
+            );
 
-        if (jsonData?.projections?.entire_cluster_results) {
-            const best_cluster_number = find_best_cluster_number(jsonData.projections?.entire_cluster_results);
-            console.log("best cluster number = ", best_cluster_number);
-            change_cluster_count(sphereRef.current, jsonData, best_cluster_number);
-            notify_highlights_changed(sphereRef.current);
-            render_sphere(sphereRef.current);
+            // Only set initial cluster count when sphere is first initialized
+            const dataToUse = jsonDataRef.current;
+            if (dataToUse?.projections?.entire_cluster_results || dataToUse?.entire_cluster_results) {
+                const clusterResults = dataToUse?.projections?.entire_cluster_results || dataToUse?.entire_cluster_results;
+                const best_cluster_number = find_best_cluster_number(clusterResults);
+                console.log("best cluster number = ", best_cluster_number);
+                
+                // Normalize jsonData structure for change_cluster_count - it expects entire_cluster_results at top level
+                const normalizedJsonData = {
+                    ...dataToUse,
+                    entire_cluster_results: dataToUse?.entire_cluster_results || dataToUse?.projections?.entire_cluster_results
+                };
+                
+                change_cluster_count(sphereRef.current, normalizedJsonData, best_cluster_number);
+                notify_highlights_changed(sphereRef.current);
+                render_sphere(sphereRef.current);
+            }
         }
-    }, [jsonData]);
+    }, [jsonData, recordList]); // Depend on jsonData and recordList, but guarded by initializedRef to prevent re-init
 
     const onButtonClick = () => {
         if (!sphereRef.current) return;
@@ -998,32 +1024,49 @@ const FeatrixEmbeddingsExplorer: React.FC<Props> = ({ recordList, columnTypes, d
         <>
             <div className="flex flex-col w-auto gap-4 xl:flex-row">
                 <div className="bg-gray-100 xp-4 rounded-lg shadow-lg w-auto sm:w-[35rem] sm:mx-auto relative h-[25rem] sm:h-[35rem] overflow-hidden">
-                    {
-                        jsonData ? (
-                            <>
-                                <div ref={containerRef} className="h-full w-full"></div>
-                                <div className="absolute top-4 left-4 text-gray-400">
-                                    <Button outline onClick={onButtonClick}>
-                                        {isAnimating ? <PauseIcon /> : <PlayIcon />}
-                                    </Button>
-                                </div>
-                                {
-                                    selectedRecords.length > 0 && (
-                                        <div className="absolute top-4 right-4 text-gray-400">
-                                            <Button outline onClick={onResetClick}>
-                                                clear all
-                                            </Button>
-                                        </div>
-                                    )
-                                }
-                            </>
-                        ) : (
-                            <div className="flex flex-col gap-4 h-full w-full my-auto mx-auto justify-center items-center">
-                                <Spinner size={32} />
-                                <Text>Loading Data</Text>
+                    {/* Always render container to prevent sphere destruction */}
+                    <div ref={containerRef} className="h-full w-full"></div>
+                    {isInitialized && (
+                        <>
+                            <div className="absolute top-4 left-4 text-gray-400 z-10" style={{ pointerEvents: 'auto' }}>
+                                <button 
+                                    onClick={onButtonClick}
+                                    className="bg-white/90 hover:bg-white border border-gray-300 rounded-lg shadow-sm"
+                                    style={{ 
+                                        width: '40px', 
+                                        height: '40px', 
+                                        padding: '8px',
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        justifyContent: 'center',
+                                        cursor: 'pointer',
+                                        flexShrink: 0
+                                    }}
+                                >
+                                    {isAnimating ? <PauseIcon className="w-5 h-5" /> : <PlayIcon className="w-5 h-5" />}
+                                </button>
                             </div>
-                        )
-                    }
+                            {
+                                selectedRecords.length > 0 && (
+                                    <div className="absolute top-4 right-4 text-gray-400 z-10" style={{ pointerEvents: 'auto' }}>
+                                        <button 
+                                            onClick={onResetClick}
+                                            className="bg-white/90 hover:bg-white border border-gray-300 rounded-lg px-3 py-1.5 text-sm shadow-sm whitespace-nowrap"
+                                            style={{ cursor: 'pointer', flexShrink: 0 }}
+                                        >
+                                            clear all
+                                        </button>
+                                    </div>
+                                )
+                            }
+                        </>
+                    )}
+                    {!isInitialized && !jsonData && (
+                        <div className="flex flex-col gap-4 h-full w-full my-auto mx-auto justify-center items-center absolute inset-0">
+                            <Spinner size={32} />
+                            <Text>Loading Data</Text>
+                        </div>
+                    )}
                 </div>
 
                 {jsonData &&

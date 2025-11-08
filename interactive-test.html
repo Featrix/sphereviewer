@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧪 Featrix Sphere - Interactive Test Environment</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #1a1a1a;
+            color: #e0e0e0;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .sidebar {
+            background: #2a2a2a;
+            border-right: 2px solid #444;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            background: #1a1a1a;
+        }
+        .sphere-container {
+            flex: 1;
+            position: relative;
+            min-height: 0;
+        }
+        .controls-panel {
+            background: #2a2a2a;
+            border-top: 2px solid #444;
+            padding: 15px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        h1 {
+            margin: 0 0 20px 0;
+            font-size: 24px;
+            color: #4CAF50;
+        }
+        h2 {
+            margin: 20px 0 10px 0;
+            font-size: 18px;
+            color: #81C784;
+            border-bottom: 1px solid #444;
+            padding-bottom: 5px;
+        }
+        h3 {
+            margin: 15px 0 8px 0;
+            font-size: 14px;
+            color: #A5D6A7;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 12px;
+            color: #bbb;
+        }
+        input, textarea, select, button {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            background: #333;
+            color: #e0e0e0;
+            font-size: 13px;
+        }
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+            font-family: monospace;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            margin-top: 5px;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+        button.secondary {
+            background: #2196F3;
+        }
+        button.secondary:hover {
+            background: #1976D2;
+        }
+        button.danger {
+            background: #f44336;
+        }
+        button.danger:hover {
+            background: #d32f2f;
+        }
+        .status {
+            padding: 8px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-size: 12px;
+        }
+        .status.success {
+            background: #1B5E20;
+            color: #A5D6A7;
+        }
+        .status.error {
+            background: #B71C1C;
+            color: #EF9A9A;
+        }
+        .status.info {
+            background: #0D47A1;
+            color: #90CAF9;
+        }
+        .cluster-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .cluster-color {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 8px;
+            background: #333;
+            border-radius: 4px;
+            border: 1px solid #555;
+        }
+        .cluster-color-preview {
+            width: 40px;
+            height: 40px;
+            border-radius: 4px;
+            border: 2px solid #666;
+            margin-bottom: 5px;
+        }
+        .cluster-color input[type="color"] {
+            width: 100%;
+            height: 30px;
+            padding: 0;
+            border: none;
+            cursor: pointer;
+        }
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.95);
+            color: #e0e0e0;
+            padding: 12px;
+            border-radius: 6px;
+            border: 1px solid #4CAF50;
+            font-size: 12px;
+            max-width: 300px;
+            z-index: 10000;
+            pointer-events: none;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        }
+        .tooltip h4 {
+            margin: 0 0 8px 0;
+            color: #4CAF50;
+            font-size: 14px;
+        }
+        .tooltip table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .tooltip td {
+            padding: 4px 8px;
+            border-bottom: 1px solid #444;
+        }
+        .tooltip td:first-child {
+            color: #bbb;
+            font-weight: 500;
+        }
+        .log {
+            background: #1a1a1a;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 10px;
+            max-height: 150px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 11px;
+            margin-top: 10px;
+        }
+        .log-entry {
+            margin: 4px 0;
+            padding: 2px 0;
+        }
+        .log-entry.success { color: #4CAF50; }
+        .log-entry.error { color: #f44336; }
+        .log-entry.info { color: #2196F3; }
+        .points-list {
+            max-height: 200px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+        .point-item {
+            padding: 8px;
+            background: #333;
+            border-radius: 4px;
+            margin-bottom: 5px;
+            font-size: 11px;
+            cursor: pointer;
+            border: 1px solid #555;
+        }
+        .point-item:hover {
+            border-color: #4CAF50;
+            background: #3a3a3a;
+        }
+        .point-item.selected {
+            border-color: #2196F3;
+            background: #2a4a5a;
+        }
+    </style>
+</head>
+<body>
+    <!-- Load React dependencies -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+    <div class="container">
+        <!-- Sidebar Controls -->
+        <div class="sidebar">
+            <h1>🧪 Test Environment</h1>
+
+            <!-- External API Section -->
+            <h2>1. External API</h2>
+            <div class="form-group">
+                <label>API Endpoint URL:</label>
+                <input type="text" id="apiUrl" placeholder="https://api.example.com/data" value="https://jsonplaceholder.typicode.com/users/1">
+            </div>
+            <div class="form-group">
+                <label>Request Method:</label>
+                <select id="apiMethod">
+                    <option value="GET">GET</option>
+                    <option value="POST">POST</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Request Body (JSON, for POST):</label>
+                <textarea id="apiBody" placeholder='{"key": "value"}'></textarea>
+            </div>
+            <button onclick="fetchExternalData()">📡 Fetch External Data</button>
+
+            <!-- Featrix Session Section -->
+            <h2>2. Featrix Session</h2>
+            <div class="form-group">
+                <label>Featrix Session ID (Required):</label>
+                <input type="text" id="featrixSessionId" placeholder="e.g. 20251103-184708_3dde68" value="20251103-184708_3dde68">
+                <button class="secondary" onclick="loadFeatrixSession()" style="margin-top: 5px;">📥 Load Session Data</button>
+            </div>
+            <div id="sessionStatus" class="status info" style="display: none;"></div>
+
+            <!-- Featrix Encoding Section -->
+            <h2>3. Featrix Encoding</h2>
+            <div class="form-group">
+                <label>Data to Encode (JSON):</label>
+                <textarea id="encodeData" placeholder='{"name": "John", "age": 30}'></textarea>
+            </div>
+            <button onclick="encodeWithFeatrix()">🔮 Encode with Featrix</button>
+
+            <!-- Combined Workflow -->
+            <h2>4. Combined Workflow</h2>
+            <button class="secondary" onclick="fetchAndEncode()">🚀 Fetch → Encode → Add Point</button>
+
+            <!-- Cluster Controls -->
+            <h2>5. Cluster Colors</h2>
+            <div class="form-group">
+                <label>Cluster Count:</label>
+                <select id="clusterCount" onchange="updateClusterColors()">
+                    <option value="2">2 Clusters</option>
+                    <option value="3">3 Clusters</option>
+                    <option value="4">4 Clusters</option>
+                    <option value="5">5 Clusters</option>
+                    <option value="6">6 Clusters</option>
+                    <option value="7">7 Clusters</option>
+                    <option value="8">8 Clusters</option>
+                    <option value="9">9 Clusters</option>
+                    <option value="10">10 Clusters</option>
+                    <option value="12" selected>12 Clusters</option>
+                </select>
+            </div>
+            <div id="clusterColorControls" class="cluster-controls"></div>
+
+            <!-- Points List -->
+            <h2>6. Added Points</h2>
+            <div id="pointsList" class="points-list"></div>
+            <button class="danger" onclick="clearAllPoints()" style="margin-top: 10px;">🗑️ Clear All Points</button>
+
+            <!-- Status & Logs -->
+            <h2>7. Status</h2>
+            <div id="status" class="status info">Ready</div>
+            <div id="log" class="log"></div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <div id="sphere-container" class="sphere-container"></div>
+            <div id="tooltip" class="tooltip" style="display: none;"></div>
+        </div>
+    </div>
+
+    <!-- Load Sphere Viewer -->
+    <script src="sphere-viewer.js"></script>
+
+    <script>
+        // Global state
+        let viewer = null;
+        let sphereRef = null;
+        let addedPoints = [];
+        let currentClusterCount = 12;
+        let clusterColors = {};
+        let featrixSessionData = null;
+        let featrixProjections = null;
+        let featrixTrainingData = null;
+
+        // Load Featrix session data
+        async function loadFeatrixSession() {
+            const sessionId = document.getElementById('featrixSessionId').value.trim();
+            
+            if (!sessionId) {
+                log('Please enter a Featrix Session ID', 'error');
+                setSessionStatus('Please enter a Session ID', 'error');
+                return;
+            }
+
+            try {
+                setSessionStatus('Loading session data...', 'info');
+                log(`Loading Featrix session: ${sessionId}`, 'info');
+
+                // Load session data
+                const sessionResponse = await fetch(`https://sphere-api.featrix.com/compute/session/${sessionId}`);
+                if (!sessionResponse.ok) {
+                    throw new Error(`Session API error: ${sessionResponse.status} ${sessionResponse.statusText}`);
+                }
+                featrixSessionData = await sessionResponse.json();
+                log(`✅ Session loaded: ${featrixSessionData.session?.status || 'unknown'}`, 'success');
+
+                // Check if projections are already in session data
+                if (featrixSessionData.coords && featrixSessionData.coords.length > 0) {
+                    // Projections are already in session data
+                    featrixProjections = featrixSessionData;
+                    const numPoints = featrixProjections.coords?.length || 0;
+                    log(`✅ Projections loaded from session: ${numPoints} points`, 'success');
+                } else {
+                    // Try to load projections separately (may not exist for all sessions)
+                    try {
+                        const projectionsResponse = await fetch(`https://sphere-api.featrix.com/compute/session/${sessionId}/projections`);
+                        if (projectionsResponse.ok) {
+                            const projectionsData = await projectionsResponse.json();
+                            featrixProjections = projectionsData.projections || projectionsData;
+                            const numPoints = featrixProjections.coords?.length || 0;
+                            log(`✅ Projections loaded: ${numPoints} points`, 'success');
+                        } else {
+                            log(`⚠️ Projections endpoint returned ${projectionsResponse.status}, using session data`, 'info');
+                            featrixProjections = featrixSessionData;
+                        }
+                    } catch (e) {
+                        log(`⚠️ Could not load projections separately: ${e.message}, using session data`, 'info');
+                        featrixProjections = featrixSessionData;
+                    }
+                }
+                
+                const numPoints = featrixProjections?.coords?.length || 0;
+
+                // Try to load training movie data
+                try {
+                    const trainingResponse = await fetch(`https://sphere-api.featrix.com/compute/session/${sessionId}/epoch_projections`);
+                    if (trainingResponse.ok) {
+                        const trainingData = await trainingResponse.json();
+                        featrixTrainingData = trainingData.epoch_projections || trainingData;
+                        log(`✅ Training movie loaded: ${Object.keys(featrixTrainingData || {}).length} epochs`, 'success');
+                    }
+                } catch (e) {
+                    log(`⚠️ Training movie not available: ${e.message}`, 'info');
+                }
+
+                // Initialize or update sphere viewer with loaded data
+                await initSphereViewerWithData(featrixSessionData, featrixProjections);
+
+                setSessionStatus(`✅ Loaded: ${numPoints} points`, 'success');
+            } catch (error) {
+                log(`❌ Error loading session: ${error.message}`, 'error');
+                setSessionStatus(`Error: ${error.message}`, 'error');
+                console.error('Full error:', error);
+            }
+        }
+
+        // Initialize sphere viewer with Featrix data
+        async function initSphereViewerWithData(sessionData, projections) {
+            if (!sessionData || !projections) {
+                log('Missing session data or projections', 'error');
+                return;
+            }
+
+            // Format data for sphere viewer
+            const sphereData = {
+                session: sessionData.session,
+                coords: projections.coords || [],
+                entire_cluster_results: projections.entire_cluster_results || {}
+            };
+
+            log(`Initializing sphere with ${sphereData.coords.length} points`, 'info');
+
+            if (viewer) {
+                // Destroy existing viewer and create new one (update doesn't work reliably)
+                try {
+                    log('Destroying existing viewer...', 'info');
+                    viewer.destroy();
+                    viewer = null;
+                } catch (error) {
+                    log(`Error destroying viewer: ${error.message}`, 'warning');
+                    viewer = null;
+                }
+            }
+            
+            if (!viewer) {
+                // Initialize new viewer
+                try {
+                    log('Creating new viewer...', 'info');
+                    viewer = new window.FeatrixSphereViewer();
+                    viewer.init({
+                        data: sphereData,
+                        containerId: 'sphere-container',
+                        isRotating: true,
+                        pointSize: 0.05,
+                        pointOpacity: 0.7,
+                        onSphereReady: (ref) => {
+                            sphereRef = ref;
+                            setupMouseoverTooltips();
+                            setupPointInspectedListener();
+                            log('Sphere viewer initialized successfully', 'success');
+                        }
+                    });
+                } catch (error) {
+                    log(`Error initializing viewer: ${error.message}`, 'error');
+                    console.error('Init error:', error);
+                }
+            }
+
+            // Update cluster controls
+            if (projections.entire_cluster_results) {
+                const clusterCounts = Object.keys(projections.entire_cluster_results).map(k => parseInt(k)).sort((a, b) => a - b);
+                log(`Found cluster counts: ${clusterCounts.join(', ')}`, 'info');
+                updateClusterCountOptions(clusterCounts);
+                if (clusterCounts.length > 0) {
+                    currentClusterCount = clusterCounts[clusterCounts.length - 1];
+                    document.getElementById('clusterCount').value = currentClusterCount;
+                    updateClusterColors();
+                }
+            } else {
+                log('No cluster results found in projections', 'warning');
+            }
+        }
+
+        // Initialize sphere viewer (empty initially)
+        function initSphereViewer() {
+            // Don't create an empty viewer - wait for user to load a session
+            // This prevents conflicts when loading real data
+            log('Waiting for session to be loaded...', 'info');
+            viewer = null;
+        }
+
+        // Update cluster count dropdown options
+        function updateClusterCountOptions(availableCounts) {
+            const select = document.getElementById('clusterCount');
+            select.innerHTML = '';
+            availableCounts.forEach(count => {
+                const option = document.createElement('option');
+                option.value = count;
+                option.textContent = `${count} Clusters`;
+                if (count === currentClusterCount) {
+                    option.selected = true;
+                }
+                select.appendChild(option);
+            });
+        }
+
+        // Set session status
+        function setSessionStatus(message, type = 'info') {
+            const status = document.getElementById('sessionStatus');
+            status.textContent = message;
+            status.className = `status ${type}`;
+            status.style.display = 'block';
+        }
+
+        // Setup mouseover tooltips
+        function setupMouseoverTooltips() {
+            if (!sphereRef) return;
+
+            const container = document.getElementById('sphere-container');
+            const tooltip = document.getElementById('tooltip');
+
+            container.addEventListener('mousemove', (e) => {
+                if (!sphereRef) return;
+
+                // Use raycasting to detect hover
+                const rect = container.getBoundingClientRect();
+                const mouse = {
+                    x: ((e.clientX - rect.left) / rect.width) * 2 - 1,
+                    y: -((e.clientY - rect.top) / rect.height) * 2 + 1
+                };
+
+                // This would need to be integrated with the sphere's raycasting
+                // For now, we'll use the pointInspected event
+            });
+        }
+
+        // Listen for point inspection events
+        function setupPointInspectedListener() {
+            if (!sphereRef) return;
+
+            // Register event listener for point inspection
+            const container = document.getElementById('sphere-container');
+            
+            // The sphere viewer emits custom events
+            container.addEventListener('pointInspected', (event) => {
+                showTooltip(event.detail, event);
+            });
+        }
+
+        // Show tooltip with point data
+        function showTooltip(pointInfo, mouseEvent) {
+            if (!sphereRef) return;
+
+            const tooltip = document.getElementById('tooltip');
+            const record = sphereRef.pointRecordsByID?.get(pointInfo.recordId);
+
+            if (!record) return;
+
+            const fields = Object.keys(record.original || {});
+            
+            let html = `<h4>Point Details</h4>`;
+            html += `<table>`;
+            html += `<tr><td>Record ID:</td><td>${pointInfo.recordId}</td></tr>`;
+            html += `<tr><td>Cluster:</td><td>${pointInfo.clusterId}</td></tr>`;
+            html += `<tr><td>Position:</td><td>${pointInfo.position}</td></tr>`;
+            
+            fields.forEach(field => {
+                const value = record.original[field];
+                html += `<tr><td>${field}:</td><td>${JSON.stringify(value)}</td></tr>`;
+            });
+            
+            html += `</table>`;
+
+            tooltip.innerHTML = html;
+            tooltip.style.display = 'block';
+            tooltip.style.left = (mouseEvent.clientX + 10) + 'px';
+            tooltip.style.top = (mouseEvent.clientY + 10) + 'px';
+        }
+
+        // Hide tooltip
+        function hideTooltip() {
+            document.getElementById('tooltip').style.display = 'none';
+        }
+
+        // Fetch external API data
+        async function fetchExternalData() {
+            const url = document.getElementById('apiUrl').value;
+            const method = document.getElementById('apiMethod').value;
+            const body = document.getElementById('apiBody').value;
+
+            if (!url) {
+                log('Please enter an API URL', 'error');
+                return;
+            }
+
+            try {
+                log(`Fetching from ${url}...`, 'info');
+                setStatus('Fetching external data...', 'info');
+
+                const options = {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                };
+
+                if (method === 'POST' && body) {
+                    options.body = body;
+                }
+
+                const response = await fetch(url, options);
+                const data = await response.json();
+
+                log(`✅ Fetched data: ${JSON.stringify(data).substring(0, 100)}...`, 'success');
+                document.getElementById('encodeData').value = JSON.stringify(data, null, 2);
+                setStatus('Data fetched successfully', 'success');
+
+                return data;
+            } catch (error) {
+                log(`❌ Error fetching data: ${error.message}`, 'error');
+                setStatus('Error fetching data', 'error');
+                throw error;
+            }
+        }
+
+        // Encode data with Featrix
+        async function encodeWithFeatrix() {
+            const sessionId = document.getElementById('featrixSessionId').value.trim();
+            const encodeDataText = document.getElementById('encodeData').value;
+
+            if (!sessionId) {
+                log('Please enter a Featrix Session ID', 'error');
+                setSessionStatus('Please enter a Session ID first', 'error');
+                return;
+            }
+
+            if (!encodeDataText) {
+                log('Please enter data to encode', 'error');
+                return;
+            }
+
+            try {
+                let queryRecord;
+                try {
+                    queryRecord = JSON.parse(encodeDataText);
+                } catch (e) {
+                    log('Invalid JSON in encode data field', 'error');
+                    return;
+                }
+
+                log(`Encoding with Featrix session ${sessionId}...`, 'info');
+                setStatus('Encoding with Featrix...', 'info');
+
+                // Use proxy endpoint if available, otherwise direct API call
+                const endpoint = `/proxy/featrix/compute/session/${sessionId}/encode_records`;
+                const response = await fetch(endpoint, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ query_record: queryRecord }),
+                }).catch(() => {
+                    // Fallback to direct API call if proxy fails
+                    return fetch(`https://sphere-api.featrix.com/compute/session/${sessionId}/encode_records`, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({ query_record: queryRecord }),
+                    });
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Featrix API error: ${response.status} ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                log(`✅ Encoded: [${result.embedding[0].toFixed(3)}, ${result.embedding[1].toFixed(3)}, ${result.embedding[2].toFixed(3)}]`, 'success');
+
+                // Add point to sphere
+                await addPointToSphere(result.embedding, queryRecord, sessionId);
+
+                setStatus('Point added successfully', 'success');
+                return result;
+            } catch (error) {
+                log(`❌ Error encoding: ${error.message}`, 'error');
+                setStatus('Error encoding data', 'error');
+                throw error;
+            }
+        }
+
+        // Combined workflow
+        async function fetchAndEncode() {
+            try {
+                setStatus('Fetching external data...', 'info');
+                const externalData = await fetchExternalData();
+                
+                setStatus('Encoding with Featrix...', 'info');
+                await encodeWithFeatrix();
+                
+                setStatus('✅ Complete!', 'success');
+            } catch (error) {
+                log(`❌ Workflow error: ${error.message}`, 'error');
+            }
+        }
+
+        // Add point to sphere
+        async function addPointToSphere(coords, originalData, sessionId) {
+            if (!sphereRef) {
+                log('Sphere not initialized yet. Waiting...', 'info');
+                setTimeout(() => addPointToSphere(coords, originalData, sessionId), 1000);
+                return;
+            }
+
+            try {
+                // Import required functions (these should be available from sphere-viewer.js)
+                // For now, we'll use a workaround to add points
+                const { v4: uuid4 } = await import('https://cdn.jsdelivr.net/npm/uuid@9.0.0/+esm');
+
+                const recordId = uuid4();
+                const newRecord = {
+                    coords: {
+                        x: coords[0],
+                        y: coords[1],
+                        z: coords[2]
+                    },
+                    id: recordId,
+                    featrix_meta: {
+                        cluster_pre: 0,
+                        webgl_id: null,
+                        __featrix_row_id: addedPoints.length,
+                        __featrix_row_offset: addedPoints.length
+                    },
+                    original: originalData
+                };
+
+                // Use the sphere control functions if available
+                if (window.add_point_to_sphere) {
+                    window.add_point_to_sphere(sphereRef, newRecord);
+                    window.render_sphere(sphereRef);
+                } else {
+                    // Fallback: try to access via viewer
+                    if (viewer && viewer.addPoint) {
+                        viewer.addPoint(newRecord);
+                    } else {
+                        log('⚠️ Cannot add point directly. Sphere functions not accessible.', 'error');
+                        log('Point data: ' + JSON.stringify(newRecord), 'info');
+                        return;
+                    }
+                }
+
+                addedPoints.push({
+                    id: recordId,
+                    data: originalData,
+                    coords: coords
+                });
+
+                updatePointsList();
+                log(`✅ Point added: ${recordId.substring(0, 8)}...`, 'success');
+            } catch (error) {
+                log(`❌ Error adding point: ${error.message}`, 'error');
+                console.error(error);
+            }
+        }
+
+        // Update cluster colors
+        function updateClusterColors() {
+            currentClusterCount = parseInt(document.getElementById('clusterCount').value);
+            const controls = document.getElementById('clusterColorControls');
+            controls.innerHTML = '';
+
+            // Default color table
+            const defaultColors = [
+                '#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231',
+                '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe',
+                '#008080', '#e6beff', '#9a6324', '#fffac8', '#800000',
+                '#aaffc3', '#808000', '#ffd8b1', '#999999', '#0000ff'
+            ];
+
+            for (let i = 0; i < currentClusterCount; i++) {
+                const color = clusterColors[i] || defaultColors[i] || '#888888';
+                const clusterDiv = document.createElement('div');
+                clusterDiv.className = 'cluster-color';
+                clusterDiv.innerHTML = `
+                    <div class="cluster-color-preview" style="background: ${color}"></div>
+                    <label style="font-size: 10px; margin-bottom: 4px;">Cluster ${i}</label>
+                    <input type="color" value="${color}" onchange="setClusterColor(${i}, this.value)">
+                `;
+                controls.appendChild(clusterDiv);
+            }
+
+            // Update sphere colors if we have cluster assignments
+            if (sphereRef && sphereRef.jsonData && sphereRef.jsonData.entire_cluster_results) {
+                applyClusterColors();
+            }
+        }
+
+        // Set cluster color
+        function setClusterColor(clusterIndex, color) {
+            clusterColors[clusterIndex] = color;
+            
+            if (!sphereRef) return;
+
+            // Update all points in this cluster
+            if (sphereRef.pointRecordsByID && sphereRef.pointObjectsByRecordID) {
+                sphereRef.pointRecordsByID.forEach((record, recordId) => {
+                    const mesh = sphereRef.pointObjectsByRecordID.get(recordId);
+                    if (mesh && record.featrix_meta) {
+                        // Check if this point belongs to the cluster
+                        // This is simplified - you'd need to check actual cluster assignments
+                        if (window.change_object_color) {
+                            window.change_object_color(sphereRef, recordId, color);
+                        }
+                    }
+                });
+
+                if (window.render_sphere) {
+                    window.render_sphere(sphereRef);
+                }
+            }
+
+            log(`Cluster ${clusterIndex} color set to ${color}`, 'success');
+        }
+
+        // Apply cluster colors
+        function applyClusterColors() {
+            if (!sphereRef || !sphereRef.jsonData) return;
+
+            const clusterResults = sphereRef.jsonData.entire_cluster_results[currentClusterCount];
+            if (!clusterResults || !clusterResults.cluster_labels) return;
+
+            if (sphereRef.pointRecordsByID && sphereRef.pointObjectsByRecordID) {
+                sphereRef.pointRecordsByID.forEach((record, recordId) => {
+                    const rowOffset = record.featrix_meta?.__featrix_row_offset;
+                    if (rowOffset !== undefined && rowOffset < clusterResults.cluster_labels.length) {
+                        const clusterId = clusterResults.cluster_labels[rowOffset];
+                        const color = clusterColors[clusterId] || null;
+                        
+                        if (color && window.change_object_color) {
+                            window.change_object_color(sphereRef, recordId, color);
+                        }
+                    }
+                });
+
+                if (window.render_sphere) {
+                    window.render_sphere(sphereRef);
+                }
+            }
+        }
+
+        // Update points list
+        function updatePointsList() {
+            const list = document.getElementById('pointsList');
+            list.innerHTML = '';
+
+            addedPoints.forEach((point, index) => {
+                const item = document.createElement('div');
+                item.className = 'point-item';
+                item.innerHTML = `
+                    <strong>Point ${index + 1}</strong><br>
+                    <small>ID: ${point.id.substring(0, 8)}...</small><br>
+                    <small>Coords: [${point.coords[0].toFixed(2)}, ${point.coords[1].toFixed(2)}, ${point.coords[2].toFixed(2)}]</small>
+                `;
+                item.onclick = () => {
+                    // Highlight this point
+                    log(`Selected point ${index + 1}`, 'info');
+                };
+                list.appendChild(item);
+            });
+
+            if (addedPoints.length === 0) {
+                list.innerHTML = '<div style="color: #888; text-align: center; padding: 20px;">No points added yet</div>';
+            }
+        }
+
+        // Clear all points
+        function clearAllPoints() {
+            if (confirm('Clear all added points?')) {
+                addedPoints = [];
+                updatePointsList();
+                
+                if (sphereRef && window.clear_all_points) {
+                    window.clear_all_points(sphereRef);
+                    window.render_sphere(sphereRef);
+                }
+                
+                log('All points cleared', 'success');
+            }
+        }
+
+        // Logging functions
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+
+        function setStatus(message, type = 'info') {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status ${type}`;
+        }
+
+        // Initialize on load
+        window.addEventListener('load', () => {
+            log('Initializing test environment...', 'info');
+            initSphereViewer();
+            updateClusterColors();
+            updatePointsList();
+            
+            // Don't auto-load - let user click the button
+            // This prevents conflicts with the initial empty viewer
+            
+            // Hide tooltip when clicking elsewhere
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('#sphere-container') && !e.target.closest('#tooltip')) {
+                    hideTooltip();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
+
