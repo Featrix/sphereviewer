@@ -1014,12 +1014,13 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 alignItems: 'center',
                 gap: '8px',
                 background: 'rgba(0,0,0,0.95)',
-                padding: '12px 20px',
+                padding: '12px 16px',
                 borderRadius: '12px',
                 zIndex: 1000,
                 fontFamily: 'monospace',
                 fontSize: '11px',
-                minWidth: '600px',
+                maxWidth: '95vw',
+                width: 'auto',
                 border: '1px solid #555'
             }}>
                 {/* Scrub Slider - top row */}
@@ -1027,10 +1028,11 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     <div style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '12px',
-                        width: '100%'
+                        gap: '8px',
+                        width: '100%',
+                        maxWidth: '90vw'
                     }}>
-                        <span style={{ color: '#fff', fontSize: '10px', minWidth: '40px' }}>Frame:</span>
+                        <span style={{ color: '#fff', fontSize: '10px', minWidth: '35px', flexShrink: 0 }}>Frame:</span>
                         <input
                             type="range"
                             min="1"
@@ -1040,10 +1042,11 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             style={{
                                 flex: 1,
                                 cursor: 'pointer',
-                                height: '6px'
+                                height: '6px',
+                                minWidth: 0
                             }}
                         />
-                        <span style={{ color: '#fff', fontSize: '11px', minWidth: '60px', textAlign: 'right' }}>
+                        <span style={{ color: '#fff', fontSize: '10px', minWidth: '50px', textAlign: 'right', flexShrink: 0 }}>
                             {frameInfo.current} / {frameInfo.total}
                         </span>
                     </div>
@@ -1053,7 +1056,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 <div style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '8px'
+                    gap: '6px',
+                    flexWrap: 'wrap',
+                    justifyContent: 'center',
+                    maxWidth: '100%'
                 }}>
                 <button
                     onClick={handleStepBackward}
@@ -1061,11 +1067,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         background: '#333',
                         border: '1px solid #555',
                         color: '#fff',
-                        padding: '6px 12px',
+                        padding: '5px 10px',
                         borderRadius: '4px',
                         cursor: 'pointer',
-                        fontSize: '14px',
-                        fontWeight: 'bold'
+                        fontSize: '13px',
+                        fontWeight: 'bold',
+                        flexShrink: 0
                     }}
                     title="Previous Frame"
                 >
@@ -1078,12 +1085,13 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         background: isPlaying ? '#c44' : '#4c4',
                         border: '1px solid #555',
                         color: '#fff',
-                        padding: '6px 16px',
+                        padding: '5px 12px',
                         borderRadius: '4px',
                         cursor: 'pointer',
-                        fontSize: '16px',
-                        minWidth: '50px',
-                        fontWeight: 'bold'
+                        fontSize: '14px',
+                        minWidth: '45px',
+                        fontWeight: 'bold',
+                        flexShrink: 0
                     }}
                     title={isPlaying ? "Pause" : "Play"}
                 >
@@ -1096,33 +1104,35 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         background: '#333',
                         border: '1px solid #555',
                         color: '#fff',
-                        padding: '6px 12px',
+                        padding: '5px 10px',
                         borderRadius: '4px',
                         cursor: 'pointer',
-                        fontSize: '14px',
-                        fontWeight: 'bold'
+                        fontSize: '13px',
+                        fontWeight: 'bold',
+                        flexShrink: 0
                     }}
                     title="Next Frame"
                 >
                     ⏭️
                 </button>
                 
-                <div style={{ margin: '0 8px', color: '#888' }}>|</div>
+                <div style={{ margin: '0 4px', color: '#888', flexShrink: 0 }}>|</div>
                 
                 <input
                     type="number"
                     value={frameInput}
                     onChange={(e) => setFrameInput(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleGotoFrame()}
-                    placeholder="Frame #"
+                    placeholder="#"
                     style={{
                         background: '#222',
                         border: '1px solid #555',
                         color: '#fff',
-                        padding: '4px 8px',
+                        padding: '4px 6px',
                         borderRadius: '4px',
-                        width: '70px',
-                        fontSize: '11px'
+                        width: '50px',
+                        fontSize: '10px',
+                        flexShrink: 0
                     }}
                     min="1"
                     max={frameInfo?.total || 1}
@@ -1134,18 +1144,19 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         background: '#333',
                         border: '1px solid #555',
                         color: '#fff',
-                        padding: '6px 12px',
+                        padding: '5px 10px',
                         borderRadius: '4px',
                         cursor: 'pointer',
-                        fontSize: '11px',
-                        fontWeight: 'bold'
+                        fontSize: '10px',
+                        fontWeight: 'bold',
+                        flexShrink: 0
                     }}
                     title="Go to Frame"
                 >
                     Go
                 </button>
                 
-                <div style={{ margin: '0 8px', color: '#888' }}>|</div>
+                <div style={{ margin: '0 4px', color: '#888', flexShrink: 0 }}>|</div>
                 
                 <button
                     onClick={handleStop}
@@ -1153,15 +1164,16 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         background: '#633',
                         border: '1px solid #555',
                         color: '#fff',
-                        padding: '6px 12px',
+                        padding: '5px 10px',
                         borderRadius: '4px',
                         cursor: 'pointer',
-                        fontSize: '12px',
-                        fontWeight: 'bold'
+                        fontSize: '11px',
+                        fontWeight: 'bold',
+                        flexShrink: 0
                     }}
                     title="Stop"
                 >
-                    ⏹️ Stop
+                    ⏹️
                 </button>
                 
                 <button
@@ -1170,19 +1182,20 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         background: '#336',
                         border: '1px solid #555',
                         color: '#fff',
-                        padding: '6px 12px',
+                        padding: '5px 10px',
                         borderRadius: '4px',
                         cursor: 'pointer',
-                        fontSize: '12px',
-                        fontWeight: 'bold'
+                        fontSize: '11px',
+                        fontWeight: 'bold',
+                        flexShrink: 0
                     }}
                     title="Replay from Beginning"
                 >
-                    🔄 Replay
+                    🔄
                 </button>
                 
                 {/* Search Toggle - always visible */}
-                <div style={{ margin: '0 8px', color: '#888' }}>|</div>
+                <div style={{ margin: '0 4px', color: '#888', flexShrink: 0 }}>|</div>
                 
                 <button
                     onClick={() => setShowSearch(!showSearch)}
@@ -1190,15 +1203,16 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         background: showSearch ? '#4c4' : '#333',
                         border: '1px solid #555',
                         color: '#fff',
-                        padding: '6px 12px',
+                        padding: '5px 10px',
                         borderRadius: '4px',
                         cursor: 'pointer',
-                        fontSize: '12px',
-                        fontWeight: 'bold'
+                        fontSize: '11px',
+                        fontWeight: 'bold',
+                        flexShrink: 0
                     }}
                     title="Toggle Search"
                 >
-                    🔍 Search
+                    🔍
                 </button>
                 
                 {/* Convex Hull Toggle - always visible for debugging */}

@@ -852,10 +852,10 @@ export function step_training_movie_frame(sphere: SphereData, direction: 'forwar
         return;
     }
     
-    // Can't step during rotation phase
+    // Pause rotation and allow scrubbing
     if (sphere.isInRotationPhase) {
-        console.warn('Cannot step during rotation phase');
-        return;
+        pause_training_movie(sphere);
+        sphere.isInRotationPhase = false;
     }
     
     // Pause if currently playing
@@ -892,10 +892,10 @@ export function goto_training_movie_frame(sphere: SphereData, frameNumber: numbe
         return;
     }
     
-    // Can't navigate during rotation phase
+    // Pause rotation and allow scrubbing
     if (sphere.isInRotationPhase) {
-        console.warn('Cannot navigate during rotation phase');
-        return;
+        pause_training_movie(sphere);
+        sphere.isInRotationPhase = false;
     }
     
     // Pause if currently playing
