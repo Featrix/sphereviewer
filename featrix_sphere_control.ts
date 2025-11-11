@@ -993,6 +993,7 @@ function stop_point_interpolation(sphere: SphereData) {
 }
 
 // Helper function to get the active cluster count key from finalClusterResults
+// Uses the "best" cluster count (lowest score) if available, otherwise falls back to highest
 function get_active_cluster_count_key(sphere: SphereData): number | null {
     if (!sphere.finalClusterResults || Object.keys(sphere.finalClusterResults).length === 0) {
         return null;
@@ -1001,10 +1002,31 @@ function get_active_cluster_count_key(sphere: SphereData): number | null {
     // Find the cluster count key that has cluster_labels
     const clusterKeys = Object.keys(sphere.finalClusterResults)
         .map(k => parseInt(k))
-        .filter(k => !isNaN(k) && sphere.finalClusterResults[k]?.cluster_labels)
-        .sort((a, b) => b - a); // Sort descending to get highest first
+        .filter(k => !isNaN(k) && sphere.finalClusterResults[k]?.cluster_labels);
     
-    return clusterKeys.length > 0 ? clusterKeys[0] : null;
+    if (clusterKeys.length === 0) {
+        return null;
+    }
+    
+    // Try to find the best cluster count (lowest score)
+    let bestClusterKey: number | null = null;
+    let bestScore = Infinity;
+    
+    clusterKeys.forEach(k => {
+        const clusterData = sphere.finalClusterResults[k];
+        if (clusterData && typeof clusterData.score === 'number' && clusterData.score < bestScore) {
+            bestScore = clusterData.score;
+            bestClusterKey = k;
+        }
+    });
+    
+    // If we found a best cluster (with score), use it; otherwise fall back to highest
+    if (bestClusterKey !== null) {
+        return bestClusterKey;
+    }
+    
+    // Fallback: use highest cluster count
+    return Math.max(...clusterKeys);
 }
 
 function update_training_movie_frame(sphere: SphereData, epochKey: string, forceFinalState: boolean = false) {
