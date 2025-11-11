@@ -753,10 +753,15 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     
     // Filter record list for search (same logic as FeatrixSphereColorControls)
     const filter_record_list = (queryColumnType: any, queryColumn: any, queryValue: any) => {
-        if (!sphereRef || !sphereRef.pointRecordsByID) return [];
+        if (!sphereRef || !sphereRef.pointRecordsByID) {
+            console.warn('🔍 Search: No sphereRef or pointRecordsByID');
+            return [];
+        }
         
         let results: any = [];
+        let checked = 0;
         for (const record of sphereRef.pointRecordsByID.values()) {
+            checked++;
             const columnValue = record.original[queryColumn];
             if (columnValue === undefined) continue;
             
@@ -772,8 +777,16 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 if (value === query) {
                     results.push(record);
                 }
+            } else if (queryColumnType === 'scalar') {
+                // Handle scalar columns - convert to string for comparison
+                const value = String(columnValue).toLowerCase();
+                const query = String(queryValue).toLowerCase();
+                if (value.includes(query)) {
+                    results.push(record);
+                }
             }
         }
+        console.log(`🔍 Search: Checked ${checked} records, found ${results.length} matches for "${queryValue}" in column "${queryColumn}" (type: ${queryColumnType})`);
         return results;
     };
     
@@ -782,7 +795,15 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         const inputValue = e.target.value;
         setSearchQuery(inputValue);
         
-        if (!sphereRef || !columnTypes || !selectedSearchColumn) return;
+        if (!sphereRef) {
+            console.warn('🔍 Search: No sphereRef available');
+            return;
+        }
+        
+        if (!columnTypes || !selectedSearchColumn) {
+            console.warn('🔍 Search: No columnTypes or selectedSearchColumn');
+            return;
+        }
         
         // If empty, clear search
         if (inputValue === "") {
@@ -794,6 +815,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         // Filter and highlight results
         const queryColumnType = columnTypes[selectedSearchColumn];
         const theRecords = filter_record_list(queryColumnType, selectedSearchColumn, inputValue);
+        console.log(`🔍 Search: Highlighting ${theRecords.length} records`);
         show_search_results(sphereRef, theRecords);
         render_sphere(sphereRef);
     };
@@ -892,7 +914,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
 
     return (
         <div className="training-progress-display" style={{
-            position: 'relative',
+            display: 'flex',
             width: '100%',
             height: '100vh',
             minHeight: '800px',
@@ -900,19 +922,19 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
             color: '#fff',
             overflow: 'hidden'
         }}>
-            {/* Build timestamp & frame info - top right overlay */}
-            <div className="build-display" style={{
-                position: 'absolute',
-                top: '10px',
-                right: '10px',
-                fontSize: '10px',
-                color: '#ff0000',
-                fontFamily: 'monospace',
-                background: 'rgba(0,0,0,0.8)',
-                padding: '4px 6px',
-                borderRadius: '3px',
-                zIndex: 1000
+            {/* Sphere Container - Left side, square aspect ratio */}
+            <div style={{
+                flex: '0 0 auto',
+                width: '100vh',
+                maxWidth: '100%',
+                height: '100vh',
+                position: 'relative',
+                background: '#000',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
             }}>
+                {/* Build timestamp & frame info - will be in side panel */}
                 <div>v{BUILD_TIMESTAMP.slice(0, 19).replace('T', ' ')}</div>
                 {frameInfo && (
                     <div>
@@ -963,739 +985,35 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 )}
             </div>
 
-            {/* Countdown Overlay */}
-            {showCountdown && (
-                <div style={{
-                    position: 'absolute',
-                    top: '50%',
-                    left: '50%',
-                    transform: 'translate(-50%, -50%)',
-                    background: 'rgba(0, 0, 0, 0.9)',
-                    color: '#fff',
-                    padding: '30px 50px',
-                    borderRadius: '12px',
-                    fontSize: '32px',
-                    fontWeight: 'bold',
-                    fontFamily: 'monospace',
-                    border: '3px solid #00ff00',
-                    textAlign: 'center',
-                    boxShadow: '0 0 30px rgba(0, 255, 0, 0.4)',
-                    zIndex: 2000
-                }}>
-                    {countdownText}
-                </div>
-            )}
-
-            {/* Loss Plot - positioned away from info panel */}
-            {lossData && lossData.validation_loss && (
-                <LossPlotOverlay 
-                    lossData={lossData.validation_loss} 
-                    currentEpoch={frameInfo?.epoch} 
-                    style={{
-                        position: 'absolute',
-                        top: '10px',
-                        left: '10px',
-                        width: '400px',
-                        height: '100px',
-                        zIndex: 1000,
-                        pointerEvents: 'none'
-                    }}
-                />
-            )}
-
-
-            {/* Frame Controls - single row, bottom */}
-            <div style={{
-                position: 'absolute',
-                bottom: '10px',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: '8px',
-                background: 'rgba(0,0,0,0.95)',
-                padding: '12px 16px',
-                borderRadius: '12px',
-                zIndex: 1000,
-                fontFamily: 'monospace',
-                fontSize: '11px',
-                maxWidth: '95vw',
-                width: 'auto',
-                border: '1px solid #555'
-            }}>
-                {/* Scrub Slider - top row */}
-                {frameInfo && frameInfo.total > 0 && (
-                    <div 
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            width: '100%',
-                            maxWidth: '90vw'
-                        }}
-                        onWheel={(e) => {
-                            // Handle horizontal trackpad scrolling
-                            if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-                                e.preventDefault();
-                                const delta = e.deltaX > 0 ? 1 : -1;
-                                const newFrame = Math.max(1, Math.min(frameInfo.total, frameInfo.current + delta));
-                                if (newFrame !== frameInfo.current && sphereRef) {
-                                    goto_training_movie_frame(sphereRef, newFrame);
-                                    setIsPlaying(false);
-                                    setFrameInput(newFrame.toString());
-                                }
-                            }
-                        }}
-                    >
-                        <span style={{ color: '#fff', fontSize: '10px', minWidth: '35px', flexShrink: 0 }}>Frame:</span>
-                        <input
-                            type="range"
-                            min="1"
-                            max={frameInfo.total}
-                            value={frameInfo.current}
-                            onChange={handleScrub}
-                            style={{
-                                flex: 1,
-                                cursor: 'pointer',
-                                height: '6px',
-                                minWidth: 0
-                            }}
-                        />
-                        <span style={{ color: '#fff', fontSize: '10px', minWidth: '50px', textAlign: 'right', flexShrink: 0 }}>
-                            {frameInfo.current} / {frameInfo.total}
-                        </span>
-                    </div>
-                )}
-                
-                {/* Control Buttons - bottom row */}
-                <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    flexWrap: 'wrap',
-                    justifyContent: 'center',
-                    maxWidth: '100%'
-                }}>
-                <button
-                    onClick={handleStepBackward}
-                    style={{
-                        background: '#333',
-                        border: '1px solid #555',
-                        color: '#fff',
-                        padding: '5px 10px',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '13px',
-                        fontWeight: 'bold',
-                        flexShrink: 0
-                    }}
-                    title="Previous Frame"
-                >
-                    ⏮️
-                </button>
-                
-                <button
-                    onClick={handlePlayPause}
-                    style={{
-                        background: isPlaying ? '#c44' : '#4c4',
-                        border: '1px solid #555',
-                        color: '#fff',
-                        padding: '5px 12px',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '14px',
-                        minWidth: '45px',
-                        fontWeight: 'bold',
-                        flexShrink: 0
-                    }}
-                    title={isPlaying ? "Pause" : "Play"}
-                >
-                    {isPlaying ? '⏸️' : '▶️'}
-                </button>
-                
-                <button
-                    onClick={handleStepForward}
-                    style={{
-                        background: '#333',
-                        border: '1px solid #555',
-                        color: '#fff',
-                        padding: '5px 10px',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '13px',
-                        fontWeight: 'bold',
-                        flexShrink: 0
-                    }}
-                    title="Next Frame"
-                >
-                    ⏭️
-                </button>
-                
-                <div style={{ margin: '0 4px', color: '#888', flexShrink: 0 }}>|</div>
-                
-                <input
-                    type="number"
-                    value={frameInput}
-                    onChange={(e) => setFrameInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleGotoFrame()}
-                    placeholder="#"
-                    style={{
-                        background: '#222',
-                        border: '1px solid #555',
-                        color: '#fff',
-                        padding: '4px 6px',
-                        borderRadius: '4px',
-                        width: '50px',
-                        fontSize: '10px',
-                        flexShrink: 0
-                    }}
-                    min="1"
-                    max={frameInfo?.total || 1}
-                />
-                
-                <button
-                    onClick={handleGotoFrame}
-                    style={{
-                        background: '#333',
-                        border: '1px solid #555',
-                        color: '#fff',
-                        padding: '5px 10px',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '10px',
-                        fontWeight: 'bold',
-                        flexShrink: 0
-                    }}
-                    title="Go to Frame"
-                >
-                    Go
-                </button>
-                
-                <div style={{ margin: '0 4px', color: '#888', flexShrink: 0 }}>|</div>
-                
-                <button
-                    onClick={handleStop}
-                    style={{
-                        background: '#633',
-                        border: '1px solid #555',
-                        color: '#fff',
-                        padding: '5px 10px',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '11px',
-                        fontWeight: 'bold',
-                        flexShrink: 0
-                    }}
-                    title="Stop"
-                >
-                    ⏹️
-                </button>
-                
-                <button
-                    onClick={handleReplay}
-                    style={{
-                        background: '#336',
-                        border: '1px solid #555',
-                        color: '#fff',
-                        padding: '5px 10px',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '11px',
-                        fontWeight: 'bold',
-                        flexShrink: 0
-                    }}
-                    title="Replay from Beginning"
-                >
-                    🔄
-                </button>
-                
-                {/* Search Toggle - always visible */}
-                <div style={{ margin: '0 4px', color: '#888', flexShrink: 0 }}>|</div>
-                
-                        <button
-                            onClick={() => setShowSearch(!showSearch)}
-                            style={{
-                                background: showSearch ? '#4c4' : '#333',
-                                border: '1px solid #555',
-                                color: '#fff',
-                                padding: '5px 10px',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                fontSize: '11px',
-                                fontWeight: 'bold',
-                                flexShrink: 0
-                            }}
-                            title="Toggle Search"
-                        >
-                            🔍
-                        </button>
-                        
-                        <button
-                            onClick={() => {
-                                setShowBoundsBox(!showBoundsBox);
-                                if (sphereRef) {
-                                    toggle_bounds_box(sphereRef, !showBoundsBox);
-                                }
-                            }}
-                            style={{
-                                background: showBoundsBox ? '#4c4' : '#333',
-                                border: '1px solid #555',
-                                color: '#fff',
-                                padding: '5px 10px',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                fontSize: '11px',
-                                fontWeight: 'bold',
-                                flexShrink: 0,
-                                marginLeft: '4px'
-                            }}
-                            title="Toggle Bounds Box"
-                        >
-                            📦
-                        </button>
-                
-                {/* Convex Hull Toggle - always visible for debugging */}
-                {frameInfo && (
-                    <>
-                        <div style={{ margin: '0 8px', color: '#888' }}>|</div>
-                        <label style={{
-                            color: '#fff',
-                            fontSize: '11px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            cursor: 'pointer',
-                            marginRight: '8px'
-                        }}>
-                            <input
-                                type="checkbox"
-                                checked={showDynamicPoints}
-                                onChange={(e) => {
-                                    console.log('🔹 Point sizing toggled:', e.target.checked);
-                                    setShowDynamicPoints(e.target.checked);
-                                }}
-                                style={{
-                                    marginRight: '4px',
-                                    cursor: 'pointer'
-                                }}
-                            />
-                            🔹 Points
-                        </label>
-                        <label style={{
-                            color: frameInfo.visible >= 4 ? '#fff' : '#888',
-                            fontSize: '11px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            cursor: 'pointer'
-                        }}>
-                            <input
-                                type="checkbox"
-                                checked={showDynamicHulls}
-                                onChange={(e) => {
-                                    console.log('🔮 Sphere sizing toggled:', e.target.checked, 'clusters:', frameInfo.visible);
-                                    setShowDynamicHulls(e.target.checked);
-                                }}
-                                style={{
-                                    marginRight: '4px',
-                                    cursor: 'pointer'
-                                }}
-                                disabled={frameInfo.visible < 4}
-                            />
-                            🔮 Spheres ({frameInfo.visible})
-                        </label>
-                        
-                        <div style={{ margin: '0 8px', color: '#888' }}>|</div>
-                        
-                        {/* Trail Length Control */}
-                        <label style={{
-                            color: '#fff',
-                            fontSize: '11px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            marginRight: '8px'
-                        }}>
-                            🛤️ Trails:
-                            <input
-                                type="range"
-                                min="2"
-                                max="15"
-                                value={trailLength}
-                                onChange={(e) => {
-                                    const newLength = parseInt(e.target.value);
-                                    console.log('🛤️ Trail length changed:', newLength);
-                                    setTrailLength(newLength);
-                                }}
-                                style={{
-                                    marginLeft: '4px',
-                                    marginRight: '4px',
-                                    cursor: 'pointer',
-                                    width: '40px'
-                                }}
-                            />
-                            <span style={{ fontSize: '10px', color: '#ccc' }}>{trailLength}</span>
-                        </label>
-                        
-                        {/* Cluster Spotlight Control */}
-                        <label style={{
-                            color: '#fff',
-                            fontSize: '11px',
-                            display: 'flex',
-                            alignItems: 'center'
-                        }}>
-                            🎯 Focus:
-                            <select
-                                value={spotlightCluster}
-                                onChange={(e) => {
-                                    const cluster = parseInt(e.target.value);
-                                    console.log('🎯 Spotlight cluster changed:', cluster);
-                                    setSpotlightCluster(cluster);
-                                    
-                                    // Update spotlight on the sphere
-                                    if (sphereRef) {
-                                        sphereRef.spotlightCluster = cluster;
-                                        update_cluster_spotlight(sphereRef);
-                                        render_sphere(sphereRef);
-                                    }
-                                }}
-                                style={{
-                                    marginLeft: '4px',
-                                    fontSize: '10px',
-                                    padding: '1px 2px',
-                                    backgroundColor: '#333',
-                                    color: '#fff',
-                                    border: '1px solid #555',
-                                    borderRadius: '2px',
-                                    cursor: 'pointer'
-                                }}
-                            >
-                                <option value={-1}>Off</option>
-                                {frameInfo.visible > 0 && Array.from({length: frameInfo.visible}, (_, i) => (
-                                    <option key={i} value={i}>C{i}</option>
-                                ))}
-                            </select>
-                        </label>
-                        
-                        {/* Cluster Debugging Tools */}
-                        <div style={{ margin: '0 8px', color: '#888' }}>|</div>
-                        
-                        <button
-                            onClick={() => setShowClusterDebug(!showClusterDebug)}
-                            style={{
-                                background: showClusterDebug ? '#4c4' : '#333',
-                                border: '1px solid #555',
-                                color: '#fff',
-                                padding: '4px 8px',
-                                borderRadius: '3px',
-                                cursor: 'pointer',
-                                fontSize: '11px'
-                            }}
-                            title="Toggle Cluster Inspector"
-                        >
-                            🔍 Debug
-                        </button>
-                        
-                        <button
-                            onClick={() => setShowColorLegend(!showColorLegend)}
-                            style={{
-                                background: showColorLegend ? '#4c4' : '#333',
-                                border: '1px solid #555',
-                                color: '#fff',
-                                padding: '4px 8px',
-                                borderRadius: '3px',
-                                cursor: 'pointer',
-                                fontSize: '11px',
-                                marginLeft: '4px'
-                            }}
-                            title="Toggle Color Legend"
-                        >
-                            🎨 Colors
-                        </button>
-                        
-                        {/* Fullscreen Toggle */}
-                        <div style={{ margin: '0 8px', color: '#888' }}>|</div>
-                        
-                        <button
-                            onClick={toggleFullscreen}
-                            style={{
-                                background: isFullscreen ? '#4c4' : '#333',
-                                border: '1px solid #555',
-                                color: '#fff',
-                                padding: '4px 8px',
-                                borderRadius: '3px',
-                                cursor: 'pointer',
-                                fontSize: '11px'
-                            }}
-                            title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
-                        >
-                            {isFullscreen ? '🪟 Exit' : '⛶ Full'}
-                        </button>
-                        
-                        {/* Rotation Toggle */}
-                        <div style={{ margin: '0 8px', color: '#888' }}>|</div>
-                        
-                        <button
-                            onClick={() => setRotationEnabled(!rotationEnabled)}
-                            style={{
-                                background: rotationEnabled ? '#4c4' : '#c44',
-                                border: '1px solid #555',
-                                color: '#fff',
-                                padding: '4px 8px',
-                                borderRadius: '3px',
-                                cursor: 'pointer',
-                                fontSize: '11px'
-                            }}
-                            title={rotationEnabled ? "Disable Rotation" : "Enable Rotation"}
-                        >
-                            {rotationEnabled ? '🔒 Lock' : '🔓 Free'}
-                        </button>
-                    </>
-                )}
-                </div>
-            </div>
-                
-                {/* Search Panel */}
-                {showSearch && columnTypes && Object.keys(columnTypes).length > 0 && (
+                {/* Countdown Overlay */}
+                {showCountdown && (
                     <div style={{
-                        position: 'fixed',
+                        position: 'absolute',
                         top: '50%',
                         left: '50%',
                         transform: 'translate(-50%, -50%)',
-                        background: 'rgba(0,0,0,0.95)',
-                        padding: '16px 20px',
-                        borderRadius: '8px',
-                        zIndex: 1500,
-                        border: '1px solid #555',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '12px',
+                        background: 'rgba(0, 0, 0, 0.9)',
+                        color: '#fff',
+                        padding: '30px 50px',
+                        borderRadius: '12px',
+                        fontSize: '32px',
+                        fontWeight: 'bold',
                         fontFamily: 'monospace',
-                        fontSize: '11px',
-                        minWidth: '400px',
-                        maxWidth: '90vw',
-                        boxShadow: '0 4px 20px rgba(0,0,0,0.5)'
+                        border: '3px solid #00ff00',
+                        textAlign: 'center',
+                        boxShadow: '0 0 30px rgba(0, 255, 0, 0.4)',
+                        zIndex: 2000
                     }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                            <label style={{ color: '#fff', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                Column:
-                                <select
-                                    value={selectedSearchColumn}
-                                    onChange={(e) => setSelectedSearchColumn(e.target.value)}
-                                    style={{
-                                        marginLeft: '4px',
-                                        fontSize: '10px',
-                                        padding: '2px 4px',
-                                        backgroundColor: '#333',
-                                        color: '#fff',
-                                        border: '1px solid #555',
-                                        borderRadius: '3px',
-                                        cursor: 'pointer'
-                                    }}
-                                >
-                                    {Object.keys(columnTypes).map((col) => (
-                                        <option key={col} value={col}>{col}</option>
-                                    ))}
-                                </select>
-                            </label>
-                            <input
-                                type="text"
-                                value={searchQuery}
-                                onChange={handleSearchInput}
-                                placeholder="Search..."
-                                style={{
-                                    background: '#222',
-                                    border: '1px solid #555',
-                                    color: '#fff',
-                                    padding: '4px 8px',
-                                    borderRadius: '3px',
-                                    fontSize: '11px',
-                                    flex: 1,
-                                    minWidth: '150px'
-                                }}
-                            />
-                            {searchQuery && (
-                                <button
-                                    onClick={() => {
-                                        setSearchQuery('');
-                                        if (sphereRef) {
-                                            clear_colors(sphereRef);
-                                            render_sphere(sphereRef);
-                                        }
-                                    }}
-                                    style={{
-                                        background: '#633',
-                                        border: '1px solid #555',
-                                        color: '#fff',
-                                        padding: '2px 6px',
-                                        borderRadius: '3px',
-                                        cursor: 'pointer',
-                                        fontSize: '10px'
-                                    }}
-                                    title="Clear Search"
-                                >
-                                    ✕
-                                </button>
-                            )}
-                        </div>
-                        {/* Example Queries */}
-                        <div style={{ 
-                            borderTop: '1px solid #555', 
-                            paddingTop: '8px',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '4px'
-                        }}>
-                            <div style={{ color: '#888', fontSize: '10px', marginBottom: '4px' }}>Example queries:</div>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                {(() => {
-                                    const examples: string[] = [];
-                                    if (selectedSearchColumn && columnTypes[selectedSearchColumn]) {
-                                        const colType = columnTypes[selectedSearchColumn];
-                                        if (colType === 'string') {
-                                            examples.push('a', 'test', 'value');
-                                        } else if (colType === 'set') {
-                                            // Try to get some example values from the data
-                                            const sampleValues = new Set<string>();
-                                            if (sphereRef && sphereRef.pointRecordsByID) {
-                                                for (const record of sphereRef.pointRecordsByID.values()) {
-                                                    const val = record.original[selectedSearchColumn];
-                                                    if (val !== undefined) {
-                                                        sampleValues.add(String(val));
-                                                        if (sampleValues.size >= 3) break;
-                                                    }
-                                                }
-                                            }
-                                            examples.push(...Array.from(sampleValues).slice(0, 3));
-                                        }
-                                    }
-                                    return examples.length > 0 ? examples.map((ex, idx) => (
-                                        <button
-                                            key={idx}
-                                            onClick={() => {
-                                                setSearchQuery(ex);
-                                                if (sphereRef && columnTypes && selectedSearchColumn) {
-                                                    const queryColumnType = columnTypes[selectedSearchColumn];
-                                                    const theRecords = filter_record_list(queryColumnType, selectedSearchColumn, ex);
-                                                    show_search_results(sphereRef, theRecords);
-                                                    render_sphere(sphereRef);
-                                                }
-                                            }}
-                                            style={{
-                                                background: '#444',
-                                                border: '1px solid #666',
-                                                color: '#fff',
-                                                padding: '2px 6px',
-                                                borderRadius: '3px',
-                                                cursor: 'pointer',
-                                                fontSize: '9px'
-                                            }}
-                                        >
-                                            {ex}
-                                        </button>
-                                    )) : null;
-                                })()}
-                            </div>
-                        </div>
+                        {countdownText}
                     </div>
                 )}
-
-            {/* Cluster Debug Panel */}
-            {showClusterDebug && (
-                <div style={{
-                    position: 'absolute',
-                    top: '10px',
-                    left: '10px',
-                    background: 'rgba(0,0,0,0.9)',
-                    color: '#fff',
-                    padding: '12px',
-                    borderRadius: '6px',
-                    fontFamily: 'monospace',
-                    fontSize: '11px',
-                    maxWidth: '300px',
-                    zIndex: 1500,
-                    border: '1px solid #555'
+                {/* ACTUAL 3D SPHERE VIEWER */}
+                <div id="training-movie-3d-container" style={{
+                    width: '100%',
+                    height: '100%',
+                    pointerEvents: 'auto',
+                    cursor: 'pointer'
                 }}>
-                    <div style={{ color: '#4c4', fontWeight: 'bold', marginBottom: '8px' }}>🔍 Cluster Inspector</div>
-                    
-                    {frameInfo && (
-                        <div style={{ marginBottom: '8px' }}>
-                            <div>Frame: {frameInfo.current}/{frameInfo.total}</div>
-                            <div>Visible Clusters: {frameInfo.visible}</div>
-                            <div>Epoch: {frameInfo.epoch || 'unknown'}</div>
-                        </div>
-                    )}
-                    
-                    {selectedPointInfo && (
-                        <div style={{ marginTop: '8px', borderTop: '1px solid #444', paddingTop: '8px' }}>
-                            <div style={{ color: '#ff4', fontWeight: 'bold' }}>Selected Point:</div>
-                            <div>Record ID: {selectedPointInfo.recordId}</div>
-                            <div>Row Offset: {selectedPointInfo.rowOffset}</div>
-                            <div>Cluster ID: {selectedPointInfo.clusterId}</div>
-                            <div>Color: <span style={{ background: selectedPointInfo.color, padding: '2px 6px', borderRadius: '2px' }}>{selectedPointInfo.color}</span></div>
-                            <div>Position: {selectedPointInfo.position}</div>
-                        </div>
-                    )}
-                    
-                    <div style={{ marginTop: '8px', fontSize: '10px', color: '#888' }}>
-                        Click points on sphere to inspect
-                    </div>
-                </div>
-            )}
-
-            {/* Color Legend Panel - positioned near controls */}
-            {showColorLegend && frameInfo && (
-                <div style={{
-                    position: 'absolute',
-                    bottom: '80px',
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    background: 'rgba(0,0,0,0.9)',
-                    color: '#fff',
-                    padding: '12px',
-                    borderRadius: '8px',
-                    fontFamily: 'monospace',
-                    fontSize: '11px',
-                    zIndex: 1500,
-                    border: '1px solid #555'
-                }}>
-                    <div style={{ color: '#4c4', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' }}>🎨 Cluster Colors</div>
-                    
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
-                        {frameInfo.visible > 0 && Array.from({length: frameInfo.visible}, (_, i) => {
-                            const colorIndex = i + 2;
-                            const kColorTable = [
-                                '#888888', '#ffcccc', '#ff0000', '#ff8800', '#ffff00', '#88ff00',
-                                '#00ff00', '#00ff88', '#00ffff', '#0088ff', '#0000ff', '#8800ff',
-                                '#ff00ff', '#ff0088'
-                            ];
-                            const color = kColorTable[colorIndex] || '#888888';
-                            
-                            return (
-                                <div key={`cluster-${i}`} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    <span style={{ fontSize: '10px' }}>C{i}</span>
-                                    <div style={{ 
-                                        background: color, 
-                                        width: '16px', 
-                                        height: '16px', 
-                                        border: '1px solid #555',
-                                        borderRadius: '3px'
-                                    }}></div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
-
-            {/* ACTUAL 3D SPHERE VIEWER */}
-            <div id="training-movie-3d-container" style={{
-                width: '100%',
-                height: '100%',
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                pointerEvents: 'auto',
-                cursor: 'pointer'
-            }}>
                 {trainingData ? (
                     <TrainingMovieSphere
                         trainingData={trainingData}
@@ -1775,8 +1093,291 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     </div>
                 )}
             </div>
+            
+            {/* Controls Side Panel - Right side */}
+            <div style={{
+                flex: '1 1 auto',
+                minWidth: '350px',
+                maxWidth: '500px',
+                height: '100vh',
+                background: '#1a1a1a',
+                borderLeft: '1px solid #333',
+                overflowY: 'auto',
+                padding: '16px',
+                fontFamily: 'monospace',
+                fontSize: '11px',
+                color: '#fff'
+            }}>
+                {/* Build timestamp & frame info */}
+                <div className="build-display" style={{
+                    marginBottom: '16px',
+                    padding: '8px',
+                    background: 'rgba(0,0,0,0.8)',
+                    borderRadius: '6px',
+                    border: '1px solid #555'
+                }}>
+                    <div style={{ color: '#ff0000', fontSize: '10px' }}>v{BUILD_TIMESTAMP.slice(0, 19).replace('T', ' ')}</div>
+                    {frameInfo && (
+                        <div style={{ marginTop: '8px' }}>
+                            <div style={{ color: '#00ff00', fontSize: '12px', fontWeight: 'bold' }}>
+                                Frame {frameInfo.current}/{frameInfo.total} | {frameInfo.visible} clusters
+                            </div>
+                            
+                            {/* Progress Bar */}
+                            <div style={{ 
+                                marginTop: '6px',
+                                background: 'rgba(255,255,255,0.2)',
+                                borderRadius: '6px',
+                                overflow: 'hidden',
+                                height: '12px',
+                                width: '100%',
+                                border: '1px solid rgba(0,255,0,0.3)'
+                            }}>
+                                <div style={{
+                                    background: 'linear-gradient(90deg, #00ff00, #00aa00)',
+                                    height: '100%',
+                                    width: `${(frameInfo.current / frameInfo.total) * 100}%`,
+                                    transition: 'width 0.2s ease',
+                                    borderRadius: '5px',
+                                    boxShadow: '0 0 8px rgba(0,255,0,0.4)'
+                                }} />
+                            </div>
+                            <div style={{ 
+                                color: '#00ff00', 
+                                fontSize: '11px', 
+                                marginTop: '3px',
+                                textAlign: 'center',
+                                fontWeight: 'bold'
+                            }}>
+                                {Math.round((frameInfo.current / frameInfo.total) * 100)}%
+                            </div>
+                            
+                            {frameInfo.epoch && (
+                                <div style={{ color: '#00ffff', marginTop: '4px', fontSize: '11px', fontWeight: 'bold' }}>
+                                    Epoch {frameInfo.epoch} of 225
+                                </div>
+                            )}
+                            {frameInfo.validationLoss !== undefined && (
+                                <div style={{ color: '#ffff00', marginTop: '4px', fontSize: '10px', fontWeight: 'bold' }}>
+                                    Validation Loss: {frameInfo.validationLoss.toFixed(4)}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
 
+                {/* Loss Plot */}
+                {lossData && lossData.validation_loss && (
+                    <div style={{ marginBottom: '16px' }}>
+                        <LossPlotOverlay 
+                            lossData={lossData.validation_loss} 
+                            currentEpoch={frameInfo?.epoch} 
+                            style={{
+                                width: '100%',
+                                height: '120px',
+                                pointerEvents: 'none'
+                            }}
+                        />
+                    </div>
+                )}
 
+                {/* Frame Controls */}
+                {frameInfo && frameInfo.total > 0 && (
+                    <div style={{
+                        background: 'rgba(0,0,0,0.6)',
+                        padding: '12px',
+                        borderRadius: '8px',
+                        border: '1px solid #555',
+                        marginBottom: '16px'
+                    }}>
+                        {/* Scrub Slider */}
+                        <div 
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                width: '100%',
+                                marginBottom: '12px'
+                            }}
+                            onWheel={(e) => {
+                                // Handle horizontal trackpad scrolling
+                                if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+                                    e.preventDefault();
+                                    const delta = e.deltaX > 0 ? 1 : -1;
+                                    const newFrame = Math.max(1, Math.min(frameInfo.total, frameInfo.current + delta));
+                                    if (newFrame !== frameInfo.current && sphereRef) {
+                                        goto_training_movie_frame(sphereRef, newFrame);
+                                        setIsPlaying(false);
+                                        setFrameInput(newFrame.toString());
+                                    }
+                                }
+                            }}
+                        >
+                            <span style={{ color: '#fff', fontSize: '11px', minWidth: '45px', flexShrink: 0 }}>Frame:</span>
+                            <input
+                                type="range"
+                                min="1"
+                                max={frameInfo.total}
+                                value={frameInfo.current}
+                                onChange={handleScrub}
+                                style={{
+                                    flex: 1,
+                                    cursor: 'pointer',
+                                    height: '6px',
+                                    minWidth: 0
+                                }}
+                            />
+                            <span style={{ color: '#fff', fontSize: '11px', minWidth: '60px', textAlign: 'right', flexShrink: 0 }}>
+                                {frameInfo.current} / {frameInfo.total}
+                            </span>
+                        </div>
+                        
+                        {/* Control Buttons */}
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            flexWrap: 'wrap',
+                            justifyContent: 'center',
+                            marginBottom: '12px'
+                        }}>
+                            <button onClick={handleStepBackward} style={{ background: '#333', border: '1px solid #555', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', flexShrink: 0 }} title="Previous Frame">⏮️</button>
+                            <button onClick={handlePlayPause} style={{ background: isPlaying ? '#c44' : '#4c4', border: '1px solid #555', color: '#fff', padding: '6px 14px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', minWidth: '50px', fontWeight: 'bold', flexShrink: 0 }} title={isPlaying ? "Pause" : "Play"}>{isPlaying ? '⏸️' : '▶️'}</button>
+                            <button onClick={handleStepForward} style={{ background: '#333', border: '1px solid #555', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', flexShrink: 0 }} title="Next Frame">⏭️</button>
+                            <div style={{ margin: '0 4px', color: '#888', flexShrink: 0 }}>|</div>
+                            <input type="number" value={frameInput} onChange={(e) => setFrameInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleGotoFrame()} placeholder="#" style={{ background: '#222', border: '1px solid #555', color: '#fff', padding: '4px 6px', borderRadius: '4px', width: '50px', fontSize: '10px', flexShrink: 0 }} min="1" max={frameInfo?.total || 1} />
+                            <button onClick={handleGotoFrame} style={{ background: '#333', border: '1px solid #555', color: '#fff', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold', flexShrink: 0 }} title="Go to Frame">Go</button>
+                            <div style={{ margin: '0 4px', color: '#888', flexShrink: 0 }}>|</div>
+                            <button onClick={handleStop} style={{ background: '#633', border: '1px solid #555', color: '#fff', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', flexShrink: 0 }} title="Stop">⏹️</button>
+                            <button onClick={handleReplay} style={{ background: '#333', border: '1px solid #555', color: '#fff', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', flexShrink: 0 }} title="Replay">🔄</button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Search & Bounds Box Controls */}
+                <div style={{ background: 'rgba(0,0,0,0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #555', marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <button onClick={() => setShowSearch(!showSearch)} style={{ background: showSearch ? '#4c4' : '#333', border: '1px solid #555', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', flexShrink: 0 }} title="Toggle Search">🔍 Search</button>
+                        <button onClick={() => { setShowBoundsBox(!showBoundsBox); if (sphereRef) { toggle_bounds_box(sphereRef, !showBoundsBox); } }} style={{ background: showBoundsBox ? '#4c4' : '#333', border: '1px solid #555', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', flexShrink: 0 }} title="Toggle Bounds Box">📦 Bounds</button>
+                    </div>
+                </div>
+
+                {/* Search Panel - Inline in side panel */}
+                {showSearch && columnTypes && Object.keys(columnTypes).length > 0 && (
+                    <div style={{ background: 'rgba(0,0,0,0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #555', marginBottom: '16px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <label style={{ color: '#fff', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}>
+                                    Column:
+                                    <select value={selectedSearchColumn} onChange={(e) => setSelectedSearchColumn(e.target.value)} style={{ marginLeft: '4px', fontSize: '10px', padding: '2px 4px', backgroundColor: '#333', color: '#fff', border: '1px solid #555', borderRadius: '3px', cursor: 'pointer' }}>
+                                        {Object.keys(columnTypes).map((col) => (<option key={col} value={col}>{col}</option>))}
+                                    </select>
+                                </label>
+                                <input type="text" value={searchQuery} onChange={handleSearchInput} placeholder="Search..." style={{ background: '#222', border: '1px solid #555', color: '#fff', padding: '4px 8px', borderRadius: '3px', fontSize: '11px', flex: 1, minWidth: '150px' }} />
+                                {searchQuery && (<button onClick={() => { setSearchQuery(''); if (sphereRef) { clear_colors(sphereRef); render_sphere(sphereRef); } }} style={{ background: '#633', border: '1px solid #555', color: '#fff', padding: '2px 6px', borderRadius: '3px', cursor: 'pointer', fontSize: '10px' }} title="Clear Search">✕</button>)}
+                            </div>
+                            {/* Example Queries */}
+                            <div style={{ borderTop: '1px solid #555', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <div style={{ color: '#888', fontSize: '10px', marginBottom: '4px' }}>Example queries:</div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                    {(() => {
+                                        const examples: string[] = [];
+                                        if (selectedSearchColumn && columnTypes[selectedSearchColumn]) {
+                                            const colType = columnTypes[selectedSearchColumn];
+                                            if (colType === 'string') {
+                                                examples.push('a', 'test', 'value');
+                                            } else if (colType === 'set') {
+                                                const sampleValues = new Set<string>();
+                                                if (sphereRef && sphereRef.pointRecordsByID) {
+                                                    for (const record of sphereRef.pointRecordsByID.values()) {
+                                                        const val = record.original[selectedSearchColumn];
+                                                        if (val !== undefined) {
+                                                            sampleValues.add(String(val));
+                                                            if (sampleValues.size >= 3) break;
+                                                        }
+                                                    }
+                                                }
+                                                examples.push(...Array.from(sampleValues).slice(0, 3));
+                                            }
+                                        }
+                                        return examples.length > 0 ? examples.map((ex, idx) => (
+                                            <button key={idx} onClick={() => { setSearchQuery(ex); if (sphereRef && columnTypes && selectedSearchColumn) { const queryColumnType = columnTypes[selectedSearchColumn]; const theRecords = filter_record_list(queryColumnType, selectedSearchColumn, ex); show_search_results(sphereRef, theRecords); render_sphere(sphereRef); } }} style={{ background: '#444', border: '1px solid #666', color: '#fff', padding: '2px 6px', borderRadius: '3px', cursor: 'pointer', fontSize: '9px' }}>{ex}</button>
+                                        )) : null;
+                                    })()}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Visual Controls */}
+                {frameInfo && (
+                    <div style={{ background: 'rgba(0,0,0,0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #555', marginBottom: '16px' }}>
+                        <div style={{ color: '#fff', fontSize: '12px', fontWeight: 'bold', marginBottom: '8px' }}>Visual Controls</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <label style={{ color: '#fff', fontSize: '11px', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                                <input type="checkbox" checked={showDynamicPoints} onChange={(e) => { console.log('🔹 Point sizing toggled:', e.target.checked); setShowDynamicPoints(e.target.checked); }} style={{ marginRight: '6px', cursor: 'pointer' }} />
+                                🔹 Dynamic Point Sizing
+                            </label>
+                            <label style={{ color: frameInfo.visible >= 4 ? '#fff' : '#888', fontSize: '11px', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                                <input type="checkbox" checked={showDynamicHulls} onChange={(e) => { console.log('🔮 Sphere sizing toggled:', e.target.checked, 'clusters:', frameInfo.visible); setShowDynamicHulls(e.target.checked); }} style={{ marginRight: '6px', cursor: 'pointer' }} disabled={frameInfo.visible < 4} />
+                                🔮 Dynamic Spheres ({frameInfo.visible} clusters)
+                            </label>
+                            <div style={{ marginTop: '8px', borderTop: '1px solid #555', paddingTop: '8px' }}>
+                                <label style={{ color: '#fff', fontSize: '11px', display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
+                                    🛤️ Trail Length:
+                                    <input type="range" min="2" max="15" value={trailLength} onChange={(e) => { const newLength = parseInt(e.target.value); console.log('🛤️ Trail length changed:', newLength); setTrailLength(newLength); }} style={{ marginLeft: '8px', marginRight: '8px', cursor: 'pointer', flex: 1 }} />
+                                    <span style={{ fontSize: '10px', color: '#ccc', minWidth: '20px' }}>{trailLength}</span>
+                                </label>
+                            </div>
+                            <div style={{ marginTop: '8px', borderTop: '1px solid #555', paddingTop: '8px' }}>
+                                <label style={{ color: '#fff', fontSize: '11px', display: 'flex', alignItems: 'center' }}>
+                                    🎯 Focus Cluster:
+                                    <select value={spotlightCluster} onChange={(e) => { const cluster = parseInt(e.target.value); console.log('🎯 Spotlight cluster changed:', cluster); setSpotlightCluster(cluster); if (sphereRef) { sphereRef.spotlightCluster = cluster; update_cluster_spotlight(sphereRef); render_sphere(sphereRef); } }} style={{ marginLeft: '8px', fontSize: '10px', padding: '2px 4px', backgroundColor: '#333', color: '#fff', border: '1px solid #555', borderRadius: '3px', cursor: 'pointer', flex: 1 }}>
+                                        <option value={-1}>Off</option>
+                                        {frameInfo.visible > 0 && Array.from({length: frameInfo.visible}, (_, i) => (<option key={i} value={i}>C{i}</option>))}
+                                    </select>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Other Controls */}
+                <div style={{ background: 'rgba(0,0,0,0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #555', marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <button onClick={() => setShowClusterDebug(!showClusterDebug)} style={{ background: showClusterDebug ? '#4c4' : '#333', border: '1px solid #555', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title="Toggle Cluster Inspector">🔍 Debug</button>
+                        <button onClick={() => setShowColorLegend(!showColorLegend)} style={{ background: showColorLegend ? '#4c4' : '#333', border: '1px solid #555', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title="Toggle Color Legend">🎨 Colors</button>
+                        <button onClick={toggleFullscreen} style={{ background: isFullscreen ? '#4c4' : '#333', border: '1px solid #555', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}>{isFullscreen ? '🪟 Exit' : '⛶ Full'}</button>
+                        <button onClick={() => setRotationEnabled(!rotationEnabled)} style={{ background: rotationEnabled ? '#4c4' : '#c44', border: '1px solid #555', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title={rotationEnabled ? "Disable Rotation" : "Enable Rotation"}>{rotationEnabled ? '🔄 On' : '⏸️ Off'}</button>
+                    </div>
+                </div>
+
+                {/* Color Legend - Inline in side panel */}
+                {showColorLegend && frameInfo && (
+                    <div style={{ background: 'rgba(0,0,0,0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #555', marginBottom: '16px' }}>
+                        <div style={{ color: '#4c4', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center', fontSize: '12px' }}>🎨 Cluster Colors</div>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+                            {frameInfo.visible > 0 && Array.from({length: frameInfo.visible}, (_, i) => {
+                                const colorIndex = i + 2;
+                                const kColorTable = ['#888888', '#ffcccc', '#ff0000', '#ff8800', '#ffff00', '#88ff00', '#00ff00', '#00ff88', '#00ffff', '#0088ff', '#0000ff', '#8800ff', '#ff00ff', '#ff0088'];
+                                const color = kColorTable[colorIndex] || '#888888';
+                                return (<div key={`cluster-${i}`} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ fontSize: '10px' }}>C{i}</span><div style={{ background: color, width: '16px', height: '16px', border: '1px solid #555', borderRadius: '3px' }}></div></div>);
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {/* Cluster Debug Panel - Inline in side panel */}
+                {showClusterDebug && (
+                    <div style={{ background: 'rgba(0,0,0,0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #555', marginBottom: '16px' }}>
+                        <div style={{ color: '#4c4', fontWeight: 'bold', marginBottom: '8px', fontSize: '12px' }}>🔍 Cluster Inspector</div>
+                        {frameInfo && (<div style={{ marginBottom: '8px', fontSize: '11px' }}><div>Frame: {frameInfo.current}/{frameInfo.total}</div><div>Visible Clusters: {frameInfo.visible}</div><div>Epoch: {frameInfo.epoch || 'unknown'}</div></div>)}
+                        {selectedPointInfo && (<div style={{ marginTop: '8px', borderTop: '1px solid #444', paddingTop: '8px', fontSize: '10px' }}><div style={{ color: '#ff4', fontWeight: 'bold' }}>Selected Point:</div><div>Record ID: {selectedPointInfo.recordId}</div><div>Row Offset: {selectedPointInfo.rowOffset}</div><div>Cluster ID: {selectedPointInfo.clusterId}</div><div>Color: <span style={{ background: selectedPointInfo.color, padding: '2px 6px', borderRadius: '2px' }}>{selectedPointInfo.color}</span></div><div>Position: {selectedPointInfo.position}</div></div>)}
+                        <div style={{ marginTop: '8px', fontSize: '10px', color: '#888' }}>Click points on sphere to inspect</div>
+                    </div>
+                )}
+            </div>
         </div>
     );
 };
