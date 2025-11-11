@@ -1145,16 +1145,28 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
                 targetPositions.set(recordId, new THREE.Vector3(x, y, z));
                 validPoints++;
                 
-                // TRAINING MOVIE: Use direct lookup from finalClusterResults (no deprecated cluster_pre)
+                // TRAINING MOVIE: Use direct lookup from finalClusterResults, fallback to cluster_pre from epoch data
                 const record = sphere.pointRecordsByID.get(recordId);
                 let clusterAssignment = -1;
                 
-                // Use direct lookup from server data like other working parts of the code
+                // First try to use finalClusterResults if available
                 const activeClusterKey = get_active_cluster_count_key(sphere);
                 if (activeClusterKey !== null && sphere.finalClusterResults[activeClusterKey]?.cluster_labels) {
                     const rowOffset = record?.featrix_meta?.__featrix_row_offset;
                     if (rowOffset !== undefined && rowOffset < sphere.finalClusterResults[activeClusterKey].cluster_labels.length) {
                         clusterAssignment = sphere.finalClusterResults[activeClusterKey].cluster_labels[rowOffset];
+                    }
+                }
+                
+                // Fallback: Use cluster_pre from the current epoch's coord data if finalClusterResults not available
+                if (clusterAssignment === -1 && epochData.coords) {
+                    const coordIndex = epochData.coords.findIndex((c: any) => {
+                        const coordRowOffset = c.__featrix_row_offset;
+                        const recordRowOffset = record?.featrix_meta?.__featrix_row_offset;
+                        return coordRowOffset !== undefined && coordRowOffset === recordRowOffset;
+                    });
+                    if (coordIndex >= 0 && epochData.coords[coordIndex].cluster_pre !== undefined) {
+                        clusterAssignment = epochData.coords[coordIndex].cluster_pre;
                     }
                 }
                 
