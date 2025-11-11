@@ -99,7 +99,8 @@ function create_new_sphere(container: HTMLElement): SphereData {
     const cubeSize = dataRange * 1;
     const sceneCenter = new THREE.Vector3(0, 0, 0);
 
-    let orbitRadius = cubeSize * 1.5;
+    // Zoom in closer - reduce orbitRadius to make sphere fill more of viewport
+    let orbitRadius = cubeSize * 1.0;
 
     const prevPos = { x: 0, y: 0 };
 
