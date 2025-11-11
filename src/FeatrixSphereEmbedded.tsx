@@ -12,7 +12,7 @@ import React, { Suspense, useEffect, useRef, useState, useCallback } from "react
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
 import { fetch_session_data, fetch_session_projections, fetch_training_metrics } from './embed-data-access';
-import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight } from '../featrix_sphere_control';
+import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 
 // Build timestamp for cache busting verification
@@ -500,6 +500,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     
     // Rotation control state
     const [rotationEnabled, setRotationEnabled] = useState(true); // Default enabled
+    
+    // Search state
+    const [columnTypes, setColumnTypes] = useState<any>(null);
+    const [selectedSearchColumn, setSelectedSearchColumn] = useState<string>('');
+    const [searchQuery, setSearchQuery] = useState<string>('');
+    const [showSearch, setShowSearch] = useState(false);
 
     // Countdown function for initial pause - using useCallback to ensure stable reference
     const startCountdown = useCallback(() => {
@@ -567,10 +573,22 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     
                     setTrainingData(apiTrainingData.epoch_projections);
                     // Use API data for session projections with cluster results
-                    setSessionProjections({
+                    const sessionData = {
                         ...apiTrainingData,
                         entire_cluster_results: clusterResults
-                    });
+                    };
+                    setSessionProjections(sessionData);
+                    
+                    // Extract column types from first epoch for search functionality
+                    const firstEpochKey = Object.keys(apiTrainingData.epoch_projections)[0];
+                    const firstEpoch = apiTrainingData.epoch_projections[firstEpochKey];
+                    if (firstEpoch && firstEpoch.coords) {
+                        const types = getColumnTypes({ coords: firstEpoch.coords });
+                        setColumnTypes(types);
+                        if (Object.keys(types).length > 0) {
+                            setSelectedSearchColumn(Object.keys(types)[0]);
+                        }
+                    }
                     
                     // Use API training metrics for loss plot
                     if (apiTrainingData.training_metrics) {
@@ -649,6 +667,23 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         stop_training_movie(sphereRef);
         setIsPlaying(false);
     };
+    
+    const handleReplay = () => {
+        if (!sphereRef) return;
+        // Reset to frame 1 and play
+        goto_training_movie_frame(sphereRef, 1);
+        setIsPlaying(true);
+        play_training_movie(sphereRef, 10);
+    };
+    
+    const handleScrub = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!sphereRef) return;
+        const frameNumber = parseInt(e.target.value);
+        if (isNaN(frameNumber)) return;
+        goto_training_movie_frame(sphereRef, frameNumber);
+        setIsPlaying(false); // Scrubbing pauses
+        setFrameInput(frameNumber.toString());
+    };
 
     const toggleFullscreen = () => {
         if (!isFullscreen) {
@@ -676,6 +711,91 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         document.addEventListener('fullscreenchange', handleFullscreenChange);
         return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
     }, []);
+    
+    // Get column types helper (same as FinalSphereView)
+    const getColumnTypes = (projections: any) => {
+        try {
+            const d: any = {};
+            const items = projections.coords || [];
+            for (const entry of items) {
+                if (entry.scalar_columns) {
+                    const ks = Object.keys(entry.scalar_columns);
+                    for (const k of ks) {
+                        if (d[k] === undefined) {
+                            d[k] = 'scalar';
+                        }
+                    }
+                }
+                if (entry.set_columns) {
+                    const ks = Object.keys(entry.set_columns);
+                    for (const k of ks) {
+                        if (d[k] === undefined) {
+                            d[k] = 'set';
+                        }
+                    }
+                }
+                if (entry.string_columns) {
+                    const ks = Object.keys(entry.string_columns);
+                    for (const k of ks) {
+                        if (d[k] === undefined) {
+                            d[k] = 'string';
+                        }
+                    }
+                }
+            }
+            return d;
+        } catch (error) {
+            console.error("Error getting column types:", error);
+            return {};
+        }
+    };
+    
+    // Filter record list for search (same logic as FeatrixSphereColorControls)
+    const filter_record_list = (queryColumnType: any, queryColumn: any, queryValue: any) => {
+        if (!sphereRef || !sphereRef.pointRecordsByID) return [];
+        
+        let results: any = [];
+        for (const record of sphereRef.pointRecordsByID.values()) {
+            const columnValue = record.original[queryColumn];
+            if (columnValue === undefined) continue;
+            
+            if (queryColumnType === 'string') {
+                const value = String(columnValue).toLowerCase();
+                const query = String(queryValue).toLowerCase();
+                if (value.includes(query)) {
+                    results.push(record);
+                }
+            } else if (queryColumnType === 'set') {
+                const value = String(columnValue).toLowerCase();
+                const query = String(queryValue).toLowerCase();
+                if (value === query) {
+                    results.push(record);
+                }
+            }
+        }
+        return results;
+    };
+    
+    // Handle search input
+    const handleSearchInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const inputValue = e.target.value;
+        setSearchQuery(inputValue);
+        
+        if (!sphereRef || !columnTypes || !selectedSearchColumn) return;
+        
+        // If empty, clear search
+        if (inputValue === "") {
+            clear_colors(sphereRef);
+            render_sphere(sphereRef);
+            return;
+        }
+        
+        // Filter and highlight results
+        const queryColumnType = columnTypes[selectedSearchColumn];
+        const theRecords = filter_record_list(queryColumnType, selectedSearchColumn, inputValue);
+        show_search_results(sphereRef, theRecords);
+        render_sphere(sphereRef);
+    };
 
     if (loading) {
         return (
@@ -890,25 +1010,62 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 left: '50%',
                 transform: 'translateX(-50%)',
                 display: 'flex',
+                flexDirection: 'column',
                 alignItems: 'center',
                 gap: '8px',
-                background: 'rgba(0,0,0,0.9)',
-                padding: '8px 16px',
-                borderRadius: '25px',
+                background: 'rgba(0,0,0,0.95)',
+                padding: '12px 20px',
+                borderRadius: '12px',
                 zIndex: 1000,
                 fontFamily: 'monospace',
-                fontSize: '11px'
+                fontSize: '11px',
+                minWidth: '600px',
+                border: '1px solid #555'
             }}>
+                {/* Scrub Slider - top row */}
+                {frameInfo && frameInfo.total > 0 && (
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        width: '100%'
+                    }}>
+                        <span style={{ color: '#fff', fontSize: '10px', minWidth: '40px' }}>Frame:</span>
+                        <input
+                            type="range"
+                            min="1"
+                            max={frameInfo.total}
+                            value={frameInfo.current}
+                            onChange={handleScrub}
+                            style={{
+                                flex: 1,
+                                cursor: 'pointer',
+                                height: '6px'
+                            }}
+                        />
+                        <span style={{ color: '#fff', fontSize: '11px', minWidth: '60px', textAlign: 'right' }}>
+                            {frameInfo.current} / {frameInfo.total}
+                        </span>
+                    </div>
+                )}
+                
+                {/* Control Buttons - bottom row */}
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                }}>
                 <button
                     onClick={handleStepBackward}
                     style={{
                         background: '#333',
                         border: '1px solid #555',
                         color: '#fff',
-                        padding: '4px 8px',
-                        borderRadius: '3px',
+                        padding: '6px 12px',
+                        borderRadius: '4px',
                         cursor: 'pointer',
-                        fontSize: '12px'
+                        fontSize: '14px',
+                        fontWeight: 'bold'
                     }}
                     title="Previous Frame"
                 >
@@ -921,11 +1078,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         background: isPlaying ? '#c44' : '#4c4',
                         border: '1px solid #555',
                         color: '#fff',
-                        padding: '4px 8px',
-                        borderRadius: '3px',
+                        padding: '6px 16px',
+                        borderRadius: '4px',
                         cursor: 'pointer',
-                        fontSize: '12px',
-                        minWidth: '32px'
+                        fontSize: '16px',
+                        minWidth: '50px',
+                        fontWeight: 'bold'
                     }}
                     title={isPlaying ? "Pause" : "Play"}
                 >
@@ -938,10 +1096,11 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         background: '#333',
                         border: '1px solid #555',
                         color: '#fff',
-                        padding: '4px 8px',
-                        borderRadius: '3px',
+                        padding: '6px 12px',
+                        borderRadius: '4px',
                         cursor: 'pointer',
-                        fontSize: '12px'
+                        fontSize: '14px',
+                        fontWeight: 'bold'
                     }}
                     title="Next Frame"
                 >
@@ -960,9 +1119,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         background: '#222',
                         border: '1px solid #555',
                         color: '#fff',
-                        padding: '2px 6px',
-                        borderRadius: '3px',
-                        width: '60px',
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        width: '70px',
                         fontSize: '11px'
                     }}
                     min="1"
@@ -975,10 +1134,11 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         background: '#333',
                         border: '1px solid #555',
                         color: '#fff',
-                        padding: '4px 8px',
-                        borderRadius: '3px',
+                        padding: '6px 12px',
+                        borderRadius: '4px',
                         cursor: 'pointer',
-                        fontSize: '11px'
+                        fontSize: '11px',
+                        fontWeight: 'bold'
                     }}
                     title="Go to Frame"
                 >
@@ -993,14 +1153,52 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         background: '#633',
                         border: '1px solid #555',
                         color: '#fff',
-                        padding: '4px 8px',
-                        borderRadius: '3px',
+                        padding: '6px 12px',
+                        borderRadius: '4px',
                         cursor: 'pointer',
-                        fontSize: '12px'
+                        fontSize: '12px',
+                        fontWeight: 'bold'
                     }}
                     title="Stop"
                 >
-                    ⏹️
+                    ⏹️ Stop
+                </button>
+                
+                <button
+                    onClick={handleReplay}
+                    style={{
+                        background: '#336',
+                        border: '1px solid #555',
+                        color: '#fff',
+                        padding: '6px 12px',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        fontWeight: 'bold'
+                    }}
+                    title="Replay from Beginning"
+                >
+                    🔄 Replay
+                </button>
+                
+                {/* Search Toggle - always visible */}
+                <div style={{ margin: '0 8px', color: '#888' }}>|</div>
+                
+                <button
+                    onClick={() => setShowSearch(!showSearch)}
+                    style={{
+                        background: showSearch ? '#4c4' : '#333',
+                        border: '1px solid #555',
+                        color: '#fff',
+                        padding: '6px 12px',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        fontWeight: 'bold'
+                    }}
+                    title="Toggle Search"
+                >
+                    🔍 Search
                 </button>
                 
                 {/* Convex Hull Toggle - always visible for debugging */}
@@ -1199,6 +1397,87 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     </>
                 )}
                 </div>
+            </div>
+                
+                {/* Search Panel */}
+                {showSearch && columnTypes && Object.keys(columnTypes).length > 0 && (
+                    <div style={{
+                        position: 'absolute',
+                        bottom: '60px',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        background: 'rgba(0,0,0,0.95)',
+                        padding: '12px 16px',
+                        borderRadius: '8px',
+                        zIndex: 1500,
+                        border: '1px solid #555',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        fontFamily: 'monospace',
+                        fontSize: '11px'
+                    }}>
+                        <label style={{ color: '#fff', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            Column:
+                            <select
+                                value={selectedSearchColumn}
+                                onChange={(e) => setSelectedSearchColumn(e.target.value)}
+                                style={{
+                                    marginLeft: '4px',
+                                    fontSize: '10px',
+                                    padding: '2px 4px',
+                                    backgroundColor: '#333',
+                                    color: '#fff',
+                                    border: '1px solid #555',
+                                    borderRadius: '3px',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                {Object.keys(columnTypes).map((col) => (
+                                    <option key={col} value={col}>{col}</option>
+                                ))}
+                            </select>
+                        </label>
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={handleSearchInput}
+                            placeholder="Search..."
+                            style={{
+                                background: '#222',
+                                border: '1px solid #555',
+                                color: '#fff',
+                                padding: '4px 8px',
+                                borderRadius: '3px',
+                                fontSize: '11px',
+                                width: '200px'
+                            }}
+                        />
+                        {searchQuery && (
+                            <button
+                                onClick={() => {
+                                    setSearchQuery('');
+                                    if (sphereRef) {
+                                        clear_colors(sphereRef);
+                                        render_sphere(sphereRef);
+                                    }
+                                }}
+                                style={{
+                                    background: '#633',
+                                    border: '1px solid #555',
+                                    color: '#fff',
+                                    padding: '2px 6px',
+                                    borderRadius: '3px',
+                                    cursor: 'pointer',
+                                    fontSize: '10px'
+                                }}
+                                title="Clear Search"
+                            >
+                                ✕
+                            </button>
+                        )}
+                    </div>
+                )}
 
             {/* Cluster Debug Panel */}
             {showClusterDebug && (
