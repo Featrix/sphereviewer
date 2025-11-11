@@ -483,6 +483,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         hasLoggedInit.current = true;
     }
     const [sphereRef, setSphereRef] = useState<any>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
     const [frameInfo, setFrameInfo] = useState<{ current: number, total: number, visible: number, epoch?: string, validationLoss?: number } | null>(null);
     const [isPlaying, setIsPlaying] = useState(true); // Start playing automatically
     const [frameInput, setFrameInput] = useState<string>('');
