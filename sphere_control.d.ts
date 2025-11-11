@@ -65,6 +65,7 @@ export interface SphereData {
     clusterSpotlightGroup?: THREE.Group;
     boundsBox?: THREE.LineSegments;
     showBoundsBox?: boolean;
+    boundsBoxVolumeUtilization?: number; // Percentage of bounding box volume occupied by sphere
     // Smooth interpolation properties
     pointTargetPositions?: Map<string, THREE.Vector3>;
     pointStartPositions?: Map<string, THREE.Vector3>;

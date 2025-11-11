@@ -2079,6 +2079,17 @@ function update_bounds_box(sphere: SphereData) {
     const boxSize = box.getSize(new THREE.Vector3());
     const boxCenter = box.getCenter(new THREE.Vector3());
     
+    // Calculate volume utilization: sphere volume / bounding box volume
+    // All points are on a unit sphere (radius = 1), so sphere volume = (4/3)πr³ = (4/3)π ≈ 4.18879
+    const sphereRadius = 1.0; // Unit sphere
+    const sphereVolume = (4 / 3) * Math.PI * Math.pow(sphereRadius, 3);
+    const boundingBoxVolume = boxSize.x * boxSize.y * boxSize.z;
+    const volumeUtilization = boundingBoxVolume > 0 
+        ? (sphereVolume / boundingBoxVolume) * 100 
+        : 0;
+    
+    sphere.boundsBoxVolumeUtilization = volumeUtilization;
+    
     // Update existing bounds box geometry and position
     if (sphere.boundsBox.geometry) {
         sphere.boundsBox.geometry.dispose();
