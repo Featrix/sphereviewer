@@ -455,9 +455,15 @@ const TrainingMovieSphere: React.FC<{
         };
     }, []);
 
+    // If containerRef is provided from parent, don't render our own div
+    // The parent will handle the container div
+    if (containerRef) {
+        return null;
+    }
+    
     return (
         <div 
-            ref={!containerRef ? internalContainerRef : undefined}
+            ref={internalContainerRef}
             style={{ 
                 width: '100%', 
                 height: '100%',
