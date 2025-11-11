@@ -1337,9 +1337,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         <div style={{ color: '#4c4', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center', fontSize: '16px' }}>🎨 Cluster Colors</div>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
                             {frameInfo.visible > 0 && Array.from({length: frameInfo.visible}, (_, i) => {
-                                const colorIndex = i + 2;
-                                const kColorTable = ['#888888', '#ffcccc', '#ff0000', '#ff8800', '#ffff00', '#88ff00', '#00ff00', '#00ff88', '#00ffff', '#0088ff', '#0000ff', '#8800ff', '#ff00ff', '#ff0088'];
-                                const color = kColorTable[colorIndex] || '#888888';
+                                // Clusters are 0-based, so cluster 0 uses color index 0
+                                const kColorTable = [0xe6194b, 0x3cb44b, 0xffe119, 0x4363d8, 0xf58231, 0x911eb4, 0x46f0f0, 0xf032e6, 0xbcf60c, 0xfabebe, 0x008080, 0xe6beff, 0x9a6324, 0xfffac8, 0x800000, 0xaaffc3, 0x808000, 0xffd8b1, 0x999999, 0x0000ff, 0x00ff00, 0xffcccc];
+                                const colorHex = kColorTable[i] || 0x999999;
+                                const color = '#' + colorHex.toString(16).padStart(6, '0');
                                 return (<div key={`cluster-${i}`} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ fontSize: '14px' }}>C{i}</span><div style={{ background: color, width: '20px', height: '20px', border: '1px solid #555', borderRadius: '3px' }}></div></div>);
                             })}
                         </div>

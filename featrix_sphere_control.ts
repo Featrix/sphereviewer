@@ -1174,10 +1174,10 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
                 
                 // First try to use finalClusterResults if available
                 const activeClusterKey = get_active_cluster_count_key(sphere);
-                if (activeClusterKey !== null && sphere.finalClusterResults[activeClusterKey]?.cluster_labels) {
-                    const rowOffset = record?.featrix_meta?.__featrix_row_offset;
-                    if (rowOffset !== undefined && rowOffset < sphere.finalClusterResults[activeClusterKey].cluster_labels.length) {
-                        clusterAssignment = sphere.finalClusterResults[activeClusterKey].cluster_labels[rowOffset];
+                if (activeClusterKey !== null && sphere.finalClusterResults?.[activeClusterKey]?.cluster_labels) {
+                    const recordRowOffset = record?.featrix_meta?.__featrix_row_offset;
+                    if (recordRowOffset !== undefined && recordRowOffset < sphere.finalClusterResults[activeClusterKey].cluster_labels.length) {
+                        clusterAssignment = sphere.finalClusterResults[activeClusterKey].cluster_labels[recordRowOffset];
                     }
                 }
                 
@@ -1202,14 +1202,20 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
                     // Cluster exists but not yet revealed in this frame
                     newColor = 0x999999; // Gray for unrevealed clusters
                 } else {
-                    // Invalid or missing cluster assignment
+                    // Invalid or missing cluster assignment - use default gray
                     newColor = 0x999999; // Gray for invalid
                 }
                 
                 // Apply the color to the mesh
                 if (mesh.material instanceof THREE.MeshBasicMaterial) {
-                    mesh.material.color.set(newColor);
+                    mesh.material.color.setHex(newColor);
                     mesh.material.needsUpdate = true;
+                } else {
+                    // If material is not MeshBasicMaterial, try to update it anyway
+                    if (mesh.material && 'color' in mesh.material) {
+                        (mesh.material as any).color.setHex(newColor);
+                        (mesh.material as any).needsUpdate = true;
+                    }
                 }
             } else {
                      // Invalid coordinates detected - provide detailed diagnosis
