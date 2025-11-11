@@ -1128,10 +1128,11 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
                 let clusterAssignment = 0;
                 
                 // Use direct lookup from server data like other working parts of the code
-                if (sphere.finalClusterResults && sphere.finalClusterResults[12] && sphere.finalClusterResults[12].cluster_labels) {
+                const activeClusterKey = get_active_cluster_count_key(sphere);
+                if (activeClusterKey !== null && sphere.finalClusterResults[activeClusterKey]?.cluster_labels) {
                     const rowOffset = record?.featrix_meta?.__featrix_row_offset;
-                    if (rowOffset !== undefined && rowOffset < sphere.finalClusterResults[12].cluster_labels.length) {
-                        clusterAssignment = sphere.finalClusterResults[12].cluster_labels[rowOffset];
+                    if (rowOffset !== undefined && rowOffset < sphere.finalClusterResults[activeClusterKey].cluster_labels.length) {
+                        clusterAssignment = sphere.finalClusterResults[activeClusterKey].cluster_labels[rowOffset];
                     } else {
                         console.warn(`No valid rowOffset for record ${recordId}, using 0`);
                     }
