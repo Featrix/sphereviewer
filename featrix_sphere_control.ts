@@ -1043,7 +1043,29 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
     const visibleClusters = forceFinalState ? maxClusters : Math.ceil(2 + (progressRatio * (maxClusters - 2)));
     
     // DEBUG: Log cluster calculation for debugging
-    console.log(`📊 Frame ${currentFrameIndex}/${totalFrames-1}: progress ${progressRatio.toFixed(3)} -> ${visibleClusters} visible clusters`);
+    console.log(`📊 Frame ${currentFrameIndex}/${totalFrames-1}: progress ${progressRatio.toFixed(3)} -> ${visibleClusters} visible clusters (maxClusters: ${maxClusters})`);
+    
+    // Sample a few cluster assignments to verify they're being read correctly
+    if (sphere.pointObjectsByRecordID.size > 0) {
+        const sampleSize = Math.min(5, sphere.pointObjectsByRecordID.size);
+        let sampleCount = 0;
+        const activeClusterKey = get_active_cluster_count_key(sphere);
+        if (activeClusterKey !== null && sphere.finalClusterResults[activeClusterKey]?.cluster_labels) {
+            sphere.pointObjectsByRecordID.forEach((mesh, recordId) => {
+                if (sampleCount < sampleSize) {
+                    const record = sphere.pointRecordsByID.get(recordId);
+                    if (record) {
+                        const rowOffset = record.featrix_meta?.__featrix_row_offset;
+                        if (rowOffset !== undefined && rowOffset < sphere.finalClusterResults[activeClusterKey].cluster_labels.length) {
+                            const clusterAssignment = sphere.finalClusterResults[activeClusterKey].cluster_labels[rowOffset];
+                            console.log(`  Sample point ${sampleCount}: rowOffset=${rowOffset}, cluster=${clusterAssignment}`);
+                            sampleCount++;
+                        }
+                    }
+                }
+            });
+        }
+    }
     
     // Progressive cluster reveal calculation
     
@@ -1125,7 +1147,7 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
                 
                 // TRAINING MOVIE: Use direct lookup from finalClusterResults (no deprecated cluster_pre)
                 const record = sphere.pointRecordsByID.get(recordId);
-                let clusterAssignment = 0;
+                let clusterAssignment = -1;
                 
                 // Use direct lookup from server data like other working parts of the code
                 const activeClusterKey = get_active_cluster_count_key(sphere);
@@ -1133,21 +1155,20 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
                     const rowOffset = record?.featrix_meta?.__featrix_row_offset;
                     if (rowOffset !== undefined && rowOffset < sphere.finalClusterResults[activeClusterKey].cluster_labels.length) {
                         clusterAssignment = sphere.finalClusterResults[activeClusterKey].cluster_labels[rowOffset];
-                    } else {
-                        console.warn(`No valid rowOffset for record ${recordId}, using 0`);
                     }
-                } else {
-                    console.warn(`No finalClusterResults available for record ${recordId}, using 0`);
                 }
                 
-                // Use direct color mapping like the working version
+                // Use direct color mapping - cluster assignments are 0-based
                 let newColor;
-                if (clusterAssignment < visibleClusters && clusterAssignment < kColorTable.length) {
-                    // Direct mapping - no offset!
+                if (clusterAssignment >= 0 && clusterAssignment < visibleClusters && clusterAssignment < kColorTable.length) {
+                    // Direct mapping - cluster 0 -> color 0, cluster 1 -> color 1, etc.
                     newColor = kColorTable[clusterAssignment];
+                } else if (clusterAssignment >= 0 && clusterAssignment >= visibleClusters) {
+                    // Cluster exists but not yet revealed in this frame
+                    newColor = 0x999999; // Gray for unrevealed clusters
                 } else {
-                    // Not yet revealed or invalid cluster
-                    newColor = 0x999999;
+                    // Invalid or missing cluster assignment
+                    newColor = 0x999999; // Gray for invalid
                 }
                 
                 // Apply the color to the mesh
