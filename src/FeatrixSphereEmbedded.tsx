@@ -960,16 +960,16 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     </div>
                 )}
                 
-                {/* ACTUAL 3D SPHERE VIEWER - WebGL container is 75% of available space */}
+                {/* ACTUAL 3D SPHERE VIEWER - WebGL container is 75% of available space, centered */}
                 <div 
                     id="training-movie-3d-container" 
                     style={{
                         width: '100%',
                         height: '100%',
+                        position: 'relative',
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'center',
-                        position: 'relative'
+                        justifyContent: 'center'
                     }}
                 >
                     <div 
@@ -977,9 +977,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         style={{ 
                             width: '75%', 
                             height: '75%',
+                            maxWidth: '75%',
+                            maxHeight: '75%',
                             background: 'transparent',
                             pointerEvents: 'auto',
-                            cursor: 'pointer'
+                            cursor: 'pointer',
+                            margin: 'auto'
                         }}
                     />
                 {trainingData ? (
