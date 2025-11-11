@@ -922,11 +922,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
             color: '#fff',
             overflow: 'hidden'
         }}>
-            {/* Sphere Container - Left side, square aspect ratio */}
+            {/* Sphere Container - Left side, 75% of available width */}
             <div style={{
-                flex: '0 0 auto',
-                width: '100vh',
-                maxWidth: '100%',
+                flex: '0 0 75%',
+                width: '75%',
                 height: '100vh',
                 position: 'relative',
                 background: '#000',
@@ -1046,11 +1045,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 </div>
             </div>
             
-            {/* Controls Side Panel - Right side */}
+            {/* Controls Side Panel - Right side, hugging the edge */}
             <div style={{
-                flex: '1 1 auto',
-                minWidth: '350px',
-                maxWidth: '500px',
+                flex: '0 0 25%',
+                width: '25%',
                 height: '100vh',
                 background: '#1a1a1a',
                 borderLeft: '1px solid #333',
