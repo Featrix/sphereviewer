@@ -934,58 +934,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 alignItems: 'center',
                 justifyContent: 'center'
             }}>
-                {/* Build timestamp & frame info - will be in side panel */}
-                <div>v{BUILD_TIMESTAMP.slice(0, 19).replace('T', ' ')}</div>
-                {frameInfo && (
-                    <div>
-                        <div style={{ color: '#00ff00', marginTop: '2px', fontSize: '12px', fontWeight: 'bold' }}>
-                            Frame {frameInfo.current}/{frameInfo.total} | {frameInfo.visible} clusters
-                        </div>
-                        
-                        {/* Progress Bar */}
-                        <div style={{ 
-                            marginTop: '6px',
-                            background: 'rgba(255,255,255,0.2)',
-                            borderRadius: '6px',
-                            overflow: 'hidden',
-                            height: '12px',
-                            width: '160px',
-                            border: '1px solid rgba(0,255,0,0.3)'
-                        }}>
-                            <div style={{
-                                background: 'linear-gradient(90deg, #00ff00, #00aa00)',
-                                height: '100%',
-                                width: `${(frameInfo.current / frameInfo.total) * 100}%`,
-                                transition: 'width 0.2s ease',
-                                borderRadius: '5px',
-                                boxShadow: '0 0 8px rgba(0,255,0,0.4)'
-                            }} />
-                        </div>
-                        <div style={{ 
-                            color: '#00ff00', 
-                            fontSize: '11px', 
-                            marginTop: '3px',
-                            textAlign: 'center',
-                            fontWeight: 'bold'
-                        }}>
-                            {Math.round((frameInfo.current / frameInfo.total) * 100)}%
-                        </div>
-                        
-                        {frameInfo.epoch && (
-                            <div style={{ color: '#00ffff', marginTop: '2px', fontSize: '12px', fontWeight: 'bold' }}>
-                                Epoch {frameInfo.epoch} of 225
-                            </div>
-                        )}
-                        {frameInfo.validationLoss !== undefined && (
-                            <div style={{ color: '#ffff00', marginTop: '2px', fontSize: '11px', fontWeight: 'bold' }}>
-                                Validation Loss: {frameInfo.validationLoss.toFixed(4)}
-                            </div>
-                        )}
-                    </div>
-                )}
-            </div>
-
-                {/* Countdown Overlay */}
+                {/* Countdown Overlay - only temporary, positioned over sphere */}
                 {showCountdown && (
                     <div style={{
                         position: 'absolute',
@@ -1002,11 +951,13 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         border: '3px solid #00ff00',
                         textAlign: 'center',
                         boxShadow: '0 0 30px rgba(0, 255, 0, 0.4)',
-                        zIndex: 2000
+                        zIndex: 2000,
+                        pointerEvents: 'none'
                     }}>
                         {countdownText}
                     </div>
                 )}
+                
                 {/* ACTUAL 3D SPHERE VIEWER */}
                 <div id="training-movie-3d-container" style={{
                     width: '100%',
@@ -1092,6 +1043,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         Initializing 3D sphere...
                     </div>
                 )}
+                </div>
             </div>
             
             {/* Controls Side Panel - Right side */}
