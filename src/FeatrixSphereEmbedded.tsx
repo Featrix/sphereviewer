@@ -957,10 +957,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     </div>
                 )}
                 
-                {/* ACTUAL 3D SPHERE VIEWER */}
+                {/* ACTUAL 3D SPHERE VIEWER - 75% of container size */}
                 <div id="training-movie-3d-container" style={{
-                    width: '100%',
-                    height: '100%',
+                    width: '75%',
+                    height: '75%',
                     pointerEvents: 'auto',
                     cursor: 'pointer'
                 }}>
