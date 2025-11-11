@@ -516,6 +516,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [searchQuery, setSearchQuery] = useState<string>('');
     const [showSearch, setShowSearch] = useState(false);
     const [showBoundsBox, setShowBoundsBox] = useState(false);
+    const [showUnitSphere, setShowUnitSphere] = useState(false);
 
     // Countdown function for initial pause - using useCallback to ensure stable reference
     const startCountdown = useCallback(() => {
@@ -1246,6 +1247,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             </div>
                         </div>
                     )}
+                    <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #555' }}>
+                        <label style={{ color: '#fff', fontSize: '14px', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                            <input type="checkbox" checked={showUnitSphere} onChange={(e) => { setShowUnitSphere(e.target.checked); if (sphereRef) { toggle_unit_sphere(sphereRef, e.target.checked); } }} style={{ marginRight: '8px', cursor: 'pointer', width: '16px', height: '16px' }} />
+                            🌐 Show Unit Sphere Bounds
+                        </label>
+                    </div>
                 </div>
 
                 {/* Search Panel - Inline in side panel */}
