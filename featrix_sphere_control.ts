@@ -1282,6 +1282,11 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
         compute_cluster_convex_hulls(sphere);
     }
     
+    // Update bounds box if visible
+    if (sphere.showBoundsBox) {
+        update_bounds_box(sphere);
+    }
+    
     // Always re-render to show the updates
     render_sphere(sphere);
 }
@@ -2047,6 +2052,37 @@ export function hide_convex_hulls(sphere: SphereData) {
     }
 }
 
+function update_bounds_box(sphere: SphereData) {
+    if (!sphere || !sphere.showBoundsBox || !sphere.boundsBox) return;
+    
+    // Calculate bounding box from all current point positions
+    const points: THREE.Vector3[] = [];
+    sphere.pointObjectsByRecordID.forEach((mesh) => {
+        points.push(mesh.position);
+    });
+    
+    if (points.length === 0) {
+        return;
+    }
+    
+    // Create a bounding box from points
+    const box = new THREE.Box3();
+    points.forEach(point => box.expandByPoint(point));
+    
+    const boxSize = box.getSize(new THREE.Vector3());
+    const boxCenter = box.getCenter(new THREE.Vector3());
+    
+    // Update existing bounds box geometry and position
+    if (sphere.boundsBox.geometry) {
+        sphere.boundsBox.geometry.dispose();
+    }
+    
+    const boxGeometry = new THREE.BoxGeometry(boxSize.x, boxSize.y, boxSize.z);
+    const boxEdges = new THREE.EdgesGeometry(boxGeometry);
+    sphere.boundsBox.geometry = boxEdges;
+    sphere.boundsBox.position.copy(boxCenter);
+}
+
 export function toggle_bounds_box(sphere: SphereData, show: boolean) {
     if (!sphere) return;
     
@@ -2091,6 +2127,8 @@ export function toggle_bounds_box(sphere: SphereData, show: boolean) {
                 sphere.scene.add(sphere.boundsBox);
             }
             sphere.boundsBox.visible = true;
+            // Update bounds box to current point positions
+            update_bounds_box(sphere);
         }
     } else {
         // Hide bounds box
