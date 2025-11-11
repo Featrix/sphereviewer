@@ -1015,11 +1015,16 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
     const totalFrames = epochKeys.length;
     
     // Get actual cluster count from real server data
-    const realClusterCount = Object.keys(sphere.finalClusterResults).length;
-    const maxClusters = Math.max(...Object.keys(sphere.finalClusterResults).map(k => parseInt(k)));
+    let maxClusters = 12; // Default fallback
+    if (sphere.finalClusterResults && Object.keys(sphere.finalClusterResults).length > 0) {
+        const clusterKeys = Object.keys(sphere.finalClusterResults).map(k => parseInt(k)).filter(k => !isNaN(k));
+        if (clusterKeys.length > 0) {
+            maxClusters = Math.max(...clusterKeys);
+        }
+    }
     
     // Progressive reveal based on REAL cluster count, not fake 12
-    const progressRatio = currentFrameIndex / (totalFrames - 1);
+    const progressRatio = totalFrames > 1 ? currentFrameIndex / (totalFrames - 1) : 0;
     const visibleClusters = forceFinalState ? maxClusters : Math.ceil(2 + (progressRatio * (maxClusters - 2)));
     
     // DEBUG: Log cluster calculation for debugging
