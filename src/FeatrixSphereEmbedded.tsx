@@ -355,13 +355,15 @@ const TrainingMovieSphere: React.FC<{
     onReady?: (sphere: any) => void,
     onFrameUpdate?: (frameInfo: { current: number, total: number, visible: number, epoch?: string, validationLoss?: number }) => void,
     onPointInspected?: (pointInfo: any) => void,
-    rotationEnabled?: boolean
-}> = ({ trainingData, sessionProjections, lossData, onReady, onFrameUpdate, onPointInspected, rotationEnabled = true }) => {
-    const containerRef = useRef<HTMLDivElement>(null);
+    rotationEnabled?: boolean,
+    containerRef?: React.RefObject<HTMLDivElement>
+}> = ({ trainingData, sessionProjections, lossData, onReady, onFrameUpdate, onPointInspected, rotationEnabled = true, containerRef }) => {
+    const internalContainerRef = useRef<HTMLDivElement>(null);
+    const actualContainerRef = containerRef || internalContainerRef;
     const sphereRef = useRef<any>(null);
 
     useEffect(() => {
-        if (!containerRef.current || !trainingData) {
+        if (!actualContainerRef.current || !trainingData) {
             return;
         }
 
@@ -392,7 +394,7 @@ const TrainingMovieSphere: React.FC<{
             // Initialize sphere with filtered records that match training movie
             const recordList = create_record_list(filteredSessionData);
             console.log('🌐 Created record list with', recordList.length, 'points for training movie');
-            sphereRef.current = initialize_sphere(containerRef.current, recordList);
+            sphereRef.current = initialize_sphere(actualContainerRef.current, recordList);
             
             // Set session projections data for training movie with cluster results from first epoch
             sphereRef.current.jsonData = {
@@ -455,6 +457,7 @@ const TrainingMovieSphere: React.FC<{
 
     return (
         <div 
+            ref={!containerRef ? internalContainerRef : undefined}
             style={{ 
                 width: '100%', 
                 height: '100%',
@@ -985,6 +988,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         lossData={lossData}
                         onPointInspected={setSelectedPointInfo}
                         rotationEnabled={rotationEnabled}
+                        containerRef={containerRef}
                         onReady={(sphere: any) => {
                             // Training movie sphere ready
                             setSphereRef(sphere);
