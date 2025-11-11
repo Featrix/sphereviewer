@@ -68,8 +68,13 @@ print_success "sphere-viewer.js deployed"
 # Copy example data and real logistics data
 print_status "Copying data files..."
 scp example-featrix-data.json $HOST:$REMOTE_PATH/
-scp logistics-featrix-data.json $HOST:$REMOTE_PATH/
-print_success "Data files deployed (example + real logistics data)"
+if [ -f "logistics-featrix-data.json" ]; then
+    scp logistics-featrix-data.json $HOST:$REMOTE_PATH/
+    print_success "Data files deployed (example + real logistics data)"
+else
+    print_warning "logistics-featrix-data.json not found, skipping..."
+    print_success "Data files deployed (example data only)"
+fi
 
 # Copy documentation
 print_status "Copying documentation..."
@@ -89,9 +94,15 @@ print_success "Branded public landing page deployed"
 # Copy demo and test files
 print_status "Copying demo and test files..."
 scp data-driven-test.html $HOST:$REMOTE_PATH/demo.html  # Technical demo
-scp logistics-demo.html $HOST:$REMOTE_PATH/logistics-demo.html  # Clean logistics demo
-scp simple-test.html $HOST:$REMOTE_PATH/
-scp test-new-naming.html $HOST:$REMOTE_PATH/
+if [ -f "logistics-demo.html" ]; then
+    scp logistics-demo.html $HOST:$REMOTE_PATH/logistics-demo.html  # Clean logistics demo
+fi
+if [ -f "simple-test.html" ]; then
+    scp simple-test.html $HOST:$REMOTE_PATH/
+fi
+if [ -f "test-new-naming.html" ]; then
+    scp test-new-naming.html $HOST:$REMOTE_PATH/
+fi
 print_success "Demo files deployed"
 
 # Set proper permissions
