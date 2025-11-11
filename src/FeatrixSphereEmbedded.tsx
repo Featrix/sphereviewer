@@ -12,7 +12,7 @@ import React, { Suspense, useEffect, useRef, useState, useCallback } from "react
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
 import { fetch_session_data, fetch_session_projections, fetch_training_metrics } from './embed-data-access';
-import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors } from '../featrix_sphere_control';
+import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 
 // Build timestamp for cache busting verification
@@ -506,6 +506,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [selectedSearchColumn, setSelectedSearchColumn] = useState<string>('');
     const [searchQuery, setSearchQuery] = useState<string>('');
     const [showSearch, setShowSearch] = useState(false);
+    const [showBoundsBox, setShowBoundsBox] = useState(false);
 
     // Countdown function for initial pause - using useCallback to ensure stable reference
     const startCountdown = useCallback(() => {
@@ -1025,13 +1026,28 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
             }}>
                 {/* Scrub Slider - top row */}
                 {frameInfo && frameInfo.total > 0 && (
-                    <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        width: '100%',
-                        maxWidth: '90vw'
-                    }}>
+                    <div 
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            width: '100%',
+                            maxWidth: '90vw'
+                        }}
+                        onWheel={(e) => {
+                            // Handle horizontal trackpad scrolling
+                            if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+                                e.preventDefault();
+                                const delta = e.deltaX > 0 ? 1 : -1;
+                                const newFrame = Math.max(1, Math.min(frameInfo.total, frameInfo.current + delta));
+                                if (newFrame !== frameInfo.current && sphereRef) {
+                                    goto_training_movie_frame(sphereRef, newFrame);
+                                    setIsPlaying(false);
+                                    setFrameInput(newFrame.toString());
+                                }
+                            }
+                        }}
+                    >
                         <span style={{ color: '#fff', fontSize: '10px', minWidth: '35px', flexShrink: 0 }}>Frame:</span>
                         <input
                             type="range"
@@ -1197,23 +1213,47 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 {/* Search Toggle - always visible */}
                 <div style={{ margin: '0 4px', color: '#888', flexShrink: 0 }}>|</div>
                 
-                <button
-                    onClick={() => setShowSearch(!showSearch)}
-                    style={{
-                        background: showSearch ? '#4c4' : '#333',
-                        border: '1px solid #555',
-                        color: '#fff',
-                        padding: '5px 10px',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '11px',
-                        fontWeight: 'bold',
-                        flexShrink: 0
-                    }}
-                    title="Toggle Search"
-                >
-                    🔍
-                </button>
+                        <button
+                            onClick={() => setShowSearch(!showSearch)}
+                            style={{
+                                background: showSearch ? '#4c4' : '#333',
+                                border: '1px solid #555',
+                                color: '#fff',
+                                padding: '5px 10px',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '11px',
+                                fontWeight: 'bold',
+                                flexShrink: 0
+                            }}
+                            title="Toggle Search"
+                        >
+                            🔍
+                        </button>
+                        
+                        <button
+                            onClick={() => {
+                                setShowBoundsBox(!showBoundsBox);
+                                if (sphereRef) {
+                                    toggle_bounds_box(sphereRef, !showBoundsBox);
+                                }
+                            }}
+                            style={{
+                                background: showBoundsBox ? '#4c4' : '#333',
+                                border: '1px solid #555',
+                                color: '#fff',
+                                padding: '5px 10px',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '11px',
+                                fontWeight: 'bold',
+                                flexShrink: 0,
+                                marginLeft: '4px'
+                            }}
+                            title="Toggle Bounds Box"
+                        >
+                            📦
+                        </button>
                 
                 {/* Convex Hull Toggle - always visible for debugging */}
                 {frameInfo && (
@@ -1416,80 +1456,145 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 {/* Search Panel */}
                 {showSearch && columnTypes && Object.keys(columnTypes).length > 0 && (
                     <div style={{
-                        position: 'absolute',
-                        bottom: '60px',
+                        position: 'fixed',
+                        top: '50%',
                         left: '50%',
-                        transform: 'translateX(-50%)',
+                        transform: 'translate(-50%, -50%)',
                         background: 'rgba(0,0,0,0.95)',
-                        padding: '12px 16px',
+                        padding: '16px 20px',
                         borderRadius: '8px',
                         zIndex: 1500,
                         border: '1px solid #555',
                         display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
+                        flexDirection: 'column',
+                        gap: '12px',
                         fontFamily: 'monospace',
-                        fontSize: '11px'
+                        fontSize: '11px',
+                        minWidth: '400px',
+                        maxWidth: '90vw',
+                        boxShadow: '0 4px 20px rgba(0,0,0,0.5)'
                     }}>
-                        <label style={{ color: '#fff', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            Column:
-                            <select
-                                value={selectedSearchColumn}
-                                onChange={(e) => setSelectedSearchColumn(e.target.value)}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <label style={{ color: '#fff', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                Column:
+                                <select
+                                    value={selectedSearchColumn}
+                                    onChange={(e) => setSelectedSearchColumn(e.target.value)}
+                                    style={{
+                                        marginLeft: '4px',
+                                        fontSize: '10px',
+                                        padding: '2px 4px',
+                                        backgroundColor: '#333',
+                                        color: '#fff',
+                                        border: '1px solid #555',
+                                        borderRadius: '3px',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    {Object.keys(columnTypes).map((col) => (
+                                        <option key={col} value={col}>{col}</option>
+                                    ))}
+                                </select>
+                            </label>
+                            <input
+                                type="text"
+                                value={searchQuery}
+                                onChange={handleSearchInput}
+                                placeholder="Search..."
                                 style={{
-                                    marginLeft: '4px',
-                                    fontSize: '10px',
-                                    padding: '2px 4px',
-                                    backgroundColor: '#333',
-                                    color: '#fff',
+                                    background: '#222',
                                     border: '1px solid #555',
+                                    color: '#fff',
+                                    padding: '4px 8px',
                                     borderRadius: '3px',
-                                    cursor: 'pointer'
+                                    fontSize: '11px',
+                                    flex: 1,
+                                    minWidth: '150px'
                                 }}
-                            >
-                                {Object.keys(columnTypes).map((col) => (
-                                    <option key={col} value={col}>{col}</option>
-                                ))}
-                            </select>
-                        </label>
-                        <input
-                            type="text"
-                            value={searchQuery}
-                            onChange={handleSearchInput}
-                            placeholder="Search..."
-                            style={{
-                                background: '#222',
-                                border: '1px solid #555',
-                                color: '#fff',
-                                padding: '4px 8px',
-                                borderRadius: '3px',
-                                fontSize: '11px',
-                                width: '200px'
-                            }}
-                        />
-                        {searchQuery && (
-                            <button
-                                onClick={() => {
-                                    setSearchQuery('');
-                                    if (sphereRef) {
-                                        clear_colors(sphereRef);
-                                        render_sphere(sphereRef);
+                            />
+                            {searchQuery && (
+                                <button
+                                    onClick={() => {
+                                        setSearchQuery('');
+                                        if (sphereRef) {
+                                            clear_colors(sphereRef);
+                                            render_sphere(sphereRef);
+                                        }
+                                    }}
+                                    style={{
+                                        background: '#633',
+                                        border: '1px solid #555',
+                                        color: '#fff',
+                                        padding: '2px 6px',
+                                        borderRadius: '3px',
+                                        cursor: 'pointer',
+                                        fontSize: '10px'
+                                    }}
+                                    title="Clear Search"
+                                >
+                                    ✕
+                                </button>
+                            )}
+                        </div>
+                        {/* Example Queries */}
+                        <div style={{ 
+                            borderTop: '1px solid #555', 
+                            paddingTop: '8px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '4px'
+                        }}>
+                            <div style={{ color: '#888', fontSize: '10px', marginBottom: '4px' }}>Example queries:</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                {(() => {
+                                    const examples: string[] = [];
+                                    if (selectedSearchColumn && columnTypes[selectedSearchColumn]) {
+                                        const colType = columnTypes[selectedSearchColumn];
+                                        if (colType === 'string') {
+                                            examples.push('a', 'test', 'value');
+                                        } else if (colType === 'set') {
+                                            // Try to get some example values from the data
+                                            const sampleValues = new Set<string>();
+                                            if (sphereRef && sphereRef.pointRecordsByID) {
+                                                for (const record of sphereRef.pointRecordsByID.values()) {
+                                                    const val = record.original[selectedSearchColumn];
+                                                    if (val !== undefined) {
+                                                        sampleValues.add(String(val));
+                                                        if (sampleValues.size >= 3) break;
+                                                    }
+                                                }
+                                            }
+                                            examples.push(...Array.from(sampleValues).slice(0, 3));
+                                        }
                                     }
-                                }}
-                                style={{
-                                    background: '#633',
-                                    border: '1px solid #555',
-                                    color: '#fff',
-                                    padding: '2px 6px',
-                                    borderRadius: '3px',
-                                    cursor: 'pointer',
-                                    fontSize: '10px'
-                                }}
-                                title="Clear Search"
-                            >
-                                ✕
-                            </button>
-                        )}
+                                    return examples.length > 0 ? examples.map((ex, idx) => (
+                                        <button
+                                            key={idx}
+                                            onClick={() => {
+                                                setSearchQuery(ex);
+                                                if (sphereRef && columnTypes && selectedSearchColumn) {
+                                                    const queryColumnType = columnTypes[selectedSearchColumn];
+                                                    const theRecords = filter_record_list(queryColumnType, selectedSearchColumn, ex);
+                                                    show_search_results(sphereRef, theRecords);
+                                                    render_sphere(sphereRef);
+                                                }
+                                            }}
+                                            style={{
+                                                background: '#444',
+                                                border: '1px solid #666',
+                                                color: '#fff',
+                                                padding: '2px 6px',
+                                                borderRadius: '3px',
+                                                cursor: 'pointer',
+                                                fontSize: '9px'
+                                            }}
+                                        >
+                                            {ex}
+                                        </button>
+                                    )) : null;
+                                })()}
+                            </div>
+                        </div>
                     </div>
                 )}
 

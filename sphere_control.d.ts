@@ -63,6 +63,8 @@ export interface SphereData {
     memoryTrailLength?: number;
     spotlightCluster?: number;
     clusterSpotlightGroup?: THREE.Group;
+    boundsBox?: THREE.LineSegments;
+    showBoundsBox?: boolean;
     // Smooth interpolation properties
     pointTargetPositions?: Map<string, THREE.Vector3>;
     pointStartPositions?: Map<string, THREE.Vector3>;
@@ -119,3 +121,4 @@ export declare function step_training_movie_frame(sphere: SphereData, direction:
 export declare function goto_training_movie_frame(sphere: SphereData, frameNumber: number): void;
 export declare function show_convex_hulls(sphere: SphereData): void;
 export declare function hide_convex_hulls(sphere: SphereData): void;
+export declare function toggle_bounds_box(sphere: SphereData, show: boolean): void;

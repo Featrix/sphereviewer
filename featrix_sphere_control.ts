@@ -1970,6 +1970,61 @@ export function hide_convex_hulls(sphere: SphereData) {
     }
 }
 
+export function toggle_bounds_box(sphere: SphereData, show: boolean) {
+    if (!sphere) return;
+    
+    sphere.showBoundsBox = show;
+    
+    if (show) {
+        // Create or show bounds box
+        if (!sphere.boundsBox) {
+            // Calculate bounding box from all points
+            const points: THREE.Vector3[] = [];
+            sphere.pointObjectsByRecordID.forEach((mesh) => {
+                points.push(mesh.position);
+            });
+            
+            if (points.length === 0) {
+                console.warn('📦 No points available for bounds box');
+                return;
+            }
+            
+            // Create a bounding box from points
+            const box = new THREE.Box3();
+            points.forEach(point => box.expandByPoint(point));
+            
+            // Create a group to hold the box helper
+            const boxSize = box.getSize(new THREE.Vector3());
+            const boxCenter = box.getCenter(new THREE.Vector3());
+            
+            // Create a box geometry at the center
+            const boxGeometry = new THREE.BoxGeometry(boxSize.x, boxSize.y, boxSize.z);
+            const boxMaterial = new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 2 });
+            const boxEdges = new THREE.EdgesGeometry(boxGeometry);
+            const boxLines = new THREE.LineSegments(boxEdges, boxMaterial);
+            boxLines.position.copy(boxCenter);
+            
+            sphere.boundsBox = boxLines;
+            sphere.scene.add(boxLines);
+            
+            console.log('📦 Bounds box created:', { size: boxSize, center: boxCenter });
+        } else {
+            // Show existing bounds box
+            if (sphere.boundsBox.parent === null) {
+                sphere.scene.add(sphere.boundsBox);
+            }
+            sphere.boundsBox.visible = true;
+        }
+    } else {
+        // Hide bounds box
+        if (sphere.boundsBox) {
+            sphere.boundsBox.visible = false;
+        }
+    }
+    
+    render_sphere(sphere);
+}
+
 export function compute_cluster_convex_hulls(sphere: SphereData) {
     const hasPointFeature = sphere.showDynamicPoints;
     const hasHullFeature = sphere.showDynamicHulls;
