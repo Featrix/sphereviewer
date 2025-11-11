@@ -66,6 +66,8 @@ export interface SphereData {
     boundsBox?: THREE.LineSegments;
     showBoundsBox?: boolean;
     boundsBoxVolumeUtilization?: number; // Percentage of bounding box volume occupied by sphere
+    unitSphere?: THREE.LineSegments;
+    showUnitSphere?: boolean;
     // Smooth interpolation properties
     pointTargetPositions?: Map<string, THREE.Vector3>;
     pointStartPositions?: Map<string, THREE.Vector3>;

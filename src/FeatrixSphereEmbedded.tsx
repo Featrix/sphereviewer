@@ -12,7 +12,7 @@ import React, { Suspense, useEffect, useRef, useState, useCallback } from "react
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
 import { fetch_session_data, fetch_session_projections, fetch_training_metrics } from './embed-data-access';
-import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box } from '../featrix_sphere_control';
+import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, toggle_unit_sphere } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 
 // Build timestamp for cache busting verification
@@ -495,7 +495,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [frameInput, setFrameInput] = useState<string>('');
     const [showDynamicPoints, setShowDynamicPoints] = useState(false);
     const [showDynamicHulls, setShowDynamicHulls] = useState(false);
-    const [trailLength, setTrailLength] = useState(5); // Default 5 epochs
+    const [trailLength, setTrailLength] = useState(12); // Default 12 epochs
     const [spotlightCluster, setSpotlightCluster] = useState<number>(-1); // -1 = off, 0+ = cluster number
     const [showCountdown, setShowCountdown] = useState(false);
     const [countdownText, setCountdownText] = useState('');
