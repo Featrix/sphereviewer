@@ -2158,6 +2158,47 @@ export function toggle_bounds_box(sphere: SphereData, show: boolean) {
     render_sphere(sphere);
 }
 
+export function toggle_unit_sphere(sphere: SphereData, show: boolean) {
+    if (!sphere) return;
+    
+    sphere.showUnitSphere = show;
+    
+    if (show) {
+        // Create or show unit sphere wireframe
+        if (!sphere.unitSphere) {
+            // Create a wireframe sphere at radius 1.0 (unit sphere)
+            const sphereGeometry = new THREE.SphereGeometry(1.0, 32, 32);
+            const sphereMaterial = new THREE.LineBasicMaterial({ 
+                color: 0x00ffff, 
+                linewidth: 1,
+                transparent: true,
+                opacity: 0.5
+            });
+            const sphereEdges = new THREE.EdgesGeometry(sphereGeometry);
+            const sphereLines = new THREE.LineSegments(sphereEdges, sphereMaterial);
+            sphereLines.position.set(0, 0, 0); // Center at origin
+            
+            sphere.unitSphere = sphereLines;
+            sphere.scene.add(sphereLines);
+            
+            console.log('🌐 Unit sphere bounds created');
+        } else {
+            // Show existing unit sphere
+            if (sphere.unitSphere.parent === null) {
+                sphere.scene.add(sphere.unitSphere);
+            }
+            sphere.unitSphere.visible = true;
+        }
+    } else {
+        // Hide unit sphere
+        if (sphere.unitSphere) {
+            sphere.unitSphere.visible = false;
+        }
+    }
+    
+    render_sphere(sphere);
+}
+
 export function compute_cluster_convex_hulls(sphere: SphereData) {
     const hasPointFeature = sphere.showDynamicPoints;
     const hasHullFeature = sphere.showDynamicHulls;
