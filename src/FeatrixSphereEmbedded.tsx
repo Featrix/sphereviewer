@@ -1057,7 +1057,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 overflowY: 'auto',
                 padding: '16px',
                 fontFamily: 'monospace',
-                fontSize: '11px',
+                fontSize: '14px',
                 color: '#fff'
             }}>
                 {/* Build timestamp & frame info */}
@@ -1068,10 +1068,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     borderRadius: '6px',
                     border: '1px solid #555'
                 }}>
-                    <div style={{ color: '#ff0000', fontSize: '10px' }}>v{BUILD_TIMESTAMP.slice(0, 19).replace('T', ' ')}</div>
+                    <div style={{ color: '#ff0000', fontSize: '12px' }}>v{BUILD_TIMESTAMP.slice(0, 19).replace('T', ' ')}</div>
                     {frameInfo && (
                         <div style={{ marginTop: '8px' }}>
-                            <div style={{ color: '#00ff00', fontSize: '12px', fontWeight: 'bold' }}>
+                            <div style={{ color: '#00ff00', fontSize: '16px', fontWeight: 'bold' }}>
                                 Frame {frameInfo.current}/{frameInfo.total} | {frameInfo.visible} clusters
                             </div>
                             
@@ -1096,7 +1096,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             </div>
                             <div style={{ 
                                 color: '#00ff00', 
-                                fontSize: '11px', 
+                                fontSize: '14px', 
                                 marginTop: '3px',
                                 textAlign: 'center',
                                 fontWeight: 'bold'
@@ -1105,12 +1105,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             </div>
                             
                             {frameInfo.epoch && (
-                                <div style={{ color: '#00ffff', marginTop: '4px', fontSize: '11px', fontWeight: 'bold' }}>
+                                <div style={{ color: '#00ffff', marginTop: '4px', fontSize: '14px', fontWeight: 'bold' }}>
                                     Epoch {frameInfo.epoch} of 225
                                 </div>
                             )}
                             {frameInfo.validationLoss !== undefined && (
-                                <div style={{ color: '#ffff00', marginTop: '4px', fontSize: '10px', fontWeight: 'bold' }}>
+                                <div style={{ color: '#ffff00', marginTop: '4px', fontSize: '13px', fontWeight: 'bold' }}>
                                     Validation Loss: {frameInfo.validationLoss.toFixed(4)}
                                 </div>
                             )}
@@ -1165,7 +1165,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 }
                             }}
                         >
-                            <span style={{ color: '#fff', fontSize: '11px', minWidth: '45px', flexShrink: 0 }}>Frame:</span>
+                            <span style={{ color: '#fff', fontSize: '14px', minWidth: '45px', flexShrink: 0 }}>Frame:</span>
                             <input
                                 type="range"
                                 min="1"
@@ -1179,7 +1179,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     minWidth: 0
                                 }}
                             />
-                            <span style={{ color: '#fff', fontSize: '11px', minWidth: '60px', textAlign: 'right', flexShrink: 0 }}>
+                            <span style={{ color: '#fff', fontSize: '14px', minWidth: '60px', textAlign: 'right', flexShrink: 0 }}>
                                 {frameInfo.current} / {frameInfo.total}
                             </span>
                         </div>
@@ -1197,11 +1197,11 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             <button onClick={handlePlayPause} style={{ background: isPlaying ? '#c44' : '#4c4', border: '1px solid #555', color: '#fff', padding: '6px 14px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', minWidth: '50px', fontWeight: 'bold', flexShrink: 0 }} title={isPlaying ? "Pause" : "Play"}>{isPlaying ? '⏸️' : '▶️'}</button>
                             <button onClick={handleStepForward} style={{ background: '#333', border: '1px solid #555', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', flexShrink: 0 }} title="Next Frame">⏭️</button>
                             <div style={{ margin: '0 4px', color: '#888', flexShrink: 0 }}>|</div>
-                            <input type="number" value={frameInput} onChange={(e) => setFrameInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleGotoFrame()} placeholder="#" style={{ background: '#222', border: '1px solid #555', color: '#fff', padding: '4px 6px', borderRadius: '4px', width: '50px', fontSize: '10px', flexShrink: 0 }} min="1" max={frameInfo?.total || 1} />
-                            <button onClick={handleGotoFrame} style={{ background: '#333', border: '1px solid #555', color: '#fff', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold', flexShrink: 0 }} title="Go to Frame">Go</button>
+                            <input type="number" value={frameInput} onChange={(e) => setFrameInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleGotoFrame()} placeholder="#" style={{ background: '#222', border: '1px solid #555', color: '#fff', padding: '6px 8px', borderRadius: '4px', width: '60px', fontSize: '14px', flexShrink: 0 }} min="1" max={frameInfo?.total || 1} />
+                            <button onClick={handleGotoFrame} style={{ background: '#333', border: '1px solid #555', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0 }} title="Go to Frame">Go</button>
                             <div style={{ margin: '0 4px', color: '#888', flexShrink: 0 }}>|</div>
-                            <button onClick={handleStop} style={{ background: '#633', border: '1px solid #555', color: '#fff', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', flexShrink: 0 }} title="Stop">⏹️</button>
-                            <button onClick={handleReplay} style={{ background: '#333', border: '1px solid #555', color: '#fff', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', flexShrink: 0 }} title="Replay">🔄</button>
+                            <button onClick={handleStop} style={{ background: '#633', border: '1px solid #555', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0 }} title="Stop">⏹️</button>
+                            <button onClick={handleReplay} style={{ background: '#333', border: '1px solid #555', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0 }} title="Replay">🔄</button>
                         </div>
                     </div>
                 )}
@@ -1209,8 +1209,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 {/* Search & Bounds Box Controls */}
                 <div style={{ background: 'rgba(0,0,0,0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #555', marginBottom: '16px' }}>
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <button onClick={() => setShowSearch(!showSearch)} style={{ background: showSearch ? '#4c4' : '#333', border: '1px solid #555', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', flexShrink: 0 }} title="Toggle Search">🔍 Search</button>
-                        <button onClick={() => { setShowBoundsBox(!showBoundsBox); if (sphereRef) { toggle_bounds_box(sphereRef, !showBoundsBox); } }} style={{ background: showBoundsBox ? '#4c4' : '#333', border: '1px solid #555', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', flexShrink: 0 }} title="Toggle Bounds Box">📦 Bounds</button>
+                        <button onClick={() => setShowSearch(!showSearch)} style={{ background: showSearch ? '#4c4' : '#333', border: '1px solid #555', color: '#fff', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0 }} title="Toggle Search">🔍 Search</button>
+                        <button onClick={() => { setShowBoundsBox(!showBoundsBox); if (sphereRef) { toggle_bounds_box(sphereRef, !showBoundsBox); } }} style={{ background: showBoundsBox ? '#4c4' : '#333', border: '1px solid #555', color: '#fff', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0 }} title="Toggle Bounds Box">📦 Bounds</button>
                     </div>
                 </div>
 
@@ -1219,18 +1219,18 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     <div style={{ background: 'rgba(0,0,0,0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #555', marginBottom: '16px' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                <label style={{ color: '#fff', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}>
+                                <label style={{ color: '#fff', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '14px' }}>
                                     Column:
-                                    <select value={selectedSearchColumn} onChange={(e) => setSelectedSearchColumn(e.target.value)} style={{ marginLeft: '4px', fontSize: '10px', padding: '2px 4px', backgroundColor: '#333', color: '#fff', border: '1px solid #555', borderRadius: '3px', cursor: 'pointer' }}>
+                                    <select value={selectedSearchColumn} onChange={(e) => setSelectedSearchColumn(e.target.value)} style={{ marginLeft: '4px', fontSize: '13px', padding: '4px 6px', backgroundColor: '#333', color: '#fff', border: '1px solid #555', borderRadius: '3px', cursor: 'pointer' }}>
                                         {Object.keys(columnTypes).map((col) => (<option key={col} value={col}>{col}</option>))}
                                     </select>
                                 </label>
-                                <input type="text" value={searchQuery} onChange={handleSearchInput} placeholder="Search..." style={{ background: '#222', border: '1px solid #555', color: '#fff', padding: '4px 8px', borderRadius: '3px', fontSize: '11px', flex: 1, minWidth: '150px' }} />
-                                {searchQuery && (<button onClick={() => { setSearchQuery(''); if (sphereRef) { clear_colors(sphereRef); render_sphere(sphereRef); } }} style={{ background: '#633', border: '1px solid #555', color: '#fff', padding: '2px 6px', borderRadius: '3px', cursor: 'pointer', fontSize: '10px' }} title="Clear Search">✕</button>)}
+                                <input type="text" value={searchQuery} onChange={handleSearchInput} placeholder="Search..." style={{ background: '#222', border: '1px solid #555', color: '#fff', padding: '6px 10px', borderRadius: '3px', fontSize: '14px', flex: 1, minWidth: '150px' }} />
+                                {searchQuery && (<button onClick={() => { setSearchQuery(''); if (sphereRef) { clear_colors(sphereRef); render_sphere(sphereRef); } }} style={{ background: '#633', border: '1px solid #555', color: '#fff', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '13px' }} title="Clear Search">✕</button>)}
                             </div>
                             {/* Example Queries */}
                             <div style={{ borderTop: '1px solid #555', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                <div style={{ color: '#888', fontSize: '10px', marginBottom: '4px' }}>Example queries:</div>
+                                <div style={{ color: '#888', fontSize: '13px', marginBottom: '4px' }}>Example queries:</div>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                                     {(() => {
                                         const examples: string[] = [];
@@ -1253,7 +1253,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                             }
                                         }
                                         return examples.length > 0 ? examples.map((ex, idx) => (
-                                            <button key={idx} onClick={() => { setSearchQuery(ex); if (sphereRef && columnTypes && selectedSearchColumn) { const queryColumnType = columnTypes[selectedSearchColumn]; const theRecords = filter_record_list(queryColumnType, selectedSearchColumn, ex); show_search_results(sphereRef, theRecords); render_sphere(sphereRef); } }} style={{ background: '#444', border: '1px solid #666', color: '#fff', padding: '2px 6px', borderRadius: '3px', cursor: 'pointer', fontSize: '9px' }}>{ex}</button>
+                                            <button key={idx} onClick={() => { setSearchQuery(ex); if (sphereRef && columnTypes && selectedSearchColumn) { const queryColumnType = columnTypes[selectedSearchColumn]; const theRecords = filter_record_list(queryColumnType, selectedSearchColumn, ex); show_search_results(sphereRef, theRecords); render_sphere(sphereRef); } }} style={{ background: '#444', border: '1px solid #666', color: '#fff', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '13px' }}>{ex}</button>
                                         )) : null;
                                     })()}
                                 </div>
@@ -1265,27 +1265,27 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 {/* Visual Controls */}
                 {frameInfo && (
                     <div style={{ background: 'rgba(0,0,0,0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #555', marginBottom: '16px' }}>
-                        <div style={{ color: '#fff', fontSize: '12px', fontWeight: 'bold', marginBottom: '8px' }}>Visual Controls</div>
+                        <div style={{ color: '#fff', fontSize: '16px', fontWeight: 'bold', marginBottom: '8px' }}>Visual Controls</div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            <label style={{ color: '#fff', fontSize: '11px', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                                <input type="checkbox" checked={showDynamicPoints} onChange={(e) => { console.log('🔹 Point sizing toggled:', e.target.checked); setShowDynamicPoints(e.target.checked); }} style={{ marginRight: '6px', cursor: 'pointer' }} />
+                            <label style={{ color: '#fff', fontSize: '14px', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                                <input type="checkbox" checked={showDynamicPoints} onChange={(e) => { console.log('🔹 Point sizing toggled:', e.target.checked); setShowDynamicPoints(e.target.checked); }} style={{ marginRight: '8px', cursor: 'pointer', width: '16px', height: '16px' }} />
                                 🔹 Dynamic Point Sizing
                             </label>
-                            <label style={{ color: frameInfo.visible >= 4 ? '#fff' : '#888', fontSize: '11px', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                                <input type="checkbox" checked={showDynamicHulls} onChange={(e) => { console.log('🔮 Sphere sizing toggled:', e.target.checked, 'clusters:', frameInfo.visible); setShowDynamicHulls(e.target.checked); }} style={{ marginRight: '6px', cursor: 'pointer' }} disabled={frameInfo.visible < 4} />
+                            <label style={{ color: frameInfo.visible >= 4 ? '#fff' : '#888', fontSize: '14px', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                                <input type="checkbox" checked={showDynamicHulls} onChange={(e) => { console.log('🔮 Sphere sizing toggled:', e.target.checked, 'clusters:', frameInfo.visible); setShowDynamicHulls(e.target.checked); }} style={{ marginRight: '8px', cursor: 'pointer', width: '16px', height: '16px' }} disabled={frameInfo.visible < 4} />
                                 🔮 Dynamic Spheres ({frameInfo.visible} clusters)
                             </label>
                             <div style={{ marginTop: '8px', borderTop: '1px solid #555', paddingTop: '8px' }}>
-                                <label style={{ color: '#fff', fontSize: '11px', display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
+                                <label style={{ color: '#fff', fontSize: '14px', display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
                                     🛤️ Trail Length:
                                     <input type="range" min="2" max="15" value={trailLength} onChange={(e) => { const newLength = parseInt(e.target.value); console.log('🛤️ Trail length changed:', newLength); setTrailLength(newLength); }} style={{ marginLeft: '8px', marginRight: '8px', cursor: 'pointer', flex: 1 }} />
-                                    <span style={{ fontSize: '10px', color: '#ccc', minWidth: '20px' }}>{trailLength}</span>
+                                    <span style={{ fontSize: '14px', color: '#ccc', minWidth: '20px' }}>{trailLength}</span>
                                 </label>
                             </div>
                             <div style={{ marginTop: '8px', borderTop: '1px solid #555', paddingTop: '8px' }}>
-                                <label style={{ color: '#fff', fontSize: '11px', display: 'flex', alignItems: 'center' }}>
+                                <label style={{ color: '#fff', fontSize: '14px', display: 'flex', alignItems: 'center' }}>
                                     🎯 Focus Cluster:
-                                    <select value={spotlightCluster} onChange={(e) => { const cluster = parseInt(e.target.value); console.log('🎯 Spotlight cluster changed:', cluster); setSpotlightCluster(cluster); if (sphereRef) { sphereRef.spotlightCluster = cluster; update_cluster_spotlight(sphereRef); render_sphere(sphereRef); } }} style={{ marginLeft: '8px', fontSize: '10px', padding: '2px 4px', backgroundColor: '#333', color: '#fff', border: '1px solid #555', borderRadius: '3px', cursor: 'pointer', flex: 1 }}>
+                                    <select value={spotlightCluster} onChange={(e) => { const cluster = parseInt(e.target.value); console.log('🎯 Spotlight cluster changed:', cluster); setSpotlightCluster(cluster); if (sphereRef) { sphereRef.spotlightCluster = cluster; update_cluster_spotlight(sphereRef); render_sphere(sphereRef); } }} style={{ marginLeft: '8px', fontSize: '13px', padding: '4px 6px', backgroundColor: '#333', color: '#fff', border: '1px solid #555', borderRadius: '3px', cursor: 'pointer', flex: 1 }}>
                                         <option value={-1}>Off</option>
                                         {frameInfo.visible > 0 && Array.from({length: frameInfo.visible}, (_, i) => (<option key={i} value={i}>C{i}</option>))}
                                     </select>
@@ -1298,23 +1298,23 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 {/* Other Controls */}
                 <div style={{ background: 'rgba(0,0,0,0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #555', marginBottom: '16px' }}>
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                        <button onClick={() => setShowClusterDebug(!showClusterDebug)} style={{ background: showClusterDebug ? '#4c4' : '#333', border: '1px solid #555', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title="Toggle Cluster Inspector">🔍 Debug</button>
-                        <button onClick={() => setShowColorLegend(!showColorLegend)} style={{ background: showColorLegend ? '#4c4' : '#333', border: '1px solid #555', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title="Toggle Color Legend">🎨 Colors</button>
-                        <button onClick={toggleFullscreen} style={{ background: isFullscreen ? '#4c4' : '#333', border: '1px solid #555', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}>{isFullscreen ? '🪟 Exit' : '⛶ Full'}</button>
-                        <button onClick={() => setRotationEnabled(!rotationEnabled)} style={{ background: rotationEnabled ? '#4c4' : '#c44', border: '1px solid #555', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title={rotationEnabled ? "Disable Rotation" : "Enable Rotation"}>{rotationEnabled ? '🔄 On' : '⏸️ Off'}</button>
+                        <button onClick={() => setShowClusterDebug(!showClusterDebug)} style={{ background: showClusterDebug ? '#4c4' : '#333', border: '1px solid #555', color: '#fff', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }} title="Toggle Cluster Inspector">🔍 Debug</button>
+                        <button onClick={() => setShowColorLegend(!showColorLegend)} style={{ background: showColorLegend ? '#4c4' : '#333', border: '1px solid #555', color: '#fff', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }} title="Toggle Color Legend">🎨 Colors</button>
+                        <button onClick={toggleFullscreen} style={{ background: isFullscreen ? '#4c4' : '#333', border: '1px solid #555', color: '#fff', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }} title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}>{isFullscreen ? '🪟 Exit' : '⛶ Full'}</button>
+                        <button onClick={() => setRotationEnabled(!rotationEnabled)} style={{ background: rotationEnabled ? '#4c4' : '#c44', border: '1px solid #555', color: '#fff', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }} title={rotationEnabled ? "Disable Rotation" : "Enable Rotation"}>{rotationEnabled ? '🔄 On' : '⏸️ Off'}</button>
                     </div>
                 </div>
 
                 {/* Color Legend - Inline in side panel */}
                 {showColorLegend && frameInfo && (
                     <div style={{ background: 'rgba(0,0,0,0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #555', marginBottom: '16px' }}>
-                        <div style={{ color: '#4c4', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center', fontSize: '12px' }}>🎨 Cluster Colors</div>
+                        <div style={{ color: '#4c4', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center', fontSize: '16px' }}>🎨 Cluster Colors</div>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
                             {frameInfo.visible > 0 && Array.from({length: frameInfo.visible}, (_, i) => {
                                 const colorIndex = i + 2;
                                 const kColorTable = ['#888888', '#ffcccc', '#ff0000', '#ff8800', '#ffff00', '#88ff00', '#00ff00', '#00ff88', '#00ffff', '#0088ff', '#0000ff', '#8800ff', '#ff00ff', '#ff0088'];
                                 const color = kColorTable[colorIndex] || '#888888';
-                                return (<div key={`cluster-${i}`} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ fontSize: '10px' }}>C{i}</span><div style={{ background: color, width: '16px', height: '16px', border: '1px solid #555', borderRadius: '3px' }}></div></div>);
+                                return (<div key={`cluster-${i}`} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ fontSize: '14px' }}>C{i}</span><div style={{ background: color, width: '20px', height: '20px', border: '1px solid #555', borderRadius: '3px' }}></div></div>);
                             })}
                         </div>
                     </div>
@@ -1323,10 +1323,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 {/* Cluster Debug Panel - Inline in side panel */}
                 {showClusterDebug && (
                     <div style={{ background: 'rgba(0,0,0,0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #555', marginBottom: '16px' }}>
-                        <div style={{ color: '#4c4', fontWeight: 'bold', marginBottom: '8px', fontSize: '12px' }}>🔍 Cluster Inspector</div>
-                        {frameInfo && (<div style={{ marginBottom: '8px', fontSize: '11px' }}><div>Frame: {frameInfo.current}/{frameInfo.total}</div><div>Visible Clusters: {frameInfo.visible}</div><div>Epoch: {frameInfo.epoch || 'unknown'}</div></div>)}
-                        {selectedPointInfo && (<div style={{ marginTop: '8px', borderTop: '1px solid #444', paddingTop: '8px', fontSize: '10px' }}><div style={{ color: '#ff4', fontWeight: 'bold' }}>Selected Point:</div><div>Record ID: {selectedPointInfo.recordId}</div><div>Row Offset: {selectedPointInfo.rowOffset}</div><div>Cluster ID: {selectedPointInfo.clusterId}</div><div>Color: <span style={{ background: selectedPointInfo.color, padding: '2px 6px', borderRadius: '2px' }}>{selectedPointInfo.color}</span></div><div>Position: {selectedPointInfo.position}</div></div>)}
-                        <div style={{ marginTop: '8px', fontSize: '10px', color: '#888' }}>Click points on sphere to inspect</div>
+                        <div style={{ color: '#4c4', fontWeight: 'bold', marginBottom: '8px', fontSize: '16px' }}>🔍 Cluster Inspector</div>
+                        {frameInfo && (<div style={{ marginBottom: '8px', fontSize: '14px' }}><div>Frame: {frameInfo.current}/{frameInfo.total}</div><div>Visible Clusters: {frameInfo.visible}</div><div>Epoch: {frameInfo.epoch || 'unknown'}</div></div>)}
+                        {selectedPointInfo && (<div style={{ marginTop: '8px', borderTop: '1px solid #444', paddingTop: '8px', fontSize: '13px' }}><div style={{ color: '#ff4', fontWeight: 'bold' }}>Selected Point:</div><div>Record ID: {selectedPointInfo.recordId}</div><div>Row Offset: {selectedPointInfo.rowOffset}</div><div>Cluster ID: {selectedPointInfo.clusterId}</div><div>Color: <span style={{ background: selectedPointInfo.color, padding: '2px 6px', borderRadius: '2px' }}>{selectedPointInfo.color}</span></div><div>Position: {selectedPointInfo.position}</div></div>)}
+                        <div style={{ marginTop: '8px', fontSize: '13px', color: '#888' }}>Click points on sphere to inspect</div>
                     </div>
                 )}
             </div>
