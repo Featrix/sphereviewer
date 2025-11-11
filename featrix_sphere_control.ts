@@ -2312,6 +2312,20 @@ export function update_cluster_spotlight(sphere: SphereData) {
     sphere.clusterSpotlightGroup = new THREE.Group();
     sphere.scene.add(sphere.clusterSpotlightGroup);
     
+    // Get current epoch data for training movie (if playing)
+    let currentEpochData: any = null;
+    if (sphere.trainingMovieData && sphere.currentEpoch !== undefined) {
+        const epochKeys = Object.keys(sphere.trainingMovieData).sort((a, b) => {
+            const epochA = parseInt(a.replace('epoch_', ''));
+            const epochB = parseInt(b.replace('epoch_', ''));
+            return epochA - epochB;
+        });
+        if (epochKeys.length > 0 && sphere.currentEpoch < epochKeys.length) {
+            const currentEpochKey = epochKeys[sphere.currentEpoch];
+            currentEpochData = sphere.trainingMovieData[currentEpochKey];
+        }
+    }
+    
     // Find all points in the selected cluster
     const clusterPoints: { position: THREE.Vector3, color: THREE.Color }[] = [];
     sphere.pointObjectsByRecordID.forEach((pointMesh, recordId) => {
@@ -2319,14 +2333,29 @@ export function update_cluster_spotlight(sphere: SphereData) {
         if (record) {
             let clusterAssignment = -1;
             
-            // Use final cluster results if available (training movie)
-            if (activeClusterCountKey !== null && sphere.finalClusterResults[activeClusterCountKey]?.cluster_labels) {
+            // First try to use finalClusterResults if available
+            if (activeClusterCountKey !== null && sphere.finalClusterResults?.[activeClusterCountKey]?.cluster_labels) {
                 const rowOffset = record.featrix_meta?.__featrix_row_offset;
                 if (rowOffset !== undefined && rowOffset < sphere.finalClusterResults[activeClusterCountKey].cluster_labels.length) {
                     clusterAssignment = sphere.finalClusterResults[activeClusterCountKey].cluster_labels[rowOffset];
                 }
-            } else if (record.featrix_meta.cluster_pre !== undefined) {
-                // Fallback to cluster_pre
+            }
+            
+            // Fallback: Use cluster_pre from current epoch's coord data (for training movie)
+            if (clusterAssignment === -1 && currentEpochData?.coords) {
+                const rowOffset = record.featrix_meta?.__featrix_row_offset;
+                if (rowOffset !== undefined) {
+                    const coord = currentEpochData.coords.find((c: any) => 
+                        c.__featrix_row_offset === rowOffset
+                    );
+                    if (coord && coord.cluster_pre !== undefined) {
+                        clusterAssignment = coord.cluster_pre;
+                    }
+                }
+            }
+            
+            // Last fallback: Use cluster_pre from record metadata
+            if (clusterAssignment === -1 && record.featrix_meta.cluster_pre !== undefined) {
                 clusterAssignment = record.featrix_meta.cluster_pre;
             }
             
