@@ -992,6 +992,21 @@ function stop_point_interpolation(sphere: SphereData) {
     sphere.pointStartPositions = undefined;
 }
 
+// Helper function to get the active cluster count key from finalClusterResults
+function get_active_cluster_count_key(sphere: SphereData): number | null {
+    if (!sphere.finalClusterResults || Object.keys(sphere.finalClusterResults).length === 0) {
+        return null;
+    }
+    
+    // Find the cluster count key that has cluster_labels
+    const clusterKeys = Object.keys(sphere.finalClusterResults)
+        .map(k => parseInt(k))
+        .filter(k => !isNaN(k) && sphere.finalClusterResults[k]?.cluster_labels)
+        .sort((a, b) => b - a); // Sort descending to get highest first
+    
+    return clusterKeys.length > 0 ? clusterKeys[0] : null;
+}
+
 function update_training_movie_frame(sphere: SphereData, epochKey: string, forceFinalState: boolean = false) {
     const epochData = sphere.trainingMovieData?.[epochKey];
     
@@ -1915,10 +1930,11 @@ function handle_mouse_highlight(sphere: SphereData) {
         };
         
         // Get cluster assignment from final results if available
-        if (sphere.finalClusterResults && sphere.finalClusterResults[12] && sphere.finalClusterResults[12].cluster_labels) {
+        const activeClusterKey = get_active_cluster_count_key(sphere);
+        if (activeClusterKey !== null && sphere.finalClusterResults[activeClusterKey]?.cluster_labels) {
             const rowOffset = record?.featrix_meta?.__featrix_row_offset;
-            if (rowOffset !== undefined) {
-                pointInfo.clusterId = sphere.finalClusterResults[12].cluster_labels[rowOffset];
+            if (rowOffset !== undefined && rowOffset < sphere.finalClusterResults[activeClusterKey].cluster_labels.length) {
+                pointInfo.clusterId = sphere.finalClusterResults[activeClusterKey].cluster_labels[rowOffset];
             }
         }
         
@@ -2252,6 +2268,12 @@ export function update_cluster_spotlight(sphere: SphereData) {
     
     console.log('🎯 Creating cluster spotlight for cluster:', spotlightCluster);
     
+    // Find the active cluster count key from finalClusterResults
+    const activeClusterCountKey = get_active_cluster_count_key(sphere);
+    if (activeClusterCountKey !== null) {
+        console.log(`🎯 Using cluster count key: ${activeClusterCountKey}`);
+    }
+    
     // Create spotlight group
     sphere.clusterSpotlightGroup = new THREE.Group();
     sphere.scene.add(sphere.clusterSpotlightGroup);
@@ -2264,10 +2286,10 @@ export function update_cluster_spotlight(sphere: SphereData) {
             let clusterAssignment = -1;
             
             // Use final cluster results if available (training movie)
-            if (sphere.finalClusterResults && sphere.finalClusterResults[12] && sphere.finalClusterResults[12].cluster_labels) {
+            if (activeClusterCountKey !== null && sphere.finalClusterResults[activeClusterCountKey]?.cluster_labels) {
                 const rowOffset = record.featrix_meta?.__featrix_row_offset;
-                if (rowOffset !== undefined) {
-                    clusterAssignment = sphere.finalClusterResults[12].cluster_labels[rowOffset];
+                if (rowOffset !== undefined && rowOffset < sphere.finalClusterResults[activeClusterCountKey].cluster_labels.length) {
+                    clusterAssignment = sphere.finalClusterResults[activeClusterCountKey].cluster_labels[rowOffset];
                 }
             } else if (record.featrix_meta.cluster_pre !== undefined) {
                 // Fallback to cluster_pre
