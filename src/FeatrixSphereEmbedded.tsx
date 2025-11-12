@@ -613,6 +613,9 @@ const LossPlotOverlay: React.FC<{
                     // Draw BIG background rectangle for text with padding
                     const fontSize = 18 * scale; // Scale with modal
                     const padding = 12 * scale;
+                    
+                    // Set font BEFORE measuring text
+                    ctx.font = `bold ${fontSize}px Arial`;
                     const textWidth = ctx.measureText(`Loss: ${lossText}`).width;
                     const boxWidth = Math.max(120 * scale, textWidth + padding * 2);
                     const boxHeight = fontSize + padding * 2;
@@ -628,7 +631,6 @@ const LossPlotOverlay: React.FC<{
                     
                     // Draw validation loss label - BIG TEXT
                     ctx.fillStyle = '#00ff88';
-                    ctx.font = `bold ${fontSize}px Arial`;
                     ctx.textAlign = 'center';
                     ctx.fillText(`Loss: ${lossText}`, x, boxY + fontSize + padding / 2);
                 }
@@ -679,6 +681,9 @@ const LossPlotOverlay: React.FC<{
                         // Draw BIG background rectangle for learning rate text
                         const lrFontSize = 18 * scale;
                         const lrPadding = 12 * scale;
+                        
+                        // Set font BEFORE measuring text
+                        ctx.font = `bold ${lrFontSize}px Arial`;
                         const lrTextWidth = ctx.measureText(`LR: ${lrText}`).width;
                         const lrBoxWidth = Math.max(120 * scale, lrTextWidth + lrPadding * 2);
                         const lrBoxHeight = lrFontSize + lrPadding * 2;
@@ -697,7 +702,6 @@ const LossPlotOverlay: React.FC<{
                         
                         // Draw learning rate label - BIG TEXT
                         ctx.fillStyle = '#ff6600';
-                        ctx.font = `bold ${lrFontSize}px Arial`;
                         ctx.textAlign = 'center';
                         ctx.fillText(`LR: ${lrText}`, x, lrBoxY + lrFontSize + lrPadding / 2);
                     }
