@@ -12,7 +12,7 @@ import React, { Suspense, useEffect, useRef, useState, useCallback } from "react
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
 import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch } from './embed-data-access';
-import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, toggle_unit_sphere } from '../featrix_sphere_control';
+import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 
 // Build timestamp for cache busting verification
@@ -516,7 +516,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [searchQuery, setSearchQuery] = useState<string>('');
     const [showSearch, setShowSearch] = useState(false);
     const [showBoundsBox, setShowBoundsBox] = useState(false);
-    const [showUnitSphere, setShowUnitSphere] = useState(false);
+    // Note: Unit sphere is always visible now (created automatically in initialize_sphere)
 
     // Countdown function for initial pause - using useCallback to ensure stable reference
     const startCountdown = useCallback(() => {
@@ -1334,12 +1334,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             </div>
                         </div>
                     )}
-                    <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #555' }}>
-                        <label style={{ color: '#fff', fontSize: '14px', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                            <input type="checkbox" checked={showUnitSphere} onChange={(e) => { setShowUnitSphere(e.target.checked); if (sphereRef) { toggle_unit_sphere(sphereRef, e.target.checked); } }} style={{ marginRight: '8px', cursor: 'pointer', width: '16px', height: '16px' }} />
-                            🌐 Show Unit Sphere Bounds
-                        </label>
-                    </div>
                 </div>
 
                 {/* Search Panel - Inline in side panel */}

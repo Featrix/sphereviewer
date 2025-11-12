@@ -478,6 +478,9 @@ export function initialize_sphere(container: HTMLElement, recordList: SphereReco
 
     add_floor_and_grid(sphere);
     add_points_to_sphere(sphere, recordList);
+    
+    // Always create unit sphere bounds (very light alpha, always visible)
+    create_unit_sphere(sphere);
 
     container.addEventListener("mousedown", (event) => onMouseDown(sphere, event));
     container.addEventListener("mousemove", (event) => onMouseMove(sphere, event));
@@ -2165,47 +2168,25 @@ export function toggle_bounds_box(sphere: SphereData, show: boolean) {
     render_sphere(sphere);
 }
 
-export function toggle_unit_sphere(sphere: SphereData, show: boolean) {
-    if (!sphere) return;
+export function create_unit_sphere(sphere: SphereData) {
+    if (!sphere || sphere.unitSphere) return; // Already created
     
-    sphere.showUnitSphere = show;
+    // Create a wireframe sphere at radius 1.0 (unit sphere) with very light alpha
+    const sphereGeometry = new THREE.SphereGeometry(1.0, 32, 32);
+    const sphereMaterial = new THREE.LineBasicMaterial({ 
+        color: 0x00ffff, 
+        linewidth: 1,
+        transparent: true,
+        opacity: 0.05 // Very light alpha
+    });
+    const sphereEdges = new THREE.EdgesGeometry(sphereGeometry);
+    const sphereLines = new THREE.LineSegments(sphereEdges, sphereMaterial);
+    sphereLines.position.set(0, 0, 0); // Center at origin
     
-    if (show) {
-        // Create or show unit cube wireframe (unit sphere bounds as a cube)
-        if (!sphere.unitSphere) {
-            // Create a wireframe cube for unit sphere bounds
-            // Unit sphere has radius 1, so cube should be 2x2x2 (diameter = 2)
-            const cubeSize = 2.0; // Diameter of unit sphere
-            const cubeGeometry = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
-            const cubeMaterial = new THREE.LineBasicMaterial({ 
-                color: 0x00ffff, 
-                linewidth: 1,
-                transparent: true,
-                opacity: 0.5
-            });
-            const cubeEdges = new THREE.EdgesGeometry(cubeGeometry);
-            const cubeLines = new THREE.LineSegments(cubeEdges, cubeMaterial);
-            cubeLines.position.set(0, 0, 0); // Center at origin
-            
-            sphere.unitSphere = cubeLines;
-            sphere.scene.add(cubeLines);
-            
-            console.log('🌐 Unit sphere bounds (cube) created');
-        } else {
-            // Show existing unit cube
-            if (sphere.unitSphere.parent === null) {
-                sphere.scene.add(sphere.unitSphere);
-            }
-            sphere.unitSphere.visible = true;
-        }
-    } else {
-        // Hide unit cube
-        if (sphere.unitSphere) {
-            sphere.unitSphere.visible = false;
-        }
-    }
+    sphere.unitSphere = sphereLines;
+    sphere.scene.add(sphereLines);
     
-    render_sphere(sphere);
+    console.log('🌐 Unit sphere bounds created (always visible, alpha 0.05)');
 }
 
 export function compute_cluster_convex_hulls(sphere: SphereData) {

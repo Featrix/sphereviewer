@@ -66,8 +66,7 @@ export interface SphereData {
     boundsBox?: THREE.LineSegments;
     showBoundsBox?: boolean;
     boundsBoxVolumeUtilization?: number; // Percentage of bounding box volume occupied by sphere
-    unitSphere?: THREE.LineSegments;
-    showUnitSphere?: boolean;
+    unitSphere?: THREE.LineSegments; // Always visible, created automatically
     // Smooth interpolation properties
     pointTargetPositions?: Map<string, THREE.Vector3>;
     pointStartPositions?: Map<string, THREE.Vector3>;
@@ -125,3 +124,4 @@ export declare function goto_training_movie_frame(sphere: SphereData, frameNumbe
 export declare function show_convex_hulls(sphere: SphereData): void;
 export declare function hide_convex_hulls(sphere: SphereData): void;
 export declare function toggle_bounds_box(sphere: SphereData, show: boolean): void;
+export declare function create_unit_sphere(sphere: SphereData): void;
