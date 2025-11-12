@@ -467,15 +467,15 @@ const LossPlotOverlay: React.FC<{
         });
         ctx.stroke();
         
-        // Draw learning rate curve if provided (using right Y-axis) - SEPARATE VISIBLE LINE
+        // Draw learning rate curve if provided (using right Y-axis) - SEPARATE YELLOW LINE
         if (sortedLRData.length > 0) {
-            // Make learning rate line VERY visible - thicker and brighter
-            ctx.strokeStyle = '#ff6600'; // Bright orange for learning rate
-            ctx.lineWidth = 4; // Thicker line
+            // Make learning rate line VERY visible - YELLOW CURVE
+            ctx.strokeStyle = '#ffff00'; // BRIGHT YELLOW for learning rate
+            ctx.lineWidth = 5; // THICK line
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
-            ctx.shadowColor = '#ff6600';
-            ctx.shadowBlur = 8;
+            ctx.shadowColor = '#ffff00';
+            ctx.shadowBlur = 10;
             ctx.beginPath();
             
             sortedLRData.forEach((point, i) => {
@@ -493,17 +493,21 @@ const LossPlotOverlay: React.FC<{
             ctx.stroke();
             ctx.shadowBlur = 0; // Reset shadow
             
-            // Draw learning rate data points for visibility
-            ctx.fillStyle = '#ff6600';
+            // Draw learning rate data points for visibility - YELLOW
+            ctx.fillStyle = '#ffff00';
             sortedLRData.forEach((point, i) => {
-                if (i % 3 === 0) { // Show every 3rd point
+                if (i % 2 === 0) { // Show every 2nd point for better visibility
                     const epoch = typeof point.epoch === 'string' ? parseInt(point.epoch) : point.epoch;
                     const x = leftPadding + ((epoch - minEpoch) / (maxEpoch - minEpoch)) * plotWidth;
                     const y = topPadding + (1 - (point.value - minLR) / (maxLR - minLR)) * plotHeight;
                     
                     ctx.beginPath();
-                    ctx.arc(x, y, 4, 0, 2 * Math.PI);
+                    ctx.arc(x, y, 5, 0, 2 * Math.PI);
                     ctx.fill();
+                    // White outline for contrast
+                    ctx.strokeStyle = '#000000';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
                 }
             });
         }
@@ -661,14 +665,14 @@ const LossPlotOverlay: React.FC<{
                         const lrValue = currentLRPoint.value;
                         const lrY = topPadding + (1 - (lrValue - minLR) / (maxLR - minLR)) * plotHeight;
                         
-                        // Draw learning rate marker - BIGGER
-                        ctx.fillStyle = '#ff6600';
+                        // Draw learning rate marker - BIGGER - YELLOW
+                        ctx.fillStyle = '#ffff00';
                         ctx.beginPath();
                         ctx.arc(x, lrY, 8 * scale, 0, 2 * Math.PI);
                         ctx.fill();
                         
-                        // Draw white outline
-                        ctx.strokeStyle = '#ffffff';
+                        // Draw black outline for contrast
+                        ctx.strokeStyle = '#000000';
                         ctx.lineWidth = 3 * scale;
                         ctx.stroke();
                         
@@ -693,15 +697,15 @@ const LossPlotOverlay: React.FC<{
                             ? Math.max(10 * scale, lrY + 20 * scale)
                             : Math.max(10 * scale, lrY - lrBoxHeight - 15 * scale);
                         
-                        // Draw background with border
+                        // Draw background with border - YELLOW
                         ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
                         ctx.fillRect(lrBoxX - 2, lrBoxY - 2, lrBoxWidth + 4, lrBoxHeight + 4);
-                        ctx.strokeStyle = '#ff6600';
+                        ctx.strokeStyle = '#ffff00';
                         ctx.lineWidth = 2 * scale;
                         ctx.strokeRect(lrBoxX - 2, lrBoxY - 2, lrBoxWidth + 4, lrBoxHeight + 4);
                         
-                        // Draw learning rate label - BIG TEXT
-                        ctx.fillStyle = '#ff6600';
+                        // Draw learning rate label - BIG TEXT - YELLOW
+                        ctx.fillStyle = '#ffff00';
                         ctx.textAlign = 'center';
                         ctx.fillText(`LR: ${lrText}`, x, lrBoxY + lrFontSize + lrPadding / 2);
                     }
@@ -735,11 +739,11 @@ const LossPlotOverlay: React.FC<{
             ctx.fillText(formatted, leftPadding - 10, y + 4);
         }
         
-        // Right Y-axis labels (learning rate values) if provided
+        // Right Y-axis labels (learning rate values) if provided - YELLOW
         if (sortedLRData.length > 0) {
             ctx.textAlign = 'left';
             ctx.font = '12px Arial';
-            ctx.fillStyle = '#ffaa00'; // Orange color for learning rate axis
+            ctx.fillStyle = '#ffff00'; // YELLOW color for learning rate axis
             for (let i = 0; i <= 4; i++) {
                 const lr = maxLR - (i / 4) * (maxLR - minLR);
                 const y = topPadding + (i / 4) * plotHeight;
