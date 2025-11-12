@@ -1918,14 +1918,25 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
             e.preventDefault();
+            e.stopPropagation();
+            
+            console.log('🔍 Enter pressed!', { 
+                sphereRef: !!sphereRef, 
+                columnTypes: !!columnTypes, 
+                selectedSearchColumn, 
+                searchQuery: searchQuery.trim() 
+            });
             
             if (!sphereRef || !columnTypes || !selectedSearchColumn || !searchQuery.trim()) {
+                console.warn('🔍 Missing requirements for color rule');
                 return;
             }
             
             // Filter results
             const queryColumnType = columnTypes[selectedSearchColumn];
             const theRecords = filter_record_list(queryColumnType, selectedSearchColumn, searchQuery.trim());
+            
+            console.log(`🔍 Found ${theRecords.length} records for query "${searchQuery.trim()}"`);
             
             if (theRecords.length === 0) {
                 console.warn('🔍 No results found for search query');
@@ -1945,14 +1956,20 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 recordIds: theRecords.map(r => r.id)
             };
             
+            console.log(`🎨 Creating color rule:`, newRule);
+            
             // Add to color rules
-            setColorRules(prev => [...prev, newRule]);
+            setColorRules(prev => {
+                const updated = [...prev, newRule];
+                console.log(`🎨 Color rules updated: ${updated.length} rules`);
+                return updated;
+            });
             
             // Clear search input
             setSearchQuery('');
             setSearchResultStats(null);
             
-            console.log(`🎨 Created color rule: "${newRule.query}" in column "${newRule.column}" with color ${newRule.color} for ${newRule.recordIds.length} records`);
+            console.log(`✅ Color rule created: "${newRule.query}" in column "${newRule.column}" with color ${newRule.color} for ${newRule.recordIds.length} records`);
         }
     };
     
@@ -2914,58 +2931,71 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 }} style={{ background: '#633', border: '1px solid #666', color: '#d0d0d0', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '13px' }} title="Clear Search">✕</button>)}
                             </div>
                             
-                            {/* Color Rules List */}
-                            {colorRules.length > 0 && (
-                                <div style={{ marginTop: '12px', padding: '8px', background: 'rgba(42, 42, 42, 0.8)', border: '1px solid #666', borderRadius: '4px' }}>
-                                    <div style={{ color: '#d0d0d0', fontWeight: 'bold', marginBottom: '8px', fontSize: '13px' }}>Color Rules ({colorRules.length}):</div>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '200px', overflowY: 'auto' }}>
-                                        {colorRules.map((rule) => (
-                                            <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px', background: 'rgba(0,0,0,0.3)', borderRadius: '3px' }}>
-                                                <div style={{ width: '20px', height: '20px', background: rule.color, border: '1px solid #666', borderRadius: '3px', flexShrink: 0 }}></div>
-                                                <div style={{ flex: 1, fontSize: '12px', color: '#d0d0d0' }}>
-                                                    <strong>{rule.column}</strong>: "{rule.query}" ({rule.recordIds.length} records)
-                                                </div>
-                                                <button 
-                                                    onClick={() => {
-                                                        setColorRules(prev => prev.filter(r => r.id !== rule.id));
-                                                    }}
-                                                    style={{ 
-                                                        background: '#633', 
-                                                        border: '1px solid #666', 
-                                                        color: '#d0d0d0', 
-                                                        padding: '4px 8px', 
-                                                        borderRadius: '3px', 
-                                                        cursor: 'pointer', 
-                                                        fontSize: '11px',
-                                                        flexShrink: 0
-                                                    }} 
-                                                    title="Delete Rule"
-                                                >
-                                                    ✕
-                                                </button>
-                                            </div>
-                                        ))}
+                            {/* Color Rules List - Always show, even when empty */}
+                            <div style={{ marginTop: '12px', padding: '8px', background: 'rgba(42, 42, 42, 0.8)', border: '1px solid #666', borderRadius: '4px' }}>
+                                    <div style={{ color: '#d0d0d0', fontWeight: 'bold', marginBottom: '8px', fontSize: '13px' }}>
+                                        Color Rules ({colorRules.length}):
+                                        {colorRules.length === 0 && (
+                                            <span style={{ fontSize: '11px', color: '#888', fontWeight: 'normal', marginLeft: '8px' }}>
+                                                (Type search and press Enter to create)
+                                            </span>
+                                        )}
                                     </div>
-                                    <button 
-                                        onClick={() => {
-                                            setColorRules([]);
-                                        }}
-                                        style={{ 
-                                            marginTop: '8px', 
-                                            width: '100%', 
-                                            background: '#633', 
-                                            border: '1px solid #666', 
-                                            color: '#d0d0d0', 
-                                            padding: '6px', 
-                                            borderRadius: '3px', 
-                                            cursor: 'pointer', 
-                                            fontSize: '12px' 
-                                        }}
-                                    >
-                                        Clear All Rules
-                                    </button>
+                                    {colorRules.length > 0 ? (
+                                        <>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '200px', overflowY: 'auto' }}>
+                                                {colorRules.map((rule) => (
+                                                    <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px', background: 'rgba(0,0,0,0.3)', borderRadius: '3px' }}>
+                                                        <div style={{ width: '20px', height: '20px', background: rule.color, border: '1px solid #666', borderRadius: '3px', flexShrink: 0 }}></div>
+                                                        <div style={{ flex: 1, fontSize: '12px', color: '#d0d0d0' }}>
+                                                            <strong>{rule.column}</strong>: "{rule.query}" ({rule.recordIds.length} records)
+                                                        </div>
+                                                        <button 
+                                                            onClick={() => {
+                                                                setColorRules(prev => prev.filter(r => r.id !== rule.id));
+                                                            }}
+                                                            style={{ 
+                                                                background: '#633', 
+                                                                border: '1px solid #666', 
+                                                                color: '#d0d0d0', 
+                                                                padding: '4px 8px', 
+                                                                borderRadius: '3px', 
+                                                                cursor: 'pointer', 
+                                                                fontSize: '11px',
+                                                                flexShrink: 0
+                                                            }} 
+                                                            title="Delete Rule"
+                                                        >
+                                                            ✕
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <button 
+                                                onClick={() => {
+                                                    setColorRules([]);
+                                                }}
+                                                style={{ 
+                                                    marginTop: '8px', 
+                                                    width: '100%', 
+                                                    background: '#633', 
+                                                    border: '1px solid #666', 
+                                                    color: '#d0d0d0', 
+                                                    padding: '6px', 
+                                                    borderRadius: '3px', 
+                                                    cursor: 'pointer', 
+                                                    fontSize: '12px' 
+                                                }}
+                                            >
+                                                Clear All Rules
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <div style={{ fontSize: '11px', color: '#888', fontStyle: 'italic', padding: '8px', textAlign: 'center' }}>
+                                            No color rules yet. Search and press Enter to create one.
+                                        </div>
+                                    )}
                                 </div>
-                            )}
                             
                             {/* Help text for boolean columns */}
                             {(() => {
