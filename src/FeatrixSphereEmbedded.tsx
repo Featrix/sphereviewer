@@ -1115,6 +1115,7 @@ const TrainingMovieSphere: React.FC<{
                 entire_cluster_results: clusterResults
             };
             console.log('🎬 Using first epoch data with', filteredSessionData.coords.length, 'records for training movie');
+            console.log('📊 Total points loaded:', filteredSessionData.coords.length);
             
             // Initialize sphere with filtered records that match training movie
             const recordList = create_record_list(filteredSessionData);
@@ -1347,7 +1348,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 console.log('🔗 Loading training movie from API (cluster_pre ignored - using finalClusterResults)');
                 
                 // Use the session ID to fetch training data from API
-                const apiTrainingData = await fetch_training_metrics(sessionId, apiBaseUrl);
+                    // Request all points (9500+) - pass limit parameter if API supports it
+                    const apiTrainingData = await fetch_training_metrics(sessionId, apiBaseUrl, 10000);
                 
                 if (apiTrainingData && apiTrainingData.epoch_projections) {
                     console.log('✅ Got training movie data from API:', Object.keys(apiTrainingData.epoch_projections).length, 'epochs');
@@ -1359,7 +1361,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         const baseUrl = apiBaseUrl || (window.location.hostname === 'localhost' 
                             ? window.location.origin + '/proxy/featrix'
                             : 'https://sphere-api.featrix.com');
-                        const projectionsResponse = await fetch(`${baseUrl}/compute/session/${sessionId}/projections`);
+                        // Request all points (9500+) - pass limit parameter if API supports it
+                        const projectionsResponse = await fetch(`${baseUrl}/compute/session/${sessionId}/projections?limit=10000`);
                         if (projectionsResponse.ok) {
                             const projectionsData = await projectionsResponse.json();
                             if (projectionsData.projections?.entire_cluster_results) {
@@ -1383,6 +1386,16 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     const firstEpochKey = Object.keys(apiTrainingData.epoch_projections)[0];
                     const firstEpoch = apiTrainingData.epoch_projections[firstEpochKey];
                     if (firstEpoch && firstEpoch.coords) {
+                        console.log(`📊 First epoch (${firstEpochKey}) contains ${firstEpoch.coords.length} points`);
+                        // Log total points across all epochs
+                        let totalPointsAcrossEpochs = 0;
+                        Object.keys(apiTrainingData.epoch_projections).forEach(epochKey => {
+                            const epoch = apiTrainingData.epoch_projections[epochKey];
+                            if (epoch && epoch.coords) {
+                                totalPointsAcrossEpochs += epoch.coords.length;
+                            }
+                        });
+                        console.log(`📊 Total points across all epochs: ${totalPointsAcrossEpochs}`);
                         const types = getColumnTypes({ coords: firstEpoch.coords });
                         setColumnTypes(types);
                         if (Object.keys(types).length > 0) {

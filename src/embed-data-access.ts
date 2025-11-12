@@ -28,20 +28,31 @@ export async function fetch_session_data(session_id: string, apiBaseUrl?: string
     return data;
 }
 
-export async function fetch_session_projections(session_id: string, apiBaseUrl?: string) {
+export async function fetch_session_projections(session_id: string, apiBaseUrl?: string, limit?: number) {
     const baseUrl = getApiBaseUrl(apiBaseUrl);
-    const data_raw = await fetch(`${baseUrl}/compute/session/${session_id}/projections`);
+    let url = `${baseUrl}/compute/session/${session_id}/projections`;
+    if (limit !== undefined) {
+        url += `?limit=${limit}`;
+    }
+    const data_raw = await fetch(url);
     const data = await data_raw.json();
-    return data.projections;
+    const projections = data.projections;
+    if (projections && projections.coords) {
+        console.log(`📊 Loaded ${projections.coords.length} points from projections API`);
+    }
+    return projections;
 }
 
-export async function fetch_training_metrics(session_id: string, apiBaseUrl?: string) {
+export async function fetch_training_metrics(session_id: string, apiBaseUrl?: string, limit?: number) {
     const baseUrl = getApiBaseUrl(apiBaseUrl);
     
     // Fetch epoch projections (3D coordinates) - CRITICAL for training movie
     console.time('🔗 API_EPOCH_PROJECTIONS');
     console.log('🔗 API_CALL_START: epoch_projections');
-    const projectionsUrl = `${baseUrl}/compute/session/${session_id}/epoch_projections`;
+    let projectionsUrl = `${baseUrl}/compute/session/${session_id}/epoch_projections`;
+    if (limit !== undefined) {
+        projectionsUrl += `?limit=${limit}`;
+    }
     console.log('🔗 Fetching from:', projectionsUrl);
     const projectionsResponse = await fetch(projectionsUrl);
     
@@ -56,6 +67,12 @@ export async function fetch_training_metrics(session_id: string, apiBaseUrl?: st
     console.log('🎯 DEBUG: API Response keys:', Object.keys(projectionsData));
     if (projectionsData.epoch_projections) {
         console.log('🎯 DEBUG: Epoch projections keys:', Object.keys(projectionsData.epoch_projections).length, 'epochs');
+        // Log point counts for first epoch
+        const firstEpochKey = Object.keys(projectionsData.epoch_projections)[0];
+        const firstEpoch = projectionsData.epoch_projections[firstEpochKey];
+        if (firstEpoch && firstEpoch.coords) {
+            console.log(`📊 First epoch (${firstEpochKey}) contains ${firstEpoch.coords.length} points`);
+        }
     }
     const sizeBytes = JSON.stringify(projectionsData).length;
     const sizeMB = (sizeBytes / (1024 * 1024)).toFixed(1);
