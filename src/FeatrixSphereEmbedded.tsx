@@ -2810,7 +2810,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     if (colType === 'set') {
                                         placeholder = 'Type exact value...';
                                     } else if (colType === 'scalar') {
-                                        placeholder = 'Type number or value...';
+                                        placeholder = 'Use: =5, >10, <5, !=null, null, etc.';
                                     }
                                     
                                     // Check if column contains boolean-like values
