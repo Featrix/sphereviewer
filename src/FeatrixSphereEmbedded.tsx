@@ -507,6 +507,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [selectedPointInfo, setSelectedPointInfo] = useState<any>(null);
     const [showColorLegend, setShowColorLegend] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const [showSidePanelInFullscreen, setShowSidePanelInFullscreen] = useState(false);
     
     // Rotation control state
     const [rotationEnabled, setRotationEnabled] = useState(true); // Default enabled
@@ -1108,10 +1109,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
             color: '#fff',
             overflow: 'hidden'
         }}>
-            {/* Sphere Container - Left side, 75% of available width */}
+            {/* Sphere Container - Full width in fullscreen, 75% otherwise */}
             <div style={{
-                flex: '0 0 75%',
-                width: '75%',
+                flex: isFullscreen && !showSidePanelInFullscreen ? '1 1 100%' : '0 0 75%',
+                width: isFullscreen && !showSidePanelInFullscreen ? '100%' : '75%',
                 height: '100vh',
                 position: 'relative',
                 background: '#000',
@@ -1119,6 +1120,30 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 alignItems: 'center',
                 justifyContent: 'center'
             }}>
+                {/* Toggle side panel button in fullscreen mode */}
+                {isFullscreen && (
+                    <button
+                        onClick={() => setShowSidePanelInFullscreen(!showSidePanelInFullscreen)}
+                        style={{
+                            position: 'absolute',
+                            top: '10px',
+                            right: showSidePanelInFullscreen ? 'calc(25% + 10px)' : '10px',
+                            zIndex: 1000,
+                            background: 'rgba(0, 0, 0, 0.8)',
+                            border: '1px solid #555',
+                            color: '#fff',
+                            padding: '8px 12px',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '14px',
+                            fontWeight: 'bold',
+                            transition: 'right 0.3s ease'
+                        }}
+                        title={showSidePanelInFullscreen ? "Hide Controls" : "Show Controls"}
+                    >
+                        {showSidePanelInFullscreen ? '◀ Hide' : '▶ Show'}
+                    </button>
+                )}
                 {/* Countdown Overlay - only temporary, positioned over sphere */}
                 {showCountdown && (
                     <div style={{
@@ -1143,7 +1168,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     </div>
                 )}
                 
-                {/* ACTUAL 3D SPHERE VIEWER - WebGL container is 75% of available space, centered */}
+                {/* ACTUAL 3D SPHERE VIEWER - WebGL container fills available space, centered */}
                 <div 
                     id="training-movie-3d-container" 
                     style={{
@@ -1158,10 +1183,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     <div 
                         ref={containerRef} 
                         style={{ 
-                            width: '75%', 
-                            height: '75%',
-                            maxWidth: '75%',
-                            maxHeight: '75%',
+                            width: isFullscreen ? '100%' : '75%', 
+                            height: isFullscreen ? '100%' : '75%',
+                            maxWidth: isFullscreen ? '100%' : '75%',
+                            maxHeight: isFullscreen ? '100%' : '75%',
                             background: 'transparent',
                             pointerEvents: 'auto',
                             cursor: 'pointer',
@@ -1250,7 +1275,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 </div>
             </div>
             
-            {/* Controls Side Panel - Right side, hugging the edge */}
+            {/* Controls Side Panel - Right side, hugging the edge, hidden in fullscreen unless toggled */}
+            {(!isFullscreen || showSidePanelInFullscreen) && (
             <div style={{
                 flex: '0 0 25%',
                 width: '25%',
@@ -1261,7 +1287,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 padding: '16px',
                 fontFamily: 'monospace',
                 fontSize: '14px',
-                color: '#fff'
+                color: '#fff',
+                transition: isFullscreen ? 'transform 0.3s ease' : 'none',
+                transform: isFullscreen && !showSidePanelInFullscreen ? 'translateX(100%)' : 'translateX(0)'
             }}>
                 {/* Build timestamp & frame info */}
                 <div className="build-display" style={{
@@ -1633,6 +1661,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     </div>
                 )}
             </div>
+            )}
         </div>
     );
 };
