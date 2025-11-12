@@ -2158,10 +2158,41 @@ export function toggle_bounds_box(sphere: SphereData, show: boolean) {
             // Update bounds box to current point positions
             update_bounds_box(sphere);
         }
+        
+        // Create or show unit sphere cube (2x2x2 cube representing unit sphere bounds)
+        if (!sphere.unitSphereCube) {
+            // Unit sphere has radius 1, so cube should be 2x2x2 (diameter = 2)
+            const cubeSize = 2.0;
+            const cubeGeometry = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
+            const cubeMaterial = new THREE.LineBasicMaterial({ 
+                color: 0x00ffff, 
+                linewidth: 1,
+                transparent: true,
+                opacity: 0.5
+            });
+            const cubeEdges = new THREE.EdgesGeometry(cubeGeometry);
+            const cubeLines = new THREE.LineSegments(cubeEdges, cubeMaterial);
+            cubeLines.position.set(0, 0, 0); // Center at origin
+            
+            sphere.unitSphereCube = cubeLines;
+            sphere.scene.add(cubeLines);
+            
+            console.log('📦 Unit sphere cube created (2x2x2)');
+        } else {
+            // Show existing unit sphere cube
+            if (sphere.unitSphereCube.parent === null) {
+                sphere.scene.add(sphere.unitSphereCube);
+            }
+            sphere.unitSphereCube.visible = true;
+        }
     } else {
         // Hide bounds box
         if (sphere.boundsBox) {
             sphere.boundsBox.visible = false;
+        }
+        // Hide unit sphere cube
+        if (sphere.unitSphereCube) {
+            sphere.unitSphereCube.visible = false;
         }
     }
     
