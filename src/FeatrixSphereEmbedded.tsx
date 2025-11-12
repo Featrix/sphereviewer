@@ -1642,22 +1642,49 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     matches = value === query;
                 }
             } else if (queryColumnType === 'scalar') {
-                // Handle scalar columns - check if it's a boolean-like value
-                if (isBooleanQuery) {
-                    const normalizedValue = normalizeBoolean(columnValue);
-                    if (normalizedValue !== null && normalizedValue === normalizedQuery) {
-                        matches = true;
-                    } else if (!normalizedValue) {
-                        // Fallback to numeric/string matching
-                        const value = String(columnValue).toLowerCase();
-                        const query = String(queryValue).toLowerCase();
-                        matches = value.includes(query);
+                // Handle scalar columns with proper numeric matching
+                const numValue = typeof columnValue === 'number' ? columnValue : parseFloat(String(columnValue));
+                const isNumeric = !isNaN(numValue) && isFinite(numValue);
+                const queryNum = parseFloat(String(queryValue));
+                const isNumericQuery = !isNaN(queryNum) && isFinite(queryNum);
+                
+                // Check for range queries (e.g., "1-5", ">10", "<5", ">=100")
+                const queryStr = String(queryValue).trim();
+                let rangeMatch = false;
+                
+                if (queryStr.includes('-') && queryStr.split('-').length === 2) {
+                    // Range: "1-5"
+                    const parts = queryStr.split('-').map(p => parseFloat(p.trim()));
+                    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && isNumeric) {
+                        rangeMatch = numValue >= parts[0] && numValue <= parts[1];
                     }
+                } else if (queryStr.startsWith('>=') && isNumeric) {
+                    const val = parseFloat(queryStr.substring(2).trim());
+                    if (!isNaN(val)) rangeMatch = numValue >= val;
+                } else if (queryStr.startsWith('<=') && isNumeric) {
+                    const val = parseFloat(queryStr.substring(2).trim());
+                    if (!isNaN(val)) rangeMatch = numValue <= val;
+                } else if (queryStr.startsWith('>') && isNumeric) {
+                    const val = parseFloat(queryStr.substring(1).trim());
+                    if (!isNaN(val)) rangeMatch = numValue > val;
+                } else if (queryStr.startsWith('<') && isNumeric) {
+                    const val = parseFloat(queryStr.substring(1).trim());
+                    if (!isNaN(val)) rangeMatch = numValue < val;
+                } else if (isNumericQuery && isNumeric) {
+                    // Exact numeric match
+                    rangeMatch = Math.abs(numValue - queryNum) < Number.EPSILON * 100;
+                }
+                
+                if (rangeMatch) {
+                    matches = true;
+                } else if (isBooleanQuery) {
+                    const normalizedValue = normalizeBoolean(columnValue);
+                    matches = normalizedValue !== null && normalizedValue === normalizedQuery;
                 } else {
-                    // Regular scalar matching
+                    // String matching fallback
                     const value = String(columnValue).toLowerCase();
                     const query = String(queryValue).toLowerCase();
-                    matches = value.includes(query);
+                    matches = value === query || value.includes(query);
                 }
             }
             
@@ -2054,16 +2081,17 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
             color: '#d0d0d0',
             overflow: 'hidden'
         }}>
-            {/* Sphere Container - Full width in fullscreen, 75% otherwise */}
+            {/* Sphere Container - ALWAYS FILLS AVAILABLE SPACE */}
             <div style={{
-                flex: isFullscreen && !showSidePanelInFullscreen ? '1 1 100%' : '0 0 75%',
+                flex: isFullscreen && !showSidePanelInFullscreen ? '1 1 100%' : '1 1 75%',
                 width: isFullscreen && !showSidePanelInFullscreen ? '100%' : '75%',
-                height: '100vh',
+                height: '100%',
+                minHeight: '100vh',
                 position: 'relative',
                 background: '#2a2a2a',
                 display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
+                alignItems: 'stretch',
+                justifyContent: 'stretch'
             }}>
                 {/* Toggle side panel button in fullscreen mode */}
                 {isFullscreen && (
@@ -2128,10 +2156,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     <div 
                         ref={containerRef} 
                         style={{ 
-                            width: isFullscreen ? '100%' : '75%', 
-                            height: isFullscreen ? '100%' : '75%',
-                            maxWidth: isFullscreen ? '100%' : '75%',
-                            maxHeight: isFullscreen ? '100%' : '75%',
+                            width: '100%', 
+                            height: '100%',
+                            maxWidth: '100%',
+                            maxHeight: '100%',
                             background: 'transparent',
                             pointerEvents: 'auto',
                             cursor: 'pointer',
@@ -2351,38 +2379,86 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         return null;
                     }
                     
-                    // Extract learning rate data for dual Y-axis
+                    // Extract learning rate data for dual Y-axis - COMPREHENSIVE EXTRACTION
                     let learningRateData = null;
                     
                     // Debug: log what we have
                     console.log('🔍 Learning rate extraction - lossData keys:', Object.keys(lossData));
+                    console.log('🔍 Learning rate extraction - lossData:', lossData);
                     
-                    // Try different possible structures
+                    // Try ALL possible structures from API
                     if (lossData.learning_rate && Array.isArray(lossData.learning_rate)) {
                         learningRateData = lossData.learning_rate;
                         console.log('✅ Found learning_rate array:', learningRateData.length);
-                    } else if (lossData.training_info && lossData.training_info.loss_history) {
-                        // Extract learning rate from loss_history
-                        const lossHistory = lossData.training_info.loss_history;
-                        console.log('🔍 Found loss_history with', lossHistory.length, 'items');
-                        console.log('🔍 First item sample:', lossHistory[0]);
+                    } else if (lossData.training_info) {
+                        // Check training_info.loss_history
+                        if (lossData.training_info.loss_history && Array.isArray(lossData.training_info.loss_history)) {
+                            const lossHistory = lossData.training_info.loss_history;
+                            console.log('🔍 Found loss_history with', lossHistory.length, 'items');
+                            console.log('🔍 First item sample:', lossHistory[0]);
+                            
+                            learningRateData = lossHistory
+                                .filter((item: any) => 
+                                    item.current_learning_rate !== undefined || 
+                                    item.learning_rate !== undefined ||
+                                    item.lr !== undefined
+                                )
+                                .map((item: any) => ({
+                                    epoch: item.epoch || item.epoch_number || item.epoch_num || 0,
+                                    value: item.current_learning_rate || item.learning_rate || item.lr || 0
+                                }));
+                            console.log('✅ Extracted learning rate from loss_history:', learningRateData.length, 'points');
+                        }
                         
-                        learningRateData = lossHistory
-                            .filter((item: any) => item.current_learning_rate !== undefined || item.learning_rate !== undefined)
-                            .map((item: any) => ({
-                                epoch: item.epoch || item.epoch_number || 0,
-                                value: item.current_learning_rate || item.learning_rate || 0
-                            }));
-                        console.log('✅ Extracted learning rate data:', learningRateData.length, 'points');
-                    } else if (Array.isArray(lossData) && lossData.length > 0 && lossData[0].current_learning_rate !== undefined) {
+                        // Also check training_info.learning_rate_schedule
+                        if ((!learningRateData || learningRateData.length === 0) && lossData.training_info.learning_rate_schedule) {
+                            const lrSchedule = lossData.training_info.learning_rate_schedule;
+                            if (Array.isArray(lrSchedule)) {
+                                learningRateData = lrSchedule.map((item: any) => ({
+                                    epoch: item.epoch || item.epoch_number || 0,
+                                    value: item.value || item.lr || item.learning_rate || 0
+                                }));
+                                console.log('✅ Extracted learning rate from learning_rate_schedule:', learningRateData.length, 'points');
+                            }
+                        }
+                    } else if (Array.isArray(lossData) && lossData.length > 0) {
                         // If lossData is an array of loss_history items
-                        learningRateData = lossData
-                            .filter((item: any) => item.current_learning_rate !== undefined || item.learning_rate !== undefined)
-                            .map((item: any) => ({
-                                epoch: item.epoch || item.epoch_number || 0,
-                                value: item.current_learning_rate || item.learning_rate || 0
-                            }));
-                        console.log('✅ Extracted learning rate from array:', learningRateData.length, 'points');
+                        const firstItem = lossData[0];
+                        if (firstItem.current_learning_rate !== undefined || firstItem.learning_rate !== undefined || firstItem.lr !== undefined) {
+                            learningRateData = lossData
+                                .filter((item: any) => 
+                                    item.current_learning_rate !== undefined || 
+                                    item.learning_rate !== undefined ||
+                                    item.lr !== undefined
+                                )
+                                .map((item: any) => ({
+                                    epoch: item.epoch || item.epoch_number || item.epoch_num || 0,
+                                    value: item.current_learning_rate || item.learning_rate || item.lr || 0
+                                }));
+                            console.log('✅ Extracted learning rate from array:', learningRateData.length, 'points');
+                        }
+                    }
+                    
+                    // Last resort: check if it's nested in training_metrics
+                    if ((!learningRateData || learningRateData.length === 0) && lossData.training_metrics) {
+                        const tm = lossData.training_metrics;
+                        if (tm.learning_rate && Array.isArray(tm.learning_rate)) {
+                            learningRateData = tm.learning_rate;
+                            console.log('✅ Found learning_rate in training_metrics:', learningRateData.length);
+                        } else if (tm.training_info && tm.training_info.loss_history) {
+                            const lossHistory = tm.training_info.loss_history;
+                            learningRateData = lossHistory
+                                .filter((item: any) => 
+                                    item.current_learning_rate !== undefined || 
+                                    item.learning_rate !== undefined ||
+                                    item.lr !== undefined
+                                )
+                                .map((item: any) => ({
+                                    epoch: item.epoch || item.epoch_number || 0,
+                                    value: item.current_learning_rate || item.learning_rate || item.lr || 0
+                                }));
+                            console.log('✅ Extracted learning rate from training_metrics.training_info.loss_history:', learningRateData.length, 'points');
+                        }
                     }
                     
                     if (learningRateData && learningRateData.length > 0) {
