@@ -961,6 +961,9 @@ function animate_interpolation(sphere: SphereData) {
         }
     });
     
+    // Update memory trails during interpolation so arcs chase the points
+    update_memory_trails(sphere);
+    
     // Re-render the sphere
     render_sphere(sphere);
     
@@ -973,7 +976,7 @@ function animate_interpolation(sphere: SphereData) {
             store_point_position_in_history(sphere, recordId, mesh.position);
         });
         
-        // Update memory trails with new positions
+        // Final update of memory trails with new positions
         update_memory_trails(sphere);
         
         sphere.isInterpolating = false;
@@ -1456,8 +1459,8 @@ export function update_memory_trails(sphere: SphereData) {
         const distanceRange = maxDistance - minDistance;
         
         for (let i = 0; i < maxSegments; i++) {
-            // Create great circle arc from current position to previous position
-            const currentPos = history[0].clone();
+            // Create great circle arc from current position (use live mesh position, not history[0]) to previous position
+            const currentPos = pointMesh.position.clone(); // Use live position so arcs chase the points
             const previousPos = history[i + 1].clone();
             const distance = distances[i];
             
