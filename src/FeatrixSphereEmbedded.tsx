@@ -692,8 +692,18 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             
                             // Update sphere with new epochs if it's already loaded
                             if (sphereRef && sphereRef.trainingMovieData) {
-                                sphereRef.trainingMovieData = updatedTrainingData;
-                                console.log('🔄 Updated sphere training movie data with new epochs');
+                                // Stop current movie
+                                stop_training_movie(sphereRef);
+                                
+                                // Reload training movie with updated data
+                                load_training_movie(sphereRef, updatedTrainingData, latestData.training_metrics || lossData);
+                                
+                                // Reset to frame 1 and replay
+                                goto_training_movie_frame(sphereRef, 1);
+                                setIsPlaying(true);
+                                play_training_movie(sphereRef);
+                                
+                                console.log('🔄 Reloaded and restarted training movie with new epochs');
                             }
 
                             // Update loss data if available
