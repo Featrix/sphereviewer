@@ -153,6 +153,14 @@ viewer.destroy();
 
     <!-- Test script for manual initialization -->
     <script>
+        // Disable Cmd-R / Ctrl-R to prevent page reload
+        document.addEventListener('keydown', function(e) {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'r') {
+                e.preventDefault();
+                return false;
+            }
+        });
+
         // This would work after building the component:
         // const viewer = new window.SphereViewer();
         // viewer.init({

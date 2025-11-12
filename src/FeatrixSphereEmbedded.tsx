@@ -517,6 +517,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [showSearch, setShowSearch] = useState(false);
     const [showBoundsBox, setShowBoundsBox] = useState(false);
     // Note: Unit sphere is always visible now (created automatically in initialize_sphere)
+    
+    // Training status state
+    const [trainingStatus, setTrainingStatus] = useState<'loading' | 'training' | 'completed' | null>(null);
+    const [nextCheckCountdown, setNextCheckCountdown] = useState<number>(30);
 
     // Countdown function for initial pause - using useCallback to ensure stable reference
     const startCountdown = useCallback(() => {
@@ -634,10 +638,16 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 const isTraining = sessionStatus.session?.status === 'training' || 
                                   sessionStatus.session?.status === 'running' ||
                                   sessionStatus.session?.status === 'pending';
+                
                 if (!isTraining) {
                     console.log('✅ Training complete or not in progress, stopping epoch polling');
+                    setTrainingStatus('completed');
                     return;
                 }
+                
+                // Set training status
+                setTrainingStatus('training');
+                setNextCheckCountdown(30); // Reset countdown
 
                 // Get current epoch keys
                 const currentEpochKeys = Object.keys(trainingData);
@@ -699,13 +709,31 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         // Poll every 30 seconds
         const pollInterval = setInterval(checkForNewEpochs, 30000);
         
+        // Countdown timer for next check
+        const countdownInterval = setInterval(() => {
+            setNextCheckCountdown(prev => {
+                if (prev <= 1) {
+                    return 30; // Reset to 30 when it reaches 0
+                }
+                return prev - 1;
+            });
+        }, 1000);
+        
         // Check immediately on mount
         checkForNewEpochs();
 
         return () => {
             clearInterval(pollInterval);
+            clearInterval(countdownInterval);
         };
     }, [sessionId, apiBaseUrl, trainingData, sphereRef]);
+    
+    // Set loading status when loading
+    useEffect(() => {
+        if (loading) {
+            setTrainingStatus('loading');
+        }
+    }, [loading]);
 
     // Handle dynamic visualization feature changes
     useEffect(() => {
@@ -942,20 +970,68 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 }}>
                     Build: {BUILD_TIMESTAMP.slice(0, 16)}
                 </div>
-                <div style={{ marginBottom: '20px', fontSize: '18px' }}>🎬 Loading Training Movie...</div>
-                <div style={{ 
-                    width: '40px', 
-                    height: '40px', 
-                    border: '3px solid #333', 
-                    borderTop: '3px solid #fff',
-                    borderRadius: '50%',
-                    animation: 'spin 1s linear infinite',
-                    marginBottom: '15px'
-                }}></div>
-                <div style={{ fontSize: '14px', color: '#ccc' }}>Session: {sessionId}</div>
-                <div style={{ fontSize: '12px', color: '#888', marginTop: '5px' }}>
-                    Fetching from {apiBaseUrl || 'default API'}
-                </div>
+                {trainingStatus === 'loading' && (
+                    <>
+                        <div style={{ marginBottom: '20px', fontSize: '18px' }}>🎬 Loading Training Movie...</div>
+                        <div style={{ 
+                            width: '40px', 
+                            height: '40px', 
+                            border: '3px solid #333', 
+                            borderTop: '3px solid #fff',
+                            borderRadius: '50%',
+                            animation: 'spin 1s linear infinite',
+                            marginBottom: '15px'
+                        }}></div>
+                        <div style={{ fontSize: '14px', color: '#ccc' }}>Session: {sessionId}</div>
+                        <div style={{ fontSize: '12px', color: '#888', marginTop: '5px' }}>
+                            Fetching from {apiBaseUrl || 'default API'}
+                        </div>
+                    </>
+                )}
+                {trainingStatus === 'training' && (
+                    <>
+                        <div style={{ marginBottom: '20px', fontSize: '18px', color: '#00ff00' }}>
+                            🎯 Training in progress
+                        </div>
+                        <div style={{ fontSize: '14px', color: '#00ffff', marginBottom: '10px' }}>
+                            Will check for new frames in {nextCheckCountdown} seconds
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#888', marginTop: '5px' }}>
+                            Session: {sessionId}
+                        </div>
+                    </>
+                )}
+                {trainingStatus === 'completed' && (
+                    <>
+                        <div style={{ marginBottom: '20px', fontSize: '18px', color: '#00ff00' }}>
+                            ✅ Training Completed
+                        </div>
+                        <div style={{ fontSize: '14px', color: '#ccc', marginBottom: '10px' }}>
+                            All epochs loaded
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#888', marginTop: '5px' }}>
+                            Session: {sessionId}
+                        </div>
+                    </>
+                )}
+                {!trainingStatus && (
+                    <>
+                        <div style={{ marginBottom: '20px', fontSize: '18px' }}>🎬 Loading Training Movie...</div>
+                        <div style={{ 
+                            width: '40px', 
+                            height: '40px', 
+                            border: '3px solid #333', 
+                            borderTop: '3px solid #fff',
+                            borderRadius: '50%',
+                            animation: 'spin 1s linear infinite',
+                            marginBottom: '15px'
+                        }}></div>
+                        <div style={{ fontSize: '14px', color: '#ccc' }}>Session: {sessionId}</div>
+                        <div style={{ fontSize: '12px', color: '#888', marginTop: '5px' }}>
+                            Fetching from {apiBaseUrl || 'default API'}
+                        </div>
+                    </>
+                )}
             </div>
         );
     }
@@ -1183,6 +1259,36 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     border: '1px solid #555'
                 }}>
                     <div style={{ color: '#ff0000', fontSize: '12px' }}>v{BUILD_TIMESTAMP.slice(0, 19).replace('T', ' ')}</div>
+                    {/* Training Status */}
+                    {trainingStatus === 'training' && (
+                        <div style={{ 
+                            marginTop: '8px', 
+                            padding: '6px', 
+                            background: 'rgba(0, 255, 0, 0.1)', 
+                            borderRadius: '4px',
+                            border: '1px solid rgba(0, 255, 0, 0.3)'
+                        }}>
+                            <div style={{ color: '#00ff00', fontSize: '13px', fontWeight: 'bold' }}>
+                                🎯 Training in progress
+                            </div>
+                            <div style={{ color: '#00ffff', fontSize: '12px', marginTop: '4px' }}>
+                                Checking for new frames in {nextCheckCountdown}s
+                            </div>
+                        </div>
+                    )}
+                    {trainingStatus === 'completed' && (
+                        <div style={{ 
+                            marginTop: '8px', 
+                            padding: '6px', 
+                            background: 'rgba(0, 255, 0, 0.1)', 
+                            borderRadius: '4px',
+                            border: '1px solid rgba(0, 255, 0, 0.3)'
+                        }}>
+                            <div style={{ color: '#00ff00', fontSize: '13px', fontWeight: 'bold' }}>
+                                ✅ Training Completed
+                            </div>
+                        </div>
+                    )}
                     {frameInfo && (
                         <div style={{ marginTop: '8px' }}>
                             <div style={{ color: '#00ff00', fontSize: '16px', fontWeight: 'bold' }}>
