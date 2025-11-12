@@ -2876,9 +2876,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     </div>
                     {showBoundsBox && sphereRef && sphereRef.boundsBoxVolumeUtilization !== undefined && (
                         <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #555', fontSize: '13px', color: '#00ff00' }}>
-                            Radius Difference: <strong>{sphereRef.boundsBoxVolumeUtilization >= 0 ? '+' : ''}{sphereRef.boundsBoxVolumeUtilization.toFixed(2)}%</strong>
+                            Sphere Coverage: <strong>{sphereRef.boundsBoxVolumeUtilization.toFixed(2)}%</strong>
                             <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
-                                Bounding box radius is {Math.abs(sphereRef.boundsBoxVolumeUtilization).toFixed(2)}% {sphereRef.boundsBoxVolumeUtilization >= 0 ? 'larger' : 'smaller'} than unit sphere radius
+                                {sphereRef.boundsBoxVolumeUtilization.toFixed(2)}% of unit sphere radius is covered by bounding box
                             </div>
                         </div>
                     )}

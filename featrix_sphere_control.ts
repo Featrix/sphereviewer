@@ -2173,17 +2173,17 @@ function update_bounds_box(sphere: SphereData) {
     const boxSize = box.getSize(new THREE.Vector3());
     const boxCenter = box.getCenter(new THREE.Vector3());
     
-    // Calculate radius difference percentage: (bounding box radius - unit sphere radius) / unit sphere radius * 100
+    // Calculate percentage of unit sphere covered by bounding box
     // Unit sphere has radius = 1.0
     const unitSphereRadius = 1.0;
-    // Bounding box radius is half the largest dimension (or half the diagonal, but largest dimension is more meaningful)
+    // Bounding box radius is half the largest dimension
     const boundingBoxRadius = Math.max(boxSize.x, boxSize.y, boxSize.z) / 2.0;
-    // Calculate percentage difference: how much larger/smaller the bounding box radius is compared to unit sphere
-    const radiusDifferencePercent = boundingBoxRadius > 0 
-        ? ((boundingBoxRadius - unitSphereRadius) / unitSphereRadius) * 100 
+    // Calculate coverage percentage: what % of the sphere's radius is covered by the bounding box
+    const sphereCoveragePercent = boundingBoxRadius > 0 
+        ? (boundingBoxRadius / unitSphereRadius) * 100 
         : 0;
     
-    sphere.boundsBoxVolumeUtilization = radiusDifferencePercent; // Reusing this field name for radius difference
+    sphere.boundsBoxVolumeUtilization = sphereCoveragePercent; // Reusing this field name for sphere coverage
     
     // Update existing bounds box geometry and position
     if (sphere.boundsBox.geometry) {
