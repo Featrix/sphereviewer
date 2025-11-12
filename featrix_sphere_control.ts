@@ -3070,7 +3070,6 @@ export function toggle_great_circles(sphere: SphereData, show: boolean) {
         });
         
         // Reduce point size to 0.01
-        const originalPointSize = sphere.pointSize;
         sphere.pointSize = 0.01;
         update_all_point_visuals(sphere);
         
