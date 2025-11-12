@@ -325,8 +325,8 @@ const LossPlotOverlay: React.FC<{
         });
     };
     
-    // Helper function to draw graph to any canvas
-    const drawGraph = (canvas: HTMLCanvasElement, isModal: boolean = false) => {
+    // Helper function to draw graph to any canvas - use useCallback to memoize
+    const drawGraph = useCallback((canvas: HTMLCanvasElement, isModal: boolean = false) => {
         if (!canvas || !lossData || lossData.length === 0) return;
         
         const ctx = canvas.getContext('2d');
@@ -720,21 +720,21 @@ const LossPlotOverlay: React.FC<{
             ctx.fillStyle = '#ffaa00';
             ctx.fillText('LR', leftPadding + 60, topPadding + plotHeight + 20);
         }
-    };
+    }, [lossData, learningRateData, currentEpoch, title]);
     
     // Draw to main canvas
     useEffect(() => {
         if (canvasRef.current) {
             drawGraph(canvasRef.current, false);
         }
-    }, [lossData, learningRateData, currentEpoch, title]);
+    }, [drawGraph]);
     
     // Draw to modal canvas when modal is open
     useEffect(() => {
         if (showModal && modalCanvasRef.current) {
             drawGraph(modalCanvasRef.current, true);
         }
-    }, [showModal, lossData, learningRateData, currentEpoch, title]);
+    }, [showModal, drawGraph]);
     
     return (
         <>
