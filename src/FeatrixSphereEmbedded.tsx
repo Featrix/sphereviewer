@@ -828,16 +828,28 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         }
     };
 
-    // Listen for fullscreen changes (user pressing ESC)
+    // Listen for fullscreen changes (user pressing ESC) and resize sphere
     useEffect(() => {
         const handleFullscreenChange = () => {
             const isCurrentlyFullscreen = !!document.fullscreenElement;
             setIsFullscreen(isCurrentlyFullscreen);
+            
+            // Resize sphere when fullscreen changes - delay to ensure DOM has updated
+            if (sphereRef) {
+                setTimeout(() => {
+                    if (sphereRef) {
+                        // Trigger window resize event to recalculate camera and renderer
+                        window.dispatchEvent(new Event('resize'));
+                        // render_sphere calls fit_sphere_to_container internally
+                        render_sphere(sphereRef);
+                    }
+                }, 100);
+            }
         };
 
         document.addEventListener('fullscreenchange', handleFullscreenChange);
         return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-    }, []);
+    }, [sphereRef]);
     
     // Get column types helper (same as FinalSphereView)
     const getColumnTypes = (projections: any) => {
