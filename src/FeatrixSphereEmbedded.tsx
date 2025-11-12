@@ -1755,49 +1755,115 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     matches = value === query;
                 }
             } else if (queryColumnType === 'scalar') {
-                // Handle scalar columns with proper numeric matching
-                const numValue = typeof columnValue === 'number' ? columnValue : parseFloat(String(columnValue));
-                const isNumeric = !isNaN(numValue) && isFinite(numValue);
-                const queryNum = parseFloat(String(queryValue));
-                const isNumericQuery = !isNaN(queryNum) && isFinite(queryNum);
+                // Handle scalar columns with comparison operators and null/nan support
+                const queryStr = String(queryValue).trim().toLowerCase();
                 
-                // Check for range queries (e.g., "1-5", ">10", "<5", ">=100")
-                const queryStr = String(queryValue).trim();
-                let rangeMatch = false;
-                
-                if (queryStr.includes('-') && queryStr.split('-').length === 2) {
-                    // Range: "1-5"
-                    const parts = queryStr.split('-').map(p => parseFloat(p.trim()));
-                    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && isNumeric) {
-                        rangeMatch = numValue >= parts[0] && numValue <= parts[1];
-                    }
-                } else if (queryStr.startsWith('>=') && isNumeric) {
-                    const val = parseFloat(queryStr.substring(2).trim());
-                    if (!isNaN(val)) rangeMatch = numValue >= val;
-                } else if (queryStr.startsWith('<=') && isNumeric) {
-                    const val = parseFloat(queryStr.substring(2).trim());
-                    if (!isNaN(val)) rangeMatch = numValue <= val;
-                } else if (queryStr.startsWith('>') && isNumeric) {
-                    const val = parseFloat(queryStr.substring(1).trim());
-                    if (!isNaN(val)) rangeMatch = numValue > val;
-                } else if (queryStr.startsWith('<') && isNumeric) {
-                    const val = parseFloat(queryStr.substring(1).trim());
-                    if (!isNaN(val)) rangeMatch = numValue < val;
-                } else if (isNumericQuery && isNumeric) {
-                    // Exact numeric match
-                    rangeMatch = Math.abs(numValue - queryNum) < Number.EPSILON * 100;
-                }
-                
-                if (rangeMatch) {
-                    matches = true;
-                } else if (isBooleanQuery) {
-                    const normalizedValue = normalizeBoolean(columnValue);
-                    matches = normalizedValue !== null && normalizedValue === normalizedQuery;
+                // Check for null/nan first
+                if (queryStr === 'null' || queryStr === 'nan' || queryStr === 'na') {
+                    const isNull = columnValue === null || columnValue === undefined;
+                    const isNaN = typeof columnValue === 'number' && (isNaN(columnValue) || !isFinite(columnValue));
+                    matches = isNull || isNaN;
                 } else {
-                    // String matching fallback
-                    const value = String(columnValue).toLowerCase();
-                    const query = String(queryValue).toLowerCase();
-                    matches = value === query || value.includes(query);
+                    // Parse comparison operators: =, !=, <, >, <=, >=
+                    let operator = '=';
+                    let comparisonValue: number | null = null;
+                    
+                    // Check for != first (before =)
+                    if (queryStr.startsWith('!=')) {
+                        operator = '!=';
+                        const valStr = queryStr.substring(2).trim();
+                        comparisonValue = valStr === 'null' || valStr === 'nan' || valStr === 'na' ? null : parseFloat(valStr);
+                    } else if (queryStr.startsWith('<=')) {
+                        operator = '<=';
+                        comparisonValue = parseFloat(queryStr.substring(2).trim());
+                    } else if (queryStr.startsWith('>=')) {
+                        operator = '>=';
+                        comparisonValue = parseFloat(queryStr.substring(2).trim());
+                    } else if (queryStr.startsWith('=')) {
+                        operator = '=';
+                        const valStr = queryStr.substring(1).trim();
+                        comparisonValue = valStr === 'null' || valStr === 'nan' || valStr === 'na' ? null : parseFloat(valStr);
+                    } else if (queryStr.startsWith('<')) {
+                        operator = '<';
+                        comparisonValue = parseFloat(queryStr.substring(1).trim());
+                    } else if (queryStr.startsWith('>')) {
+                        operator = '>';
+                        comparisonValue = parseFloat(queryStr.substring(1).trim());
+                    } else if (queryStr.startsWith('!')) {
+                        operator = '!=';
+                        comparisonValue = parseFloat(queryStr.substring(1).trim());
+                    } else {
+                        // Default: try to parse as number for equality, or use range syntax
+                        if (queryStr.includes('-') && queryStr.split('-').length === 2) {
+                            // Range: "1-5"
+                            const parts = queryStr.split('-').map(p => parseFloat(p.trim()));
+                            if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                                const numValue = typeof columnValue === 'number' ? columnValue : parseFloat(String(columnValue));
+                                const isNumeric = !isNaN(numValue) && isFinite(numValue);
+                                if (isNumeric) {
+                                    matches = numValue >= parts[0] && numValue <= parts[1];
+                                }
+                            }
+                        } else {
+                            // Try equality comparison
+                            operator = '=';
+                            comparisonValue = parseFloat(queryStr);
+                        }
+                    }
+                    
+                    // Perform comparison
+                    if (comparisonValue !== null && !isNaN(comparisonValue)) {
+                        const numValue = typeof columnValue === 'number' ? columnValue : parseFloat(String(columnValue));
+                        const isNumeric = !isNaN(numValue) && isFinite(numValue);
+                        
+                        if (isNumeric) {
+                            switch (operator) {
+                                case '=':
+                                    matches = Math.abs(numValue - comparisonValue) < Number.EPSILON * 100;
+                                    break;
+                                case '!=':
+                                    matches = Math.abs(numValue - comparisonValue) >= Number.EPSILON * 100;
+                                    break;
+                                case '<':
+                                    matches = numValue < comparisonValue;
+                                    break;
+                                case '>':
+                                    matches = numValue > comparisonValue;
+                                    break;
+                                case '<=':
+                                    matches = numValue <= comparisonValue;
+                                    break;
+                                case '>=':
+                                    matches = numValue >= comparisonValue;
+                                    break;
+                            }
+                        } else {
+                            // Non-numeric value - only != can match
+                            if (operator === '!=') {
+                                matches = true;
+                            }
+                        }
+                    } else if (comparisonValue === null) {
+                        // Comparing to null/nan
+                        const isNull = columnValue === null || columnValue === undefined;
+                        const isNaN = typeof columnValue === 'number' && (isNaN(columnValue) || !isFinite(columnValue));
+                        
+                        if (operator === '=') {
+                            matches = isNull || isNaN;
+                        } else if (operator === '!=') {
+                            matches = !isNull && !isNaN;
+                        }
+                    } else {
+                        // Fallback to boolean or string matching
+                        if (isBooleanQuery) {
+                            const normalizedValue = normalizeBoolean(columnValue);
+                            matches = normalizedValue !== null && normalizedValue === normalizedQuery;
+                        } else {
+                            const value = String(columnValue).toLowerCase();
+                            const query = String(queryValue).toLowerCase();
+                            matches = value === query || value.includes(query);
+                        }
+                    }
                 }
             }
             
