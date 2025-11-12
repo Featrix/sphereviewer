@@ -2062,7 +2062,7 @@ export function hide_convex_hulls(sphere: SphereData) {
 function update_bounds_box(sphere: SphereData) {
     if (!sphere || !sphere.showBoundsBox || !sphere.boundsBox) return;
     
-    // Calculate bounding box from all current point positions
+    // Calculate bounding sphere from all current point positions
     const points: THREE.Vector3[] = [];
     sphere.pointObjectsByRecordID.forEach((mesh) => {
         points.push(mesh.position);
@@ -2072,32 +2072,40 @@ function update_bounds_box(sphere: SphereData) {
         return;
     }
     
-    // Create a bounding box from points
+    // Calculate bounding sphere (find center and max distance)
     const box = new THREE.Box3();
     points.forEach(point => box.expandByPoint(point));
-    
-    const boxSize = box.getSize(new THREE.Vector3());
     const boxCenter = box.getCenter(new THREE.Vector3());
     
-    // Calculate volume utilization: sphere volume / bounding box volume
-    // All points are on a unit sphere (radius = 1), so sphere volume = (4/3)πr³ = (4/3)π ≈ 4.18879
-    const sphereRadius = 1.0; // Unit sphere
-    const sphereVolume = (4 / 3) * Math.PI * Math.pow(sphereRadius, 3);
-    const boundingBoxVolume = boxSize.x * boxSize.y * boxSize.z;
-    const volumeUtilization = boundingBoxVolume > 0 
-        ? (sphereVolume / boundingBoxVolume) * 100 
+    // Find maximum distance from center to any point (this is the radius)
+    let maxDistance = 0;
+    points.forEach(point => {
+        const distance = boxCenter.distanceTo(point);
+        maxDistance = Math.max(maxDistance, distance);
+    });
+    
+    const boundingSphereRadius = maxDistance;
+    
+    // Calculate volume utilization: unit sphere volume / bounding sphere volume
+    // Unit sphere has radius = 1, so volume = (4/3)πr³ = (4/3)π ≈ 4.18879
+    const unitSphereRadius = 1.0;
+    const unitSphereVolume = (4 / 3) * Math.PI * Math.pow(unitSphereRadius, 3);
+    const boundingSphereVolume = (4 / 3) * Math.PI * Math.pow(boundingSphereRadius, 3);
+    const volumeUtilization = boundingSphereVolume > 0 
+        ? (unitSphereVolume / boundingSphereVolume) * 100 
         : 0;
     
     sphere.boundsBoxVolumeUtilization = volumeUtilization;
     
-    // Update existing bounds box geometry and position
+    // Update existing bounds sphere geometry and position
     if (sphere.boundsBox.geometry) {
         sphere.boundsBox.geometry.dispose();
     }
     
-    const boxGeometry = new THREE.BoxGeometry(boxSize.x, boxSize.y, boxSize.z);
-    const boxEdges = new THREE.EdgesGeometry(boxGeometry);
-    sphere.boundsBox.geometry = boxEdges;
+    // Create a sphere geometry instead of a box
+    const sphereGeometry = new THREE.SphereGeometry(boundingSphereRadius, 32, 32);
+    const sphereEdges = new THREE.EdgesGeometry(sphereGeometry);
+    sphere.boundsBox.geometry = sphereEdges;
     sphere.boundsBox.position.copy(boxCenter);
 }
 
@@ -2120,25 +2128,31 @@ export function toggle_bounds_box(sphere: SphereData, show: boolean) {
                 return;
             }
             
-            // Create a bounding box from points
+            // Calculate bounding sphere from points
             const box = new THREE.Box3();
             points.forEach(point => box.expandByPoint(point));
-            
-            // Create a group to hold the box helper
-            const boxSize = box.getSize(new THREE.Vector3());
             const boxCenter = box.getCenter(new THREE.Vector3());
             
-            // Create a box geometry at the center
-            const boxGeometry = new THREE.BoxGeometry(boxSize.x, boxSize.y, boxSize.z);
-            const boxMaterial = new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 2 });
-            const boxEdges = new THREE.EdgesGeometry(boxGeometry);
-            const boxLines = new THREE.LineSegments(boxEdges, boxMaterial);
-            boxLines.position.copy(boxCenter);
+            // Find maximum distance from center to any point (this is the radius)
+            let maxDistance = 0;
+            points.forEach(point => {
+                const distance = boxCenter.distanceTo(point);
+                maxDistance = Math.max(maxDistance, distance);
+            });
             
-            sphere.boundsBox = boxLines;
-            sphere.scene.add(boxLines);
+            const boundingSphereRadius = maxDistance;
             
-            console.log('📦 Bounds box created:', { size: boxSize, center: boxCenter });
+            // Create a sphere geometry instead of a box
+            const sphereGeometry = new THREE.SphereGeometry(boundingSphereRadius, 32, 32);
+            const sphereMaterial = new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 2 });
+            const sphereEdges = new THREE.EdgesGeometry(sphereGeometry);
+            const sphereLines = new THREE.LineSegments(sphereEdges, sphereMaterial);
+            sphereLines.position.copy(boxCenter);
+            
+            sphere.boundsBox = sphereLines;
+            sphere.scene.add(sphereLines);
+            
+            console.log('📦 Bounds sphere created:', { radius: boundingSphereRadius, center: boxCenter });
         } else {
             // Show existing bounds box
             if (sphere.boundsBox.parent === null) {
