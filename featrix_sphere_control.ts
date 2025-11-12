@@ -26,6 +26,7 @@ export interface SphereData {
     prevPos: { x: number, y: number};
     prevPinchDistance: number | null;
     selectedRecords: Set<string>;
+    customClusterColors: Map<number, number>; // Map cluster ID to custom color (hex)
     event_listeners: Record<string, Map<string, CallableFunction>>;
 
     pointRecordsByID: Map<string, SphereRecord>;
@@ -123,6 +124,7 @@ function create_new_sphere(container: HTMLElement): SphereData {
         prevPos,
         prevPinchDistance: null,
         selectedRecords: new Set<string>(),
+        customClusterColors: new Map<number, number>(),
         event_listeners: {},
 
         pointRecordsByID: new Map<string, SphereRecord>(),
@@ -427,6 +429,47 @@ export function remap_cluster_assignments(base_assignments: any, new_assignments
 
 
 //function change_colors_of_sphere_new_cluster_(sphere: SphereData, )
+export function set_cluster_color(sphere: SphereData, clusterId: number, color: string | number) {
+    // Convert color string to hex number if needed
+    let colorHex: number;
+    if (typeof color === 'string') {
+        // Remove # if present and convert to hex
+        const cleanColor = color.replace('#', '');
+        colorHex = parseInt(cleanColor, 16);
+    } else {
+        colorHex = color;
+    }
+    
+    if (!sphere.customClusterColors) {
+        sphere.customClusterColors = new Map<number, number>();
+    }
+    
+    sphere.customClusterColors.set(clusterId, colorHex);
+    
+    // Apply color to all points in this cluster
+    const activeClusterKey = get_active_cluster_count_key(sphere);
+    if (activeClusterKey !== null && sphere.finalClusterResults?.[activeClusterKey]?.cluster_labels) {
+        for (const [record_id, record] of sphere.pointRecordsByID.entries()) {
+            const row_offset = record.featrix_meta?.__featrix_row_offset;
+            if (row_offset !== undefined && row_offset < sphere.finalClusterResults[activeClusterKey].cluster_labels.length) {
+                const clusterAssignment = sphere.finalClusterResults[activeClusterKey].cluster_labels[row_offset];
+                if (clusterAssignment === clusterId) {
+                    change_object_color(sphere, record_id, colorHex);
+                }
+            }
+        }
+        render_sphere(sphere);
+    }
+}
+
+export function clear_cluster_colors(sphere: SphereData) {
+    if (sphere.customClusterColors) {
+        sphere.customClusterColors.clear();
+    }
+    // Reapply default colors
+    change_cluster_count(sphere, sphere.jsonData, get_active_cluster_count_key(sphere)?.toString() || '12');
+}
+
 export function change_cluster_count(sphere: SphereData, jsonData: any, new_cluster_selection: any) {
     const new_cluster_labels_by_row_offset = jsonData?.entire_cluster_results[new_cluster_selection]?.cluster_labels;
 
@@ -445,13 +488,18 @@ export function change_cluster_count(sphere: SphereData, jsonData: any, new_clus
         }
 
         const new_cluster_idx_for_record = new_cluster_labels_by_row_offset[row_offset];
-
-        if (new_cluster_idx_for_record < kColorTable.length) {
-            const new_color_for_object = kColorTable[new_cluster_idx_for_record]
-            change_object_color(sphere, record_id, new_color_for_object);
+        
+        // Check for custom color first, then use default
+        let new_color_for_object: number;
+        if (sphere.customClusterColors && sphere.customClusterColors.has(new_cluster_idx_for_record)) {
+            new_color_for_object = sphere.customClusterColors.get(new_cluster_idx_for_record)!;
+        } else if (new_cluster_idx_for_record < kColorTable.length) {
+            new_color_for_object = kColorTable[new_cluster_idx_for_record];
         } else {
-            change_object_color(sphere, record_id, BLACK);
+            new_color_for_object = BLACK;
         }
+        
+        change_object_color(sphere, record_id, new_color_for_object);
     }
 }
 
@@ -1005,7 +1053,7 @@ function stop_point_interpolation(sphere: SphereData) {
 
 // Helper function to get the active cluster count key from finalClusterResults
 // Uses the "best" cluster count (lowest score) if available, otherwise falls back to highest
-function get_active_cluster_count_key(sphere: SphereData): number | null {
+export function get_active_cluster_count_key(sphere: SphereData): number | null {
     if (!sphere.finalClusterResults || Object.keys(sphere.finalClusterResults).length === 0) {
         return null;
     }
@@ -1210,7 +1258,11 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
                 } else {
                     // Use direct color mapping - cluster assignments are 0-based
                     let newColor;
-                    if (clusterAssignment >= 0 && clusterAssignment < visibleClusters && clusterAssignment < kColorTable.length) {
+                    
+                    // FIRST: Check if there's a custom color for this cluster
+                    if (sphere.customClusterColors && sphere.customClusterColors.has(clusterAssignment)) {
+                        newColor = sphere.customClusterColors.get(clusterAssignment)!;
+                    } else if (clusterAssignment >= 0 && clusterAssignment < visibleClusters && clusterAssignment < kColorTable.length) {
                         // Direct mapping - cluster 0 -> color 0, cluster 1 -> color 1, etc.
                         newColor = kColorTable[clusterAssignment];
                     } else if (clusterAssignment >= 0 && clusterAssignment >= visibleClusters) {

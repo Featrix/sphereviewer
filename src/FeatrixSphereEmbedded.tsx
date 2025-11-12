@@ -12,7 +12,7 @@ import React, { Suspense, useEffect, useRef, useState, useCallback } from "react
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
 import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch } from './embed-data-access';
-import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects } from '../featrix_sphere_control';
+import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 
 // Build timestamp for cache busting verification
@@ -2481,25 +2481,75 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         }
                     }
                     
-                    // Last resort: check if it's nested in training_metrics
-                    if ((!learningRateData || learningRateData.length === 0) && lossData.training_metrics) {
-                        const tm = lossData.training_metrics;
-                        if (tm.learning_rate && Array.isArray(tm.learning_rate)) {
-                            learningRateData = tm.learning_rate;
-                            console.log('✅ Found learning_rate in training_metrics:', learningRateData.length);
-                        } else if (tm.training_info && tm.training_info.loss_history) {
-                            const lossHistory = tm.training_info.loss_history;
-                            learningRateData = lossHistory
-                                .filter((item: any) => 
-                                    item.current_learning_rate !== undefined || 
-                                    item.learning_rate !== undefined ||
-                                    item.lr !== undefined
-                                )
-                                .map((item: any) => ({
-                                    epoch: item.epoch || item.epoch_number || 0,
-                                    value: item.current_learning_rate || item.learning_rate || item.lr || 0
-                                }));
-                            console.log('✅ Extracted learning rate from training_metrics.training_info.loss_history:', learningRateData.length, 'points');
+                    // Check if lossData itself IS training_metrics (common case)
+                    if ((!learningRateData || learningRateData.length === 0)) {
+                        // Try direct access - lossData might BE training_metrics
+                        if (lossData.learning_rate && Array.isArray(lossData.learning_rate)) {
+                            learningRateData = lossData.learning_rate;
+                            console.log('✅ Found learning_rate directly in lossData:', learningRateData.length);
+                        }
+                        
+                        // Check nested training_metrics
+                        if ((!learningRateData || learningRateData.length === 0) && lossData.training_metrics) {
+                            const tm = lossData.training_metrics;
+                            if (tm.learning_rate && Array.isArray(tm.learning_rate)) {
+                                learningRateData = tm.learning_rate;
+                                console.log('✅ Found learning_rate in training_metrics:', learningRateData.length);
+                            } else if (tm.training_info && tm.training_info.loss_history) {
+                                const lossHistory = tm.training_info.loss_history;
+                                learningRateData = lossHistory
+                                    .filter((item: any) => 
+                                        item.current_learning_rate !== undefined || 
+                                        item.learning_rate !== undefined ||
+                                        item.lr !== undefined
+                                    )
+                                    .map((item: any) => ({
+                                        epoch: item.epoch || item.epoch_number || 0,
+                                        value: item.current_learning_rate || item.learning_rate || item.lr || 0
+                                    }));
+                                console.log('✅ Extracted learning rate from training_metrics.training_info.loss_history:', learningRateData.length, 'points');
+                            }
+                        }
+                        
+                        // Deep search in nested objects
+                        if ((!learningRateData || learningRateData.length === 0)) {
+                            const deepSearch = (obj: any, depth = 0): any[] => {
+                                if (depth > 3) return [];
+                                if (!obj || typeof obj !== 'object') return [];
+                                
+                                // Check if this object has learning rate data
+                                if (Array.isArray(obj) && obj.length > 0) {
+                                    const first = obj[0];
+                                    if (first && (first.current_learning_rate !== undefined || first.learning_rate !== undefined || first.lr !== undefined)) {
+                                        return obj
+                                            .filter((item: any) => 
+                                                item.current_learning_rate !== undefined || 
+                                                item.learning_rate !== undefined ||
+                                                item.lr !== undefined
+                                            )
+                                            .map((item: any) => ({
+                                                epoch: item.epoch || item.epoch_number || item.epoch_num || 0,
+                                                value: item.current_learning_rate || item.learning_rate || item.lr || 0
+                                            }));
+                                    }
+                                }
+                                
+                                // Recursively search
+                                for (const key in obj) {
+                                    if (key.toLowerCase().includes('learning') || key.toLowerCase().includes('lr') || key.toLowerCase().includes('rate')) {
+                                        const result = deepSearch(obj[key], depth + 1);
+                                        if (result && result.length > 0) return result;
+                                    }
+                                }
+                                
+                                return [];
+                            };
+                            
+                            const deepResult = deepSearch(lossData);
+                            if (deepResult && deepResult.length > 0) {
+                                learningRateData = deepResult;
+                                console.log('✅ Found learning rate via deep search:', learningRateData.length, 'points');
+                            }
                         }
                     }
                     
@@ -2889,11 +2939,60 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             {frameInfo.visible > 0 && Array.from({length: frameInfo.visible}, (_, i) => {
                                 // Clusters are 0-based, so cluster 0 uses color index 0
                                 const kColorTable = [0xe6194b, 0x3cb44b, 0xffe119, 0x4363d8, 0xf58231, 0x911eb4, 0x46f0f0, 0xf032e6, 0xbcf60c, 0xfabebe, 0x008080, 0xe6beff, 0x9a6324, 0xfffac8, 0x800000, 0xaaffc3, 0x808000, 0xffd8b1, 0x999999, 0x0000ff, 0x00ff00, 0xffcccc];
-                                const colorHex = kColorTable[i] || 0x999999;
+                                const defaultColorHex = kColorTable[i] || 0x999999;
+                                // Check for custom color
+                                const customColorHex = sphereRef?.customClusterColors?.get(i);
+                                const colorHex = customColorHex || defaultColorHex;
                                 const color = '#' + colorHex.toString(16).padStart(6, '0');
-                                return (<div key={`cluster-${i}`} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ fontSize: '14px' }}>C{i}</span><div style={{ background: color, width: '20px', height: '20px', border: '1px solid #555', borderRadius: '3px' }}></div></div>);
+                                return (
+                                    <div key={`cluster-${i}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                                        <span style={{ fontSize: '12px' }}>C{i}</span>
+                                        <input 
+                                            type="color" 
+                                            value={color}
+                                            onChange={(e) => {
+                                                if (sphereRef) {
+                                                    const newColor = e.target.value;
+                                                    set_cluster_color(sphereRef, i, newColor);
+                                                    // Force re-render
+                                                    render_sphere(sphereRef);
+                                                }
+                                            }}
+                                            style={{ 
+                                                width: '30px', 
+                                                height: '30px', 
+                                                border: '1px solid #555', 
+                                                borderRadius: '3px',
+                                                cursor: 'pointer',
+                                                padding: 0
+                                            }}
+                                            title={`Change color for cluster ${i}`}
+                                        />
+                                    </div>
+                                );
                             })}
                         </div>
+                        <button 
+                            onClick={() => {
+                                if (sphereRef) {
+                                    clear_cluster_colors(sphereRef);
+                                    render_sphere(sphereRef);
+                                }
+                            }}
+                            style={{ 
+                                marginTop: '8px', 
+                                width: '100%', 
+                                background: '#633', 
+                                border: '1px solid #666', 
+                                color: '#d0d0d0', 
+                                padding: '6px', 
+                                borderRadius: '3px', 
+                                cursor: 'pointer', 
+                                fontSize: '12px' 
+                            }}
+                        >
+                            Reset to Default Colors
+                        </button>
                     </div>
                 )}
 
