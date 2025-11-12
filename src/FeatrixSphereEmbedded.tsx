@@ -1330,7 +1330,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #555', fontSize: '13px', color: '#00ff00' }}>
                             📊 Volume Utilization: <strong>{sphereRef.boundsBoxVolumeUtilization.toFixed(2)}%</strong>
                             <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
-                                Unit sphere occupies {sphereRef.boundsBoxVolumeUtilization.toFixed(2)}% of bounding sphere volume
+                                Unit sphere occupies {sphereRef.boundsBoxVolumeUtilization.toFixed(2)}% of bounding box volume
                             </div>
                         </div>
                     )}
