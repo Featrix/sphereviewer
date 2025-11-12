@@ -1081,8 +1081,11 @@ const TrainingMovieSphere: React.FC<{
     onFrameUpdate?: (frameInfo: { current: number, total: number, visible: number, epoch?: string, validationLoss?: number }) => void,
     onPointInspected?: (pointInfo: any) => void,
     rotationEnabled?: boolean,
-    containerRef?: React.RefObject<HTMLDivElement>
-}> = ({ trainingData, sessionProjections, lossData, onReady, onFrameUpdate, onPointInspected, rotationEnabled = true, containerRef }) => {
+    containerRef?: React.RefObject<HTMLDivElement>,
+    onLoadingProgress?: (loaded: number, total: number) => void,
+    pointSize?: number,
+    pointAlpha?: number
+}> = ({ trainingData, sessionProjections, lossData, onReady, onFrameUpdate, onPointInspected, rotationEnabled = true, containerRef, onLoadingProgress, pointSize = 0.05, pointAlpha = 0.5 }) => {
     const internalContainerRef = useRef<HTMLDivElement>(null);
     const actualContainerRef = containerRef || internalContainerRef;
     const sphereRef = useRef<any>(null);
@@ -1122,9 +1125,7 @@ const TrainingMovieSphere: React.FC<{
             console.log('🌐 Created record list with', recordList.length, 'points for training movie');
             // Use batched loading for large datasets (batchSize = 200 points per frame)
             const batchSize = recordList.length > 500 ? 200 : 0; // 0 = no batching for small datasets
-            sphereRef.current = initialize_sphere(actualContainerRef.current, recordList, batchSize, (loaded, total) => {
-                setLoadingProgress({ loaded, total });
-            });
+            sphereRef.current = initialize_sphere(actualContainerRef.current, recordList, batchSize, onLoadingProgress || undefined);
             // Set initial visual options
             if (sphereRef.current) {
                 set_visual_options(sphereRef.current, pointSize, pointAlpha);
@@ -1202,7 +1203,7 @@ const TrainingMovieSphere: React.FC<{
                 onReady(sphereRef.current);
             }
         }
-    }, [trainingData, sessionProjections, onReady]);
+    }, [trainingData, sessionProjections, onReady, onLoadingProgress, pointSize, pointAlpha, rotationEnabled]);
 
     // Update rotation controls when rotationEnabled changes
     useEffect(() => {
@@ -2450,6 +2451,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     />
                 {trainingData ? (
                     <TrainingMovieSphere
+                        onLoadingProgress={(loaded, total) => setLoadingProgress({ loaded, total })}
+                        pointSize={pointSize}
+                        pointAlpha={pointAlpha}
                         trainingData={trainingData}
                         sessionProjections={sessionProjections}
                         lossData={lossData}
