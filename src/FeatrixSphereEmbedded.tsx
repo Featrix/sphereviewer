@@ -1096,6 +1096,37 @@ const TrainingMovieSphere: React.FC<{
             // Load training movie data (like it was working)
             load_training_movie(sphereRef.current, trainingData, lossData);
             
+            // Force initial resize to fill container completely
+            if (actualContainerRef.current && sphereRef.current) {
+                const width = actualContainerRef.current.clientWidth || actualContainerRef.current.offsetWidth || 800;
+                const height = actualContainerRef.current.clientHeight || actualContainerRef.current.offsetHeight || 600;
+                sphereRef.current.renderer.setSize(width, height);
+                sphereRef.current.camera.aspect = width / height;
+                sphereRef.current.camera.updateProjectionMatrix();
+                render_sphere(sphereRef.current);
+            }
+            
+            // Add resize observer to ensure renderer ALWAYS fills container
+            const resizeObserver = new ResizeObserver((entries) => {
+                if (sphereRef.current && actualContainerRef.current) {
+                    const entry = entries[0];
+                    const width = entry.contentRect.width || actualContainerRef.current.clientWidth;
+                    const height = entry.contentRect.height || actualContainerRef.current.clientHeight;
+                    if (width > 0 && height > 0) {
+                        sphereRef.current.renderer.setSize(width, height);
+                        sphereRef.current.camera.aspect = width / height;
+                        sphereRef.current.camera.updateProjectionMatrix();
+                        render_sphere(sphereRef.current);
+                    }
+                }
+            });
+            
+            if (actualContainerRef.current) {
+                resizeObserver.observe(actualContainerRef.current);
+                // Store observer for cleanup
+                (sphereRef.current as any).__resizeObserver = resizeObserver;
+            }
+            
             // Start playing the training movie
             console.log('🎬 TRAINING_MOVIE_START:', performance.now() + 'ms');
             play_training_movie(sphereRef.current, 10);
@@ -1123,6 +1154,10 @@ const TrainingMovieSphere: React.FC<{
         return () => {
             if (sphereRef.current) {
                 stop_training_movie(sphereRef.current);
+                // Cleanup resize observer
+                if ((sphereRef.current as any).__resizeObserver) {
+                    (sphereRef.current as any).__resizeObserver.disconnect();
+                }
             }
         };
     }, []);
@@ -2141,16 +2176,21 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     </div>
                 )}
                 
-                {/* ACTUAL 3D SPHERE VIEWER - WebGL container fills available space, centered */}
+                {/* ACTUAL 3D SPHERE VIEWER - WebGL container ALWAYS FILLS AVAILABLE SPACE */}
                 <div 
                     id="training-movie-3d-container" 
                     style={{
                         width: '100%',
                         height: '100%',
-                        position: 'relative',
+                        minHeight: '100%',
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
                         display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
+                        alignItems: 'stretch',
+                        justifyContent: 'stretch'
                     }}
                 >
                     <div 
@@ -2158,12 +2198,14 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         style={{ 
                             width: '100%', 
                             height: '100%',
+                            minWidth: '100%',
+                            minHeight: '100%',
                             maxWidth: '100%',
                             maxHeight: '100%',
                             background: 'transparent',
                             pointerEvents: 'auto',
                             cursor: 'pointer',
-                            margin: 'auto'
+                            flex: '1 1 100%'
                         }}
                     />
                 {trainingData ? (
