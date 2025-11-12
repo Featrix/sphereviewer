@@ -729,8 +729,6 @@ const LossPlotOverlay: React.FC<{
         }
     }, [lossData, learningRateData, currentEpoch, title]);
     
-    const [showModal, setShowModal] = useState(false);
-    
     // Draw to modal canvas when modal is open
     useEffect(() => {
         if (showModal && modalCanvasRef.current) {
