@@ -1276,6 +1276,31 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [searchQuery, setSearchQuery] = useState<string>('');
     const [showSearch, setShowSearch] = useState(false);
     const [showBoundsBox, setShowBoundsBox] = useState(false);
+    
+    // Color rules state - each rule has a query, column, color, and record IDs
+    const [colorRules, setColorRules] = useState<Array<{
+        id: string;
+        query: string;
+        column: string;
+        color: string;
+        recordIds: string[];
+    }>>([]);
+    
+    // Color palette for assigning colors to rules
+    const colorPalette = [
+        '#ff0000', // Red
+        '#00ff00', // Green
+        '#0000ff', // Blue
+        '#ffff00', // Yellow
+        '#ff00ff', // Magenta
+        '#00ffff', // Cyan
+        '#ff8800', // Orange
+        '#8800ff', // Purple
+        '#00ff88', // Teal
+        '#ff0088', // Pink
+        '#8888ff', // Light Blue
+        '#ff8888', // Light Red
+    ];
     // Note: Unit sphere is always visible now (created automatically in initialize_sphere)
     
     // Training status state
@@ -1804,7 +1829,68 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         median?: number;
     } | null>(null);
     
-    // Handle search input with boolean color coding
+    // Apply all color rules to the sphere
+    const applyColorRules = useCallback(() => {
+        if (!sphereRef) return;
+        
+        // First clear all colors
+        clear_colors(sphereRef);
+        clear_selected_objects(sphereRef);
+        
+        // Apply each color rule
+        for (const rule of colorRules) {
+            for (const recordId of rule.recordIds) {
+                add_selected_record(sphereRef, recordId);
+                change_object_color(sphereRef, recordId, rule.color);
+            }
+        }
+        
+        render_sphere(sphereRef);
+    }, [sphereRef, colorRules]);
+    
+    // Handle Enter key to create color rule
+    const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            
+            if (!sphereRef || !columnTypes || !selectedSearchColumn || !searchQuery.trim()) {
+                return;
+            }
+            
+            // Filter results
+            const queryColumnType = columnTypes[selectedSearchColumn];
+            const theRecords = filter_record_list(queryColumnType, selectedSearchColumn, searchQuery.trim());
+            
+            if (theRecords.length === 0) {
+                console.warn('🔍 No results found for search query');
+                return;
+            }
+            
+            // Get next color from palette
+            const colorIndex = colorRules.length % colorPalette.length;
+            const color = colorPalette[colorIndex];
+            
+            // Create new color rule
+            const newRule = {
+                id: uuid4(),
+                query: searchQuery.trim(),
+                column: selectedSearchColumn,
+                color: color,
+                recordIds: theRecords.map(r => r.id)
+            };
+            
+            // Add to color rules
+            setColorRules(prev => [...prev, newRule]);
+            
+            // Clear search input
+            setSearchQuery('');
+            setSearchResultStats(null);
+            
+            console.log(`🎨 Created color rule: "${newRule.query}" in column "${newRule.column}" with color ${newRule.color} for ${newRule.recordIds.length} records`);
+        }
+    };
+    
+    // Handle search input with boolean color coding (live preview)
     const handleSearchInput = (e: React.ChangeEvent<HTMLInputElement>) => {
         const inputValue = e.target.value;
         setSearchQuery(inputValue);
@@ -1819,52 +1905,40 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
             return;
         }
         
-        // If empty, clear search
+        // If empty, just show color rules
         if (inputValue === "") {
-            clear_colors(sphereRef);
-            render_sphere(sphereRef);
+            applyColorRules();
             setSearchResultStats(null);
             return;
         }
         
-        // Filter results
+        // Filter results for preview
         const queryColumnType = columnTypes[selectedSearchColumn];
         const theRecords = filter_record_list(queryColumnType, selectedSearchColumn, inputValue);
+        
+        // Apply color rules first, then show preview
+        applyColorRules();
         
         // Check if this is a boolean query
         const normalizedQuery = normalizeBoolean(inputValue);
         const isBooleanQuery = normalizedQuery !== null;
         
-        // Categorize results for boolean columns
+        // Categorize results for boolean columns (preview only)
         if (isBooleanQuery && theRecords.length > 0) {
             let yesCount = 0;
             let noCount = 0;
             let unknownCount = 0;
-            
-            clear_colors(sphereRef);
-            clear_selected_objects(sphereRef);
             
             for (const record of theRecords) {
                 const columnValue = record.original[selectedSearchColumn];
                 const normalizedValue = normalizeBoolean(columnValue);
                 
                 if (normalizedValue === null) {
-                    // Unknown value
                     unknownCount++;
-                    if (!hideUnknown) {
-                        add_selected_record(sphereRef, record.id);
-                        change_object_color(sphereRef, record.id, '#888888'); // Gray for unknown
-                    }
                 } else if (normalizedValue === 'true') {
-                    // Yes/True
                     yesCount++;
-                    add_selected_record(sphereRef, record.id);
-                    change_object_color(sphereRef, record.id, '#00ff00'); // Green for yes
                 } else {
-                    // No/False
                     noCount++;
-                    add_selected_record(sphereRef, record.id);
-                    change_object_color(sphereRef, record.id, '#ff0000'); // Red for no
                 }
             }
             
@@ -1875,8 +1949,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 isBoolean: true
             });
         } else {
-            // Non-boolean search - use default red highlighting
-            show_search_results(sphereRef, theRecords);
             setSearchResultStats({
                 yes: 0,
                 no: 0,
@@ -1884,10 +1956,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 isBoolean: false
             });
         }
-        
-        console.log(`🔍 Search: Highlighting ${theRecords.length} records`);
-        render_sphere(sphereRef);
     };
+    
+    // Apply color rules when they change
+    useEffect(() => {
+        applyColorRules();
+    }, [applyColorRules]);
     
     // Fetch vocabulary/distribution when column changes
     useEffect(() => {
@@ -2760,8 +2834,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                         <input 
                                             type="text" 
                                             value={searchQuery} 
-                                            onChange={handleSearchInput} 
-                                            placeholder={placeholder}
+                                            onChange={handleSearchInput}
+                                            onKeyDown={handleSearchKeyDown}
+                                            placeholder={placeholder + ' (Press Enter to create color rule)'}
                                             style={{ background: '#444', border: '1px solid #666', color: '#d0d0d0', padding: '6px 10px', borderRadius: '3px', fontSize: '14px', flex: 1, minWidth: '150px' }} 
                                         />
                                     );
@@ -2769,12 +2844,62 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 {searchQuery && (<button onClick={() => { 
                                     setSearchQuery(''); 
                                     setSearchResultStats(null);
-                                    if (sphereRef) { 
-                                        clear_colors(sphereRef); 
-                                        render_sphere(sphereRef); 
-                                    } 
+                                    applyColorRules();
                                 }} style={{ background: '#633', border: '1px solid #666', color: '#d0d0d0', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '13px' }} title="Clear Search">✕</button>)}
                             </div>
+                            
+                            {/* Color Rules List */}
+                            {colorRules.length > 0 && (
+                                <div style={{ marginTop: '12px', padding: '8px', background: 'rgba(42, 42, 42, 0.8)', border: '1px solid #666', borderRadius: '4px' }}>
+                                    <div style={{ color: '#d0d0d0', fontWeight: 'bold', marginBottom: '8px', fontSize: '13px' }}>Color Rules ({colorRules.length}):</div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '200px', overflowY: 'auto' }}>
+                                        {colorRules.map((rule) => (
+                                            <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px', background: 'rgba(0,0,0,0.3)', borderRadius: '3px' }}>
+                                                <div style={{ width: '20px', height: '20px', background: rule.color, border: '1px solid #666', borderRadius: '3px', flexShrink: 0 }}></div>
+                                                <div style={{ flex: 1, fontSize: '12px', color: '#d0d0d0' }}>
+                                                    <strong>{rule.column}</strong>: "{rule.query}" ({rule.recordIds.length} records)
+                                                </div>
+                                                <button 
+                                                    onClick={() => {
+                                                        setColorRules(prev => prev.filter(r => r.id !== rule.id));
+                                                    }}
+                                                    style={{ 
+                                                        background: '#633', 
+                                                        border: '1px solid #666', 
+                                                        color: '#d0d0d0', 
+                                                        padding: '4px 8px', 
+                                                        borderRadius: '3px', 
+                                                        cursor: 'pointer', 
+                                                        fontSize: '11px',
+                                                        flexShrink: 0
+                                                    }} 
+                                                    title="Delete Rule"
+                                                >
+                                                    ✕
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <button 
+                                        onClick={() => {
+                                            setColorRules([]);
+                                        }}
+                                        style={{ 
+                                            marginTop: '8px', 
+                                            width: '100%', 
+                                            background: '#633', 
+                                            border: '1px solid #666', 
+                                            color: '#d0d0d0', 
+                                            padding: '6px', 
+                                            borderRadius: '3px', 
+                                            cursor: 'pointer', 
+                                            fontSize: '12px' 
+                                        }}
+                                    >
+                                        Clear All Rules
+                                    </button>
+                                </div>
+                            )}
                             
                             {/* Help text for boolean columns */}
                             {(() => {
