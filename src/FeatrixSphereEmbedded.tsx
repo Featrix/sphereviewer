@@ -1120,7 +1120,15 @@ const TrainingMovieSphere: React.FC<{
             // Initialize sphere with filtered records that match training movie
             const recordList = create_record_list(filteredSessionData);
             console.log('🌐 Created record list with', recordList.length, 'points for training movie');
-            sphereRef.current = initialize_sphere(actualContainerRef.current, recordList);
+            // Use batched loading for large datasets (batchSize = 200 points per frame)
+            const batchSize = recordList.length > 500 ? 200 : 0; // 0 = no batching for small datasets
+            sphereRef.current = initialize_sphere(actualContainerRef.current, recordList, batchSize, (loaded, total) => {
+                setLoadingProgress({ loaded, total });
+            });
+            // Set initial visual options
+            if (sphereRef.current) {
+                set_visual_options(sphereRef.current, pointSize, pointAlpha);
+            }
             
             // Set session projections data for training movie with cluster results from first epoch
             sphereRef.current.jsonData = {
@@ -1270,6 +1278,11 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     
     // Rotation control state
     const [rotationEnabled, setRotationEnabled] = useState(true); // Default enabled
+    
+    // Point visual controls
+    const [pointSize, setPointSize] = useState(0.05); // Default point size
+    const [pointAlpha, setPointAlpha] = useState(0.5); // Default opacity (alpha)
+    const [loadingProgress, setLoadingProgress] = useState<{ loaded: number, total: number } | null>(null);
     
     // Search state
     const [columnTypes, setColumnTypes] = useState<any>(null);
@@ -2893,6 +2906,57 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             }
                         }} style={{ background: sphereRef?.showEmbeddingHull ? '#4c4' : '#555', border: '1px solid #666', color: '#d0d0d0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0 }} title="Toggle Embedding Convex Hull">Hull</button>
                     </div>
+                    {/* Point Size and Alpha Controls */}
+                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #555' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <label style={{ fontSize: '13px', color: '#d0d0d0', minWidth: '80px' }}>Point Size:</label>
+                                <input 
+                                    type="range" 
+                                    min="0.01" 
+                                    max="0.2" 
+                                    step="0.01" 
+                                    value={pointSize} 
+                                    onChange={(e) => {
+                                        const newSize = parseFloat(e.target.value);
+                                        setPointSize(newSize);
+                                        if (sphereRef) {
+                                            set_visual_options(sphereRef, newSize, pointAlpha);
+                                            render_sphere(sphereRef);
+                                        }
+                                    }}
+                                    style={{ flex: 1, cursor: 'pointer' }}
+                                />
+                                <span style={{ fontSize: '12px', color: '#888', minWidth: '40px', textAlign: 'right' }}>{pointSize.toFixed(2)}</span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <label style={{ fontSize: '13px', color: '#d0d0d0', minWidth: '80px' }}>Alpha:</label>
+                                <input 
+                                    type="range" 
+                                    min="0" 
+                                    max="1" 
+                                    step="0.01" 
+                                    value={pointAlpha} 
+                                    onChange={(e) => {
+                                        const newAlpha = parseFloat(e.target.value);
+                                        setPointAlpha(newAlpha);
+                                        if (sphereRef) {
+                                            set_visual_options(sphereRef, pointSize, newAlpha);
+                                            render_sphere(sphereRef);
+                                        }
+                                    }}
+                                    style={{ flex: 1, cursor: 'pointer' }}
+                                />
+                                <span style={{ fontSize: '12px', color: '#888', minWidth: '40px', textAlign: 'right' }}>{pointAlpha.toFixed(2)}</span>
+                            </div>
+                        </div>
+                    </div>
+                    {/* Loading Progress */}
+                    {loadingProgress && loadingProgress.loaded < loadingProgress.total && (
+                        <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #555', fontSize: '12px', color: '#4c4' }}>
+                            Loading points: {loadingProgress.loaded} / {loadingProgress.total} ({(loadingProgress.loaded / loadingProgress.total * 100).toFixed(1)}%)
+                        </div>
+                    )}
                     {showBoundsBox && sphereRef && sphereRef.boundsBoxVolumeUtilization !== undefined && (
                         <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #555', fontSize: '13px', color: '#00ff00' }}>
                             Sphere Coverage: <strong>{sphereRef.boundsBoxVolumeUtilization.toFixed(2)}%</strong>

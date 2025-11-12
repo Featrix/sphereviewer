@@ -306,7 +306,7 @@ function add_point_to_sphere(sphere: SphereData, record: SphereRecord) {
     sphere.pointRecordsByID.set(record_id, record);
 }
 
-function add_points_to_sphere(sphere: SphereData, recordList: SphereRecord[]) {
+function add_points_to_sphere(sphere: SphereData, recordList: SphereRecord[], batchSize: number = 100, onProgress?: (loaded: number, total: number) => void) {
     
     console.log("recordIndex:", recordList);
 
@@ -318,10 +318,49 @@ function add_points_to_sphere(sphere: SphereData, recordList: SphereRecord[]) {
     // Order fields alphabetically.
     sphere.recordFields = Array.from(fieldsSet).sort((a, b) => a.localeCompare(b));
     
-    // Create spheres for each point
-    for (const record of recordList) {    
-        add_point_to_sphere(sphere, record)
+    // If batchSize is 0 or negative, or recordList is small, add all points synchronously
+    if (batchSize <= 0 || recordList.length <= batchSize) {
+        for (const record of recordList) {    
+            add_point_to_sphere(sphere, record)
+        }
+        if (onProgress) {
+            onProgress(recordList.length, recordList.length);
+        }
+        return;
     }
+    
+    // Batch loading: process points in chunks to avoid blocking UI
+    let currentIndex = 0;
+    const total = recordList.length;
+    
+    const processBatch = () => {
+        const endIndex = Math.min(currentIndex + batchSize, total);
+        
+        // Process this batch
+        for (let i = currentIndex; i < endIndex; i++) {
+            add_point_to_sphere(sphere, recordList[i]);
+        }
+        
+        currentIndex = endIndex;
+        
+        // Report progress
+        if (onProgress) {
+            onProgress(currentIndex, total);
+        }
+        
+        // If more points to process, schedule next batch
+        if (currentIndex < total) {
+            // Use requestAnimationFrame for smooth UI updates
+            requestAnimationFrame(processBatch);
+        } else {
+            console.log(`✅ Batched loading complete: ${total} points loaded`);
+            render_sphere(sphere);
+        }
+    };
+    
+    // Start processing batches
+    console.log(`🔄 Starting batched loading: ${total} points in batches of ${batchSize}`);
+    processBatch();
 }
 
 
@@ -515,7 +554,7 @@ function zoom_sphere(sphere: SphereData, zoom_in: boolean) {
 }
 
 
-export function initialize_sphere(container: HTMLElement, recordList: SphereRecord[]): SphereData {
+export function initialize_sphere(container: HTMLElement, recordList: SphereRecord[], batchSize: number = 100, onProgress?: (loaded: number, total: number) => void): SphereData {
 
     const sphere = create_new_sphere(container);
 
@@ -523,7 +562,7 @@ export function initialize_sphere(container: HTMLElement, recordList: SphereReco
     attach_sphere_to_container(sphere);
 
     add_floor_and_grid(sphere);
-    add_points_to_sphere(sphere, recordList);
+    add_points_to_sphere(sphere, recordList, batchSize, onProgress);
     
     // Always create unit sphere bounds (very light alpha, always visible)
     create_unit_sphere(sphere);
