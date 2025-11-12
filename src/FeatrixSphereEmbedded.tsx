@@ -1340,37 +1340,80 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 </div>
 
                 {/* Loss Plot */}
-                {lossData && lossData.validation_loss && (
-                    <div style={{ marginBottom: '16px' }}>
-                        <LossPlotOverlay 
-                            lossData={lossData.validation_loss} 
-                            currentEpoch={frameInfo?.epoch} 
-                            style={{
-                                width: '100%',
-                                height: '120px',
-                                pointerEvents: 'none'
-                            }}
-                        />
-                        {/* Learning Rate Plot */}
-                        {lossData.learning_rate && Array.isArray(lossData.learning_rate) && lossData.learning_rate.length > 0 && (
-                            <div style={{ marginTop: '8px' }}>
-                                <LossPlotOverlay 
-                                    lossData={lossData.learning_rate.map((lr: any) => ({
-                                        epoch: lr.epoch || lr.epoch_number || 0,
-                                        value: lr.value || lr.learning_rate || lr.current_learning_rate || 0
-                                    }))} 
-                                    currentEpoch={frameInfo?.epoch} 
-                                    title="Learning Rate"
-                                    style={{
-                                        width: '100%',
-                                        height: '100px',
-                                        pointerEvents: 'none'
-                                    }}
-                                />
-                            </div>
-                        )}
-                    </div>
-                )}
+                {lossData && (() => {
+                    // Debug: log lossData structure
+                    if (lossData && !lossData.validation_loss) {
+                        console.log('🔍 Loss plot debug - lossData structure:', Object.keys(lossData));
+                        console.log('🔍 Loss plot debug - lossData:', lossData);
+                    }
+                    
+                    // Try different possible structures
+                    let validationLossData = null;
+                    if (lossData.validation_loss && Array.isArray(lossData.validation_loss)) {
+                        validationLossData = lossData.validation_loss;
+                    } else if (lossData.training_info && lossData.training_info.loss_history) {
+                        // Handle structure from API: training_metrics.training_info.loss_history
+                        validationLossData = lossData.training_info.loss_history.map((item: any) => ({
+                            epoch: item.epoch || item.epoch_number || 0,
+                            value: item.validation_loss || item.loss || 0
+                        }));
+                    } else if (Array.isArray(lossData)) {
+                        // If lossData itself is an array
+                        validationLossData = lossData;
+                    }
+                    
+                    if (!validationLossData || !Array.isArray(validationLossData) || validationLossData.length === 0) {
+                        return null;
+                    }
+                    
+                    return (
+                        <div style={{ marginBottom: '16px' }}>
+                            <LossPlotOverlay 
+                                lossData={validationLossData} 
+                                currentEpoch={frameInfo?.epoch} 
+                                style={{
+                                    width: '100%',
+                                    height: '120px',
+                                    pointerEvents: 'none'
+                                }}
+                            />
+                            {/* Learning Rate Plot */}
+                            {(() => {
+                                let learningRateData = null;
+                                if (lossData.learning_rate && Array.isArray(lossData.learning_rate)) {
+                                    learningRateData = lossData.learning_rate;
+                                } else if (lossData.training_info && lossData.training_info.loss_history) {
+                                    // Extract learning rate from loss_history
+                                    learningRateData = lossData.training_info.loss_history
+                                        .filter((item: any) => item.current_learning_rate !== undefined)
+                                        .map((item: any) => ({
+                                            epoch: item.epoch || item.epoch_number || 0,
+                                            value: item.current_learning_rate || 0
+                                        }));
+                                }
+                                
+                                if (!learningRateData || !Array.isArray(learningRateData) || learningRateData.length === 0) {
+                                    return null;
+                                }
+                                
+                                return (
+                                    <div style={{ marginTop: '8px' }}>
+                                        <LossPlotOverlay 
+                                            lossData={learningRateData} 
+                                            currentEpoch={frameInfo?.epoch} 
+                                            title="Learning Rate"
+                                            style={{
+                                                width: '100%',
+                                                height: '100px',
+                                                pointerEvents: 'none'
+                                            }}
+                                        />
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                    );
+                })()}
 
                 {/* Frame Controls */}
                 {frameInfo && frameInfo.total > 0 && (
