@@ -2183,16 +2183,17 @@ function update_bounds_box(sphere: SphereData) {
     const boxSize = box.getSize(new THREE.Vector3());
     const boxCenter = box.getCenter(new THREE.Vector3());
     
-    // Calculate volume utilization: unit sphere volume / bounding box volume
-    // Unit sphere has radius = 1, so volume = (4/3)πr³ = (4/3)π ≈ 4.18879
+    // Calculate radius difference percentage: (bounding box radius - unit sphere radius) / unit sphere radius * 100
+    // Unit sphere has radius = 1.0
     const unitSphereRadius = 1.0;
-    const unitSphereVolume = (4 / 3) * Math.PI * Math.pow(unitSphereRadius, 3);
-    const boundingBoxVolume = boxSize.x * boxSize.y * boxSize.z;
-    const volumeUtilization = boundingBoxVolume > 0 
-        ? (unitSphereVolume / boundingBoxVolume) * 100 
+    // Bounding box radius is half the largest dimension (or half the diagonal, but largest dimension is more meaningful)
+    const boundingBoxRadius = Math.max(boxSize.x, boxSize.y, boxSize.z) / 2.0;
+    // Calculate percentage difference: how much larger/smaller the bounding box radius is compared to unit sphere
+    const radiusDifferencePercent = boundingBoxRadius > 0 
+        ? ((boundingBoxRadius - unitSphereRadius) / unitSphereRadius) * 100 
         : 0;
     
-    sphere.boundsBoxVolumeUtilization = volumeUtilization;
+    sphere.boundsBoxVolumeUtilization = radiusDifferencePercent; // Reusing this field name for radius difference
     
     // Update existing bounds box geometry and position
     if (sphere.boundsBox.geometry) {
