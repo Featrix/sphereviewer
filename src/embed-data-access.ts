@@ -123,4 +123,35 @@ export async function fetch_training_metrics(session_id: string, apiBaseUrl?: st
         ...projectionsData,
         training_metrics: trainingMetrics
     };
+}
+
+export async function fetch_session_status(session_id: string, apiBaseUrl?: string) {
+    const baseUrl = getApiBaseUrl(apiBaseUrl);
+    try {
+        const response = await fetch(`${baseUrl}/compute/session/${session_id}`);
+        if (response.ok) {
+            const data = await response.json();
+            return data;
+        }
+    } catch (error) {
+        console.warn('⚠️ Could not fetch session status:', error);
+    }
+    return null;
+}
+
+export async function fetch_single_epoch(session_id: string, epochKey: string, apiBaseUrl?: string) {
+    const baseUrl = getApiBaseUrl(apiBaseUrl);
+    try {
+        // Fetch all epoch projections and extract just the one we need
+        const response = await fetch(`${baseUrl}/compute/session/${session_id}/epoch_projections`);
+        if (response.ok) {
+            const data = await response.json();
+            if (data.epoch_projections && data.epoch_projections[epochKey]) {
+                return data.epoch_projections[epochKey];
+            }
+        }
+    } catch (error) {
+        console.warn(`⚠️ Could not fetch epoch ${epochKey}:`, error);
+    }
+    return null;
 } 
