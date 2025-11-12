@@ -1500,6 +1500,42 @@ export function update_memory_trails(sphere: SphereData) {
             
             const line = new THREE.Line(lineGeometry, lineMaterial);
             sphere.memoryTrailsGroup.add(line);
+            
+            // Add arrowhead at each epoch point (pointing in direction of movement)
+            // Arrow size scales with distance to show magnitude
+            const direction = new THREE.Vector3().subVectors(currentPos, previousPos);
+            const distanceNormalized = direction.length();
+            if (distanceNormalized > 0.001) { // Only show arrow if there's meaningful movement
+                direction.normalize();
+                
+                // Arrow length proportional to distance (shows magnitude)
+                const arrowLength = Math.min(0.15, Math.max(0.03, distance * 0.4));
+                const arrowHeadLength = Math.min(0.03, Math.max(0.01, distance * 0.08));
+                const arrowHeadWidth = arrowHeadLength * 0.7;
+                
+                // Create arrow geometry
+                const arrowHelper = new THREE.ArrowHelper(
+                    direction,
+                    previousPos, // Position at the start of the segment (epoch point)
+                    arrowLength, // Arrow length proportional to distance (shows magnitude)
+                    pointColor.getHex(),
+                    arrowHeadLength, // Arrow head length
+                    arrowHeadWidth // Arrow head width
+                );
+                
+                // Set arrow opacity to match the line (but slightly more visible)
+                const arrowAlpha = Math.min(1.0, alpha * 1.5); // Make arrows slightly more visible
+                if (arrowHelper.line && arrowHelper.line.material) {
+                    (arrowHelper.line.material as THREE.LineBasicMaterial).transparent = true;
+                    (arrowHelper.line.material as THREE.LineBasicMaterial).opacity = arrowAlpha;
+                }
+                if (arrowHelper.cone && arrowHelper.cone.material) {
+                    (arrowHelper.cone.material as THREE.MeshBasicMaterial).transparent = true;
+                    (arrowHelper.cone.material as THREE.MeshBasicMaterial).opacity = arrowAlpha;
+                }
+                
+                sphere.memoryTrailsGroup.add(arrowHelper);
+            }
         }
     });
 }

@@ -22,8 +22,9 @@ const BUILD_TIMESTAMP = new Date().toISOString();
 const LossPlotOverlay: React.FC<{
     lossData: Array<{ epoch: number | string, value: number }>,
     currentEpoch?: string,
+    title?: string,
     style?: React.CSSProperties
-}> = ({ lossData, currentEpoch, style }) => {
+}> = ({ lossData, currentEpoch, title = 'Validation Loss', style }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     
     useEffect(() => {
@@ -215,9 +216,9 @@ const LossPlotOverlay: React.FC<{
         // Title with better positioning
         ctx.textAlign = 'center';
         ctx.font = 'bold 14px Arial';
-        ctx.fillText('Validation Loss', width / 2, 20);
+        ctx.fillText(title, width / 2, 20);
         
-    }, [lossData, currentEpoch]);
+    }, [lossData, currentEpoch, title]);
     
     return (
         <div style={style}>
@@ -1350,6 +1351,24 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 pointerEvents: 'none'
                             }}
                         />
+                        {/* Learning Rate Plot */}
+                        {lossData.learning_rate && Array.isArray(lossData.learning_rate) && lossData.learning_rate.length > 0 && (
+                            <div style={{ marginTop: '8px' }}>
+                                <LossPlotOverlay 
+                                    lossData={lossData.learning_rate.map((lr: any) => ({
+                                        epoch: lr.epoch || lr.epoch_number || 0,
+                                        value: lr.value || lr.learning_rate || lr.current_learning_rate || 0
+                                    }))} 
+                                    currentEpoch={frameInfo?.epoch} 
+                                    title="Learning Rate"
+                                    style={{
+                                        width: '100%',
+                                        height: '100px',
+                                        pointerEvents: 'none'
+                                    }}
+                                />
+                            </div>
+                        )}
                     </div>
                 )}
 
