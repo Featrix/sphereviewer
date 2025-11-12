@@ -12,7 +12,7 @@ import React, { Suspense, useEffect, useRef, useState, useCallback } from "react
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
 import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch } from './embed-data-access';
-import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull } from '../featrix_sphere_control';
+import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 
 // Build timestamp for cache busting verification
@@ -1291,6 +1291,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [searchQuery, setSearchQuery] = useState<string>('');
     const [showSearch, setShowSearch] = useState(false);
     const [showBoundsBox, setShowBoundsBox] = useState(false);
+    const [showGreatCircles, setShowGreatCircles] = useState(false);
     
     // Color rules state - each rule has a query, column, color, and record IDs
     const [colorRules, setColorRules] = useState<Array<{
@@ -2966,6 +2967,27 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             Sphere Coverage: <strong>{sphereRef.boundsBoxVolumeUtilization.toFixed(2)}%</strong>
                             <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
                                 {sphereRef.boundsBoxVolumeUtilization.toFixed(2)}% of unit sphere radius is covered by bounding box
+                            </div>
+                            <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <input 
+                                    type="checkbox" 
+                                    checked={showGreatCircles} 
+                                    onChange={(e) => {
+                                        const enabled = e.target.checked;
+                                        setShowGreatCircles(enabled);
+                                        if (sphereRef) {
+                                            toggle_great_circles(sphereRef, enabled);
+                                        }
+                                    }}
+                                    style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                                    id="show-great-circles-checkbox"
+                                />
+                                <label 
+                                    htmlFor="show-great-circles-checkbox" 
+                                    style={{ fontSize: '12px', color: '#d0d0d0', cursor: 'pointer' }}
+                                >
+                                    Show great circles
+                                </label>
                             </div>
                         </div>
                     )}

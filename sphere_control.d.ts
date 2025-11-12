@@ -68,6 +68,8 @@ export interface SphereData {
     boundsBoxVolumeUtilization?: number; // Percentage of bounding box volume occupied by sphere
     unitSphere?: THREE.LineSegments; // Always visible, created automatically (sphere wireframe)
     unitSphereCube?: THREE.LineSegments; // Unit sphere bounds as cube (2x2x2), shown when bounds box is on
+    greatCirclesGroup?: THREE.Group; // Group containing great circles through each point
+    showGreatCircles?: boolean; // Whether great circles mode is enabled
     // Smooth interpolation properties
     pointTargetPositions?: Map<string, THREE.Vector3>;
     pointStartPositions?: Map<string, THREE.Vector3>;

@@ -2987,6 +2987,134 @@ export function compute_embedding_convex_hull(sphere: SphereData) {
     sphere.scene.add(hullGroup);
 }
 
+/**
+ * Toggle great circles mode - shows great circles through each point for coverage visualization
+ * When enabled: reduces point size to 0.01, hides trails, hides unit sphere wireframe
+ */
+export function toggle_great_circles(sphere: SphereData, show: boolean) {
+    if (!sphere) {
+        console.warn('🔗 toggle_great_circles: No sphere provided');
+        return;
+    }
+    
+    sphere.showGreatCircles = show;
+    
+    if (show) {
+        // Create great circles group if it doesn't exist
+        if (!sphere.greatCirclesGroup) {
+            sphere.greatCirclesGroup = new THREE.Group();
+            sphere.scene.add(sphere.greatCirclesGroup);
+        }
+        
+        // Clear existing great circles
+        while (sphere.greatCirclesGroup.children.length > 0) {
+            const child = sphere.greatCirclesGroup.children[0];
+            sphere.greatCirclesGroup.remove(child);
+            if (child instanceof THREE.Line) {
+                child.geometry.dispose();
+                if (child.material instanceof THREE.Material) {
+                    child.material.dispose();
+                }
+            }
+        }
+        
+        // Create great circle for each point
+        // A great circle through a point P is the circle perpendicular to the radius vector OP
+        // This creates the "equator" relative to that point
+        const circleSegments = 64; // Number of segments for smooth circle
+        const circleRadius = 1.0; // Unit sphere radius
+        
+        sphere.pointObjectsByRecordID.forEach((pointMesh, recordId) => {
+            const pointPos = pointMesh.position.clone().normalize(); // Ensure normalized
+            
+            // Find two perpendicular vectors to create the circle plane
+            // Use cross product with a reference vector (e.g., up vector) to get perpendicular
+            const up = new THREE.Vector3(0, 1, 0);
+            let tangent1: THREE.Vector3;
+            let tangent2: THREE.Vector3;
+            
+            // Handle case where point is at north/south pole
+            if (Math.abs(pointPos.dot(up)) > 0.99) {
+                // Point is near pole, use different reference
+                const right = new THREE.Vector3(1, 0, 0);
+                tangent1 = new THREE.Vector3().crossVectors(pointPos, right).normalize();
+            } else {
+                tangent1 = new THREE.Vector3().crossVectors(pointPos, up).normalize();
+            }
+            tangent2 = new THREE.Vector3().crossVectors(pointPos, tangent1).normalize();
+            
+            // Generate circle points
+            const circlePoints: THREE.Vector3[] = [];
+            for (let i = 0; i <= circleSegments; i++) {
+                const angle = (i / circleSegments) * Math.PI * 2;
+                const x = Math.cos(angle);
+                const y = Math.sin(angle);
+                const circlePoint = new THREE.Vector3()
+                    .addScaledVector(tangent1, x)
+                    .addScaledVector(tangent2, y)
+                    .normalize()
+                    .multiplyScalar(circleRadius);
+                circlePoints.push(circlePoint);
+            }
+            
+            // Create line geometry for the great circle
+            const geometry = new THREE.BufferGeometry().setFromPoints(circlePoints);
+            const material = new THREE.LineBasicMaterial({
+                color: 0x00ff00, // Green color for great circles
+                linewidth: 1,
+                transparent: true,
+                opacity: 0.3 // Semi-transparent
+            });
+            const circleLine = new THREE.Line(geometry, material);
+            sphere.greatCirclesGroup.add(circleLine);
+        });
+        
+        // Reduce point size to 0.01
+        const originalPointSize = sphere.pointSize;
+        sphere.pointSize = 0.01;
+        update_all_point_visuals(sphere);
+        
+        // Hide memory trails
+        if (sphere.memoryTrailsGroup) {
+            sphere.memoryTrailsGroup.visible = false;
+        }
+        
+        // Hide unit sphere wireframe
+        if (sphere.unitSphere) {
+            sphere.unitSphere.visible = false;
+        }
+        
+        console.log(`🌐 Great circles mode enabled: ${sphere.greatCirclesGroup.children.length} circles created, point size reduced to 0.01`);
+    } else {
+        // Hide great circles
+        if (sphere.greatCirclesGroup) {
+            sphere.greatCirclesGroup.visible = false;
+        }
+        
+        // Restore original point size (use current pointSize from state, or default)
+        // Note: We don't store original size, so we'll use a reasonable default
+        // The UI controls will handle the actual size
+        if (sphere.pointSize === 0.01) {
+            sphere.pointSize = 0.05; // Default size
+            update_all_point_visuals(sphere);
+        }
+        
+        // Show memory trails (if they exist)
+        if (sphere.memoryTrailsGroup) {
+            sphere.memoryTrailsGroup.visible = true;
+        }
+        
+        // Show unit sphere wireframe
+        if (sphere.unitSphere) {
+            sphere.unitSphere.visible = true;
+        }
+        
+        console.log('🌐 Great circles mode disabled');
+    }
+    
+    render_sphere(sphere);
+}
+
 export function toggle_embedding_hull(sphere: SphereData, show: boolean) {
     if (!sphere) return;
     
