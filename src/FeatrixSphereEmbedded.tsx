@@ -2638,9 +2638,14 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     // Extract learning rate data for dual Y-axis - COMPREHENSIVE EXTRACTION
                     let learningRateData = null;
                     
-                    // Debug: log what we have
-                    console.log('🔍 Learning rate extraction - lossData keys:', Object.keys(lossData));
-                    console.log('🔍 Learning rate extraction - lossData:', lossData);
+                    // Debug: log what we have (only once, use a ref to track)
+                    const logKey = `lr_extract_${JSON.stringify(Object.keys(lossData).sort())}`;
+                    if (!(window as any)._lrLogged || (window as any)._lrLogKey !== logKey) {
+                        console.log('🔍 Learning rate extraction - lossData keys:', Object.keys(lossData));
+                        console.log('🔍 Learning rate extraction - lossData:', lossData);
+                        (window as any)._lrLogged = true;
+                        (window as any)._lrLogKey = logKey;
+                    }
                     
                     // Try ALL possible structures from API
                     if (lossData.learning_rate && Array.isArray(lossData.learning_rate)) {
