@@ -1453,7 +1453,7 @@ export function update_memory_trails(sphere: SphereData) {
         // First pass: calculate all distances to determine max distance for normalization
         const distances: number[] = [];
         for (let i = 0; i < maxSegments; i++) {
-            const currentPos = history[0].clone();
+            const currentPos = pointMesh.position.clone(); // Use live position so arcs chase the points
             const previousPos = history[i + 1].clone();
             const distance = currentPos.distanceTo(previousPos);
             distances.push(distance);
