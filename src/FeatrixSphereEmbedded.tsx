@@ -1914,6 +1914,13 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         render_sphere(sphereRef);
     }, [sphereRef, colorRules]);
     
+    // Apply color rules when colorRules array changes (not when function reference changes)
+    useEffect(() => {
+        if (colorRules.length > 0 && sphereRef) {
+            applyColorRules();
+        }
+    }, [colorRules.length, sphereRef]); // Only depend on length, not the array itself
+    
     // Handle Enter key to create color rule
     const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
@@ -2041,10 +2048,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         }
     };
     
-    // Apply color rules when they change
-    useEffect(() => {
-        applyColorRules();
-    }, [applyColorRules]);
+    // Note: Color rules are applied when colorRules.length changes (see above useEffect)
     
     // Fetch vocabulary/distribution when column changes
     useEffect(() => {
