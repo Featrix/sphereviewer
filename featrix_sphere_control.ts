@@ -50,6 +50,11 @@ export interface SphereData {
     pointOpacity: number;
 
     finalClusterResults?: any;
+    
+    // Embedding convex hull
+    embeddingHull?: THREE.Mesh;
+    embeddingHullArea?: number;
+    showEmbeddingHull?: boolean;
 }
 
 export type SphereRecord = {
@@ -153,6 +158,9 @@ function create_new_sphere(container: HTMLElement): SphereData {
         movieAnimationRef: 0,
 
         finalClusterResults: undefined,
+        embeddingHull: undefined,
+        embeddingHullArea: undefined,
+        showEmbeddingHull: false,
     } as SphereData
 
 
@@ -2820,4 +2828,144 @@ function create_filled_hull_geometry(hullPoints: THREE.Vector3[]): THREE.BufferG
         console.warn('Error creating filled hull geometry:', error);
         return null;
     }
+}
+
+// ============================================================================
+// EMBEDDING CONVEX HULL FUNCTIONS
+// ============================================================================
+
+function calculateSurfaceArea(geometry: THREE.BufferGeometry): number {
+    const positions = geometry.attributes.position;
+    const index = geometry.index;
+    
+    if (!positions || !index) return 0;
+    
+    let totalArea = 0;
+    const posArray = positions.array as Float32Array;
+    const indexArray = index.array as Uint16Array | Uint32Array;
+    
+    // Calculate area of each triangle
+    for (let i = 0; i < indexArray.length; i += 3) {
+        const i0 = indexArray[i] * 3;
+        const i1 = indexArray[i + 1] * 3;
+        const i2 = indexArray[i + 2] * 3;
+        
+        const v0 = new THREE.Vector3(posArray[i0], posArray[i0 + 1], posArray[i0 + 2]);
+        const v1 = new THREE.Vector3(posArray[i1], posArray[i1 + 1], posArray[i1 + 2]);
+        const v2 = new THREE.Vector3(posArray[i2], posArray[i2 + 1], posArray[i2 + 2]);
+        
+        // Calculate triangle area using cross product
+        const edge1 = new THREE.Vector3().subVectors(v1, v0);
+        const edge2 = new THREE.Vector3().subVectors(v2, v0);
+        const cross = new THREE.Vector3().crossVectors(edge1, edge2);
+        const area = cross.length() / 2;
+        
+        totalArea += area;
+    }
+    
+    return totalArea;
+}
+
+export function compute_embedding_convex_hull(sphere: SphereData) {
+    if (!sphere || !sphere.pointObjectsByRecordID || sphere.pointObjectsByRecordID.size === 0) {
+        console.warn('📦 No points available for embedding convex hull');
+        return;
+    }
+    
+    // Collect all point positions
+    const allPoints: THREE.Vector3[] = [];
+    sphere.pointObjectsByRecordID.forEach((mesh) => {
+        allPoints.push(mesh.position.clone());
+    });
+    
+    if (allPoints.length < 4) {
+        console.warn('📦 Need at least 4 points for convex hull');
+        return;
+    }
+    
+    // Compute convex hull using extremal points approach
+    const hullPoints = compute_simple_convex_hull(allPoints);
+    
+    // Create geometry from hull points
+    const geometry = create_filled_hull_geometry(hullPoints);
+    
+    if (!geometry) {
+        console.warn('📦 Failed to create embedding hull geometry');
+        return;
+    }
+    
+    // Calculate surface area
+    const hullArea = calculateSurfaceArea(geometry);
+    sphere.embeddingHullArea = hullArea;
+    
+    // Unit sphere surface area = 4πr² = 4π (for r=1)
+    const unitSphereArea = 4 * Math.PI;
+    const coveragePercent = (hullArea / unitSphereArea) * 100;
+    
+    console.log(`📦 Embedding convex hull: area=${hullArea.toFixed(4)}, unit sphere area=${unitSphereArea.toFixed(4)}, coverage=${coveragePercent.toFixed(2)}%`);
+    
+    // Remove old hull if exists
+    if (sphere.embeddingHull) {
+        sphere.scene.remove(sphere.embeddingHull as any);
+        if ((sphere.embeddingHull as any).geometry) {
+            (sphere.embeddingHull as any).geometry.dispose();
+        }
+        if ((sphere.embeddingHull as any).material) {
+            if (Array.isArray((sphere.embeddingHull as any).material)) {
+                (sphere.embeddingHull as any).material.forEach((m: THREE.Material) => m.dispose());
+            } else {
+                ((sphere.embeddingHull as any).material as THREE.Material).dispose();
+            }
+        }
+    }
+    
+    // Create mesh for embedding hull
+    const material = new THREE.MeshBasicMaterial({
+        color: 0x00ffff,
+        transparent: true,
+        opacity: 0.2,
+        side: THREE.DoubleSide,
+        wireframe: false
+    });
+    
+    const wireframeMaterial = new THREE.MeshBasicMaterial({
+        color: 0x00ffff,
+        transparent: true,
+        opacity: 0.6,
+        wireframe: true
+    });
+    
+    const hullMesh = new THREE.Mesh(geometry, material);
+    const wireframeMesh = new THREE.Mesh(geometry.clone(), wireframeMaterial);
+    
+    // Group them
+    const hullGroup = new THREE.Group();
+    hullGroup.add(hullMesh);
+    hullGroup.add(wireframeMesh);
+    
+    sphere.embeddingHull = hullGroup as any; // Store as group
+    (sphere as any).embeddingHullCoverage = coveragePercent; // Store coverage percentage
+    sphere.scene.add(hullGroup);
+}
+
+export function toggle_embedding_hull(sphere: SphereData, show: boolean) {
+    if (!sphere) return;
+    
+    sphere.showEmbeddingHull = show;
+    
+    if (show) {
+        if (!sphere.embeddingHull) {
+            compute_embedding_convex_hull(sphere);
+        } else {
+            sphere.scene.add(sphere.embeddingHull as any);
+            (sphere.embeddingHull as any).visible = true;
+        }
+    } else {
+        if (sphere.embeddingHull) {
+            (sphere.embeddingHull as any).visible = false;
+            sphere.scene.remove(sphere.embeddingHull as any);
+        }
+    }
+    
+    render_sphere(sphere);
 }

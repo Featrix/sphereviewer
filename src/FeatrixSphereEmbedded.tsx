@@ -12,7 +12,7 @@ import React, { Suspense, useEffect, useRef, useState, useCallback } from "react
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
 import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch } from './embed-data-access';
-import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key } from '../featrix_sphere_control';
+import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 
 // Build timestamp for cache busting verification
@@ -2873,12 +2873,26 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                         <button onClick={() => setShowSearch(!showSearch)} style={{ background: showSearch ? '#4c4' : '#555', border: '1px solid #666', color: '#d0d0d0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0 }} title="Toggle Search">Search</button>
                         <button onClick={() => { setShowBoundsBox(!showBoundsBox); if (sphereRef) { toggle_bounds_box(sphereRef, !showBoundsBox); render_sphere(sphereRef); } }} style={{ background: showBoundsBox ? '#4c4' : '#555', border: '1px solid #666', color: '#d0d0d0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0 }} title="Toggle Bounds Box">Bounds</button>
+                        <button onClick={() => { 
+                            if (sphereRef) { 
+                                toggle_embedding_hull(sphereRef, !sphereRef.showEmbeddingHull);
+                                render_sphere(sphereRef);
+                            }
+                        }} style={{ background: sphereRef?.showEmbeddingHull ? '#4c4' : '#555', border: '1px solid #666', color: '#d0d0d0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0 }} title="Toggle Embedding Convex Hull">Hull</button>
                     </div>
                     {showBoundsBox && sphereRef && sphereRef.boundsBoxVolumeUtilization !== undefined && (
                         <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #555', fontSize: '13px', color: '#00ff00' }}>
                             Sphere Coverage: <strong>{sphereRef.boundsBoxVolumeUtilization.toFixed(2)}%</strong>
                             <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
                                 {sphereRef.boundsBoxVolumeUtilization.toFixed(2)}% of unit sphere radius is covered by bounding box
+                            </div>
+                        </div>
+                    )}
+                    {sphereRef?.showEmbeddingHull && sphereRef.embeddingHullArea !== undefined && (sphereRef as any).embeddingHullCoverage !== undefined && (
+                        <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #555', fontSize: '13px', color: '#00ffff' }}>
+                            Convex Hull Area: <strong>{sphereRef.embeddingHullArea.toFixed(4)}</strong>
+                            <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
+                                Unit sphere area: {(4 * Math.PI).toFixed(4)} | Coverage: <strong>{(sphereRef as any).embeddingHullCoverage.toFixed(2)}%</strong>
                             </div>
                         </div>
                     )}
