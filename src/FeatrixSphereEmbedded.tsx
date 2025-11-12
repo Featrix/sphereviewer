@@ -1125,10 +1125,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     <button
                         onClick={() => setShowSidePanelInFullscreen(!showSidePanelInFullscreen)}
                         style={{
-                            position: 'absolute',
+                            position: 'fixed',
                             top: '10px',
                             right: showSidePanelInFullscreen ? 'calc(25% + 10px)' : '10px',
-                            zIndex: 1000,
+                            zIndex: 10000,
                             background: 'rgba(0, 0, 0, 0.8)',
                             border: '1px solid #555',
                             color: '#fff',
