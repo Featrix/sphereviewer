@@ -467,12 +467,15 @@ const LossPlotOverlay: React.FC<{
         });
         ctx.stroke();
         
-        // Draw learning rate curve if provided (using right Y-axis)
+        // Draw learning rate curve if provided (using right Y-axis) - SEPARATE VISIBLE LINE
         if (sortedLRData.length > 0) {
-            ctx.strokeStyle = '#ffaa00'; // Orange color for learning rate
-            ctx.lineWidth = 2;
+            // Make learning rate line VERY visible - thicker and brighter
+            ctx.strokeStyle = '#ff6600'; // Bright orange for learning rate
+            ctx.lineWidth = 4; // Thicker line
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
+            ctx.shadowColor = '#ff6600';
+            ctx.shadowBlur = 8;
             ctx.beginPath();
             
             sortedLRData.forEach((point, i) => {
@@ -488,6 +491,21 @@ const LossPlotOverlay: React.FC<{
                 }
             });
             ctx.stroke();
+            ctx.shadowBlur = 0; // Reset shadow
+            
+            // Draw learning rate data points for visibility
+            ctx.fillStyle = '#ff6600';
+            sortedLRData.forEach((point, i) => {
+                if (i % 3 === 0) { // Show every 3rd point
+                    const epoch = typeof point.epoch === 'string' ? parseInt(point.epoch) : point.epoch;
+                    const x = leftPadding + ((epoch - minEpoch) / (maxEpoch - minEpoch)) * plotWidth;
+                    const y = topPadding + (1 - (point.value - minLR) / (maxLR - minLR)) * plotHeight;
+                    
+                    ctx.beginPath();
+                    ctx.arc(x, y, 4, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+            });
         }
         
         // Draw data points for validation loss - make them more visible
@@ -587,20 +605,32 @@ const LossPlotOverlay: React.FC<{
                     ctx.lineWidth = 2;
                     ctx.stroke();
                     
-                    // Value label with background for readability
+                    // Value label with background for readability - MUCH BIGGER
                     const lossText = lossValue < 0.01 ? lossValue.toFixed(4) : 
                                     lossValue < 0.1 ? lossValue.toFixed(3) : 
                                     lossValue.toFixed(2);
                     
-                    // Draw background rectangle for text
-                    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                    ctx.fillRect(x - 35, Math.max(5, y - 25), 70, 18);
+                    // Draw BIG background rectangle for text with padding
+                    const fontSize = 18 * scale; // Scale with modal
+                    const padding = 12 * scale;
+                    const textWidth = ctx.measureText(`Loss: ${lossText}`).width;
+                    const boxWidth = Math.max(120 * scale, textWidth + padding * 2);
+                    const boxHeight = fontSize + padding * 2;
+                    const boxX = x - boxWidth / 2;
+                    const boxY = Math.max(10 * scale, y - boxHeight - 15 * scale);
                     
-                    // Draw validation loss label
+                    // Draw background with border
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+                    ctx.fillRect(boxX - 2, boxY - 2, boxWidth + 4, boxHeight + 4);
+                    ctx.strokeStyle = '#00ff88';
+                    ctx.lineWidth = 2 * scale;
+                    ctx.strokeRect(boxX - 2, boxY - 2, boxWidth + 4, boxHeight + 4);
+                    
+                    // Draw validation loss label - BIG TEXT
                     ctx.fillStyle = '#00ff88';
-                    ctx.font = 'bold 11px Arial';
+                    ctx.font = `bold ${fontSize}px Arial`;
                     ctx.textAlign = 'center';
-                    ctx.fillText(`Loss: ${lossText}`, x, Math.max(16, y - 10));
+                    ctx.fillText(`Loss: ${lossText}`, x, boxY + fontSize + padding / 2);
                 }
                 
                 // Find closest learning rate point
@@ -627,17 +657,17 @@ const LossPlotOverlay: React.FC<{
                     
                     if (currentLRPoint) {
                         const lrValue = currentLRPoint.value;
-                        const y = topPadding + (1 - (lrValue - minLR) / (maxLR - minLR)) * plotHeight;
+                        const lrY = topPadding + (1 - (lrValue - minLR) / (maxLR - minLR)) * plotHeight;
                         
-                        // Draw learning rate marker
-                        ctx.fillStyle = '#ffaa00';
+                        // Draw learning rate marker - BIGGER
+                        ctx.fillStyle = '#ff6600';
                         ctx.beginPath();
-                        ctx.arc(x, y, 5, 0, 2 * Math.PI);
+                        ctx.arc(x, lrY, 8 * scale, 0, 2 * Math.PI);
                         ctx.fill();
                         
                         // Draw white outline
                         ctx.strokeStyle = '#ffffff';
-                        ctx.lineWidth = 2;
+                        ctx.lineWidth = 3 * scale;
                         ctx.stroke();
                         
                         // Format learning rate value
@@ -646,15 +676,30 @@ const LossPlotOverlay: React.FC<{
                                        lrValue < 0.1 ? lrValue.toFixed(4) :
                                        lrValue.toFixed(3);
                         
-                        // Draw background rectangle for text
-                        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                        ctx.fillRect(x - 35, Math.max(5, y - 25), 70, 18);
+                        // Draw BIG background rectangle for learning rate text
+                        const lrFontSize = 18 * scale;
+                        const lrPadding = 12 * scale;
+                        const lrTextWidth = ctx.measureText(`LR: ${lrText}`).width;
+                        const lrBoxWidth = Math.max(120 * scale, lrTextWidth + lrPadding * 2);
+                        const lrBoxHeight = lrFontSize + lrPadding * 2;
+                        const lrBoxX = x - lrBoxWidth / 2;
+                        // Position below loss callout if they overlap, otherwise above marker
+                        const lrBoxY = (lrY < y && Math.abs(lrY - y) < 50 * scale) 
+                            ? Math.max(10 * scale, lrY + 20 * scale)
+                            : Math.max(10 * scale, lrY - lrBoxHeight - 15 * scale);
                         
-                        // Draw learning rate label
-                        ctx.fillStyle = '#ffaa00';
-                        ctx.font = 'bold 11px Arial';
+                        // Draw background with border
+                        ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+                        ctx.fillRect(lrBoxX - 2, lrBoxY - 2, lrBoxWidth + 4, lrBoxHeight + 4);
+                        ctx.strokeStyle = '#ff6600';
+                        ctx.lineWidth = 2 * scale;
+                        ctx.strokeRect(lrBoxX - 2, lrBoxY - 2, lrBoxWidth + 4, lrBoxHeight + 4);
+                        
+                        // Draw learning rate label - BIG TEXT
+                        ctx.fillStyle = '#ff6600';
+                        ctx.font = `bold ${lrFontSize}px Arial`;
                         ctx.textAlign = 'center';
-                        ctx.fillText(`LR: ${lrText}`, x, Math.max(16, y - 10));
+                        ctx.fillText(`LR: ${lrText}`, x, lrBoxY + lrFontSize + lrPadding / 2);
                     }
                 }
             }
