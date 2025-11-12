@@ -221,19 +221,9 @@ export function render_sphere(sphere: SphereData) {
 
 
 function add_floor_and_grid(sphere: SphereData) {
-    // Add floor
-    const floorGeometry = new THREE.PlaneGeometry(sphere.cubeSize, sphere.cubeSize, 32);
-    const floorMaterial = new THREE.MeshBasicMaterial({ color: 0x303030, opacity: 0.2, transparent: true, side: THREE.DoubleSide });
-    const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-    floor.rotation.x = -Math.PI / 2;
-    const minY = -1.0;  // sphere radius is 1
-    floor.position.y = minY - 1;
-    sphere.scene.add(floor);
-
-    // Add grid
-    const grid = new THREE.GridHelper(sphere.cubeSize, 10, 0x666666, 0x666666);
-    grid.position.y = floor.position.y;
-    sphere.scene.add(grid);
+    // Floor removed - not needed
+    // Grid removed - not needed
+    // Function kept for compatibility but does nothing
 }
 
 const kColorTable = [
