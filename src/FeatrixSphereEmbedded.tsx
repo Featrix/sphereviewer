@@ -1420,21 +1420,44 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             {/* Learning Rate Plot */}
                             {(() => {
                                 let learningRateData = null;
+                                
+                                // Debug: log what we have
+                                console.log('🔍 Learning rate extraction - lossData keys:', Object.keys(lossData));
+                                
+                                // Try different possible structures
                                 if (lossData.learning_rate && Array.isArray(lossData.learning_rate)) {
                                     learningRateData = lossData.learning_rate;
+                                    console.log('✅ Found learning_rate array:', learningRateData.length);
                                 } else if (lossData.training_info && lossData.training_info.loss_history) {
                                     // Extract learning rate from loss_history
-                                    learningRateData = lossData.training_info.loss_history
-                                        .filter((item: any) => item.current_learning_rate !== undefined)
+                                    const lossHistory = lossData.training_info.loss_history;
+                                    console.log('🔍 Found loss_history with', lossHistory.length, 'items');
+                                    console.log('🔍 First item sample:', lossHistory[0]);
+                                    
+                                    learningRateData = lossHistory
+                                        .filter((item: any) => item.current_learning_rate !== undefined || item.learning_rate !== undefined)
                                         .map((item: any) => ({
                                             epoch: item.epoch || item.epoch_number || 0,
-                                            value: item.current_learning_rate || 0
+                                            value: item.current_learning_rate || item.learning_rate || 0
                                         }));
+                                    console.log('✅ Extracted learning rate data:', learningRateData.length, 'points');
+                                } else if (Array.isArray(lossData) && lossData.length > 0 && lossData[0].current_learning_rate !== undefined) {
+                                    // If lossData is an array of loss_history items
+                                    learningRateData = lossData
+                                        .filter((item: any) => item.current_learning_rate !== undefined || item.learning_rate !== undefined)
+                                        .map((item: any) => ({
+                                            epoch: item.epoch || item.epoch_number || 0,
+                                            value: item.current_learning_rate || item.learning_rate || 0
+                                        }));
+                                    console.log('✅ Extracted learning rate from array:', learningRateData.length, 'points');
                                 }
                                 
                                 if (!learningRateData || !Array.isArray(learningRateData) || learningRateData.length === 0) {
+                                    console.warn('⚠️ No learning rate data found');
                                     return null;
                                 }
+                                
+                                console.log('✅ Rendering learning rate plot with', learningRateData.length, 'points');
                                 
                                 return (
                                     <div style={{ marginTop: '8px' }}>
