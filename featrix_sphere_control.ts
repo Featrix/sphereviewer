@@ -1203,28 +1203,34 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
                     }
                 }
                 
-                // Use direct color mapping - cluster assignments are 0-based
-                let newColor;
-                if (clusterAssignment >= 0 && clusterAssignment < visibleClusters && clusterAssignment < kColorTable.length) {
-                    // Direct mapping - cluster 0 -> color 0, cluster 1 -> color 1, etc.
-                    newColor = kColorTable[clusterAssignment];
-                } else if (clusterAssignment >= 0 && clusterAssignment >= visibleClusters) {
-                    // Cluster exists but not yet revealed in this frame
-                    newColor = 0x999999; // Gray for unrevealed clusters
+                // Check if this record is manually selected (e.g., by search) - preserve its color
+                if (sphere.selectedRecords && sphere.selectedRecords.has(recordId)) {
+                    // Skip color update for manually selected records - preserve search/selection colors
+                    // Only update position, not color
                 } else {
-                    // Invalid or missing cluster assignment - use default gray
-                    newColor = 0x999999; // Gray for invalid
-                }
-                
-                // Apply the color to the mesh
-                if (mesh.material instanceof THREE.MeshBasicMaterial) {
-                    mesh.material.color.setHex(newColor);
-                    mesh.material.needsUpdate = true;
-                } else {
-                    // If material is not MeshBasicMaterial, try to update it anyway
-                    if (mesh.material && 'color' in mesh.material) {
-                        (mesh.material as any).color.setHex(newColor);
-                        (mesh.material as any).needsUpdate = true;
+                    // Use direct color mapping - cluster assignments are 0-based
+                    let newColor;
+                    if (clusterAssignment >= 0 && clusterAssignment < visibleClusters && clusterAssignment < kColorTable.length) {
+                        // Direct mapping - cluster 0 -> color 0, cluster 1 -> color 1, etc.
+                        newColor = kColorTable[clusterAssignment];
+                    } else if (clusterAssignment >= 0 && clusterAssignment >= visibleClusters) {
+                        // Cluster exists but not yet revealed in this frame
+                        newColor = 0x999999; // Gray for unrevealed clusters
+                    } else {
+                        // Invalid or missing cluster assignment - use default gray
+                        newColor = 0x999999; // Gray for invalid
+                    }
+                    
+                    // Apply the color to the mesh
+                    if (mesh.material instanceof THREE.MeshBasicMaterial) {
+                        mesh.material.color.setHex(newColor);
+                        mesh.material.needsUpdate = true;
+                    } else {
+                        // If material is not MeshBasicMaterial, try to update it anyway
+                        if (mesh.material && 'color' in mesh.material) {
+                            (mesh.material as any).color.setHex(newColor);
+                            (mesh.material as any).needsUpdate = true;
+                        }
                     }
                 }
             } else {

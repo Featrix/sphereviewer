@@ -12,33 +12,333 @@ import React, { Suspense, useEffect, useRef, useState, useCallback } from "react
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
 import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch } from './embed-data-access';
-import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box } from '../featrix_sphere_control';
+import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 
 // Build timestamp for cache busting verification
 const BUILD_TIMESTAMP = new Date().toISOString();
 
-// Loss Plot Screen Overlay Component - MUCH BETTER VERSION
+// Loss Plot Screen Overlay Component - MUCH BETTER VERSION with Dual Y-Axis Support and Zoom
 const LossPlotOverlay: React.FC<{
     lossData: Array<{ epoch: number | string, value: number }>,
+    learningRateData?: Array<{ epoch: number | string, value: number }>,
     currentEpoch?: string,
     title?: string,
     style?: React.CSSProperties
-}> = ({ lossData, currentEpoch, title = 'Validation Loss', style }) => {
+}> = ({ lossData, learningRateData, currentEpoch, title = 'Validation Loss', style }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const modalCanvasRef = useRef<HTMLCanvasElement>(null);
+    const [showModal, setShowModal] = useState(false);
     
+    // Zoom and pan state
+    const [zoomState, setZoomState] = useState({
+        epochMin: 0,
+        epochMax: 0,
+        lossMin: 0,
+        lossMax: 0,
+        lrMin: 0,
+        lrMax: 0,
+        isZoomed: false
+    });
+    
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragStart, setDragStart] = useState<{ x: number, y: number } | null>(null);
+    const [dragEnd, setDragEnd] = useState<{ x: number, y: number } | null>(null);
+    
+    // Initialize zoom state with full data range
     useEffect(() => {
+        if (!lossData || lossData.length === 0) return;
+        
+        const epochs = lossData.map(d => typeof d.epoch === 'string' ? parseInt(d.epoch) : d.epoch);
+        const losses = lossData.map(d => d.value);
+        const minEpoch = Math.min(...epochs);
+        const maxEpoch = Math.max(...epochs);
+        let minLoss = Math.min(...losses);
+        let maxLoss = Math.max(...losses);
+        
+        const lossRange = maxLoss - minLoss;
+        if (lossRange < 0.01) {
+            minLoss -= 0.001;
+            maxLoss += 0.001;
+        } else {
+            minLoss -= lossRange * 0.05;
+            maxLoss += lossRange * 0.05;
+        }
+        
+        let minLR = 0;
+        let maxLR = 1;
+        if (learningRateData && learningRateData.length > 0) {
+            const lrValues = learningRateData.map(d => d.value);
+            minLR = Math.min(...lrValues);
+            maxLR = Math.max(...lrValues);
+            const lrRange = maxLR - minLR;
+            if (lrRange < 0.0001) {
+                minLR -= 0.00001;
+                maxLR += 0.00001;
+            } else {
+                minLR -= lrRange * 0.05;
+                maxLR += lrRange * 0.05;
+            }
+        }
+        
+        setZoomState(prev => {
+            if (!prev.isZoomed) {
+                return {
+                    epochMin: minEpoch,
+                    epochMax: maxEpoch,
+                    lossMin: minLoss,
+                    lossMax: maxLoss,
+                    lrMin: minLR,
+                    lrMax: maxLR,
+                    isZoomed: false
+                };
+            }
+            return prev;
+        });
+    }, [lossData, learningRateData]);
+    
+    // Handle mouse wheel zoom
+    const handleWheel = (e: React.WheelEvent) => {
+        e.preventDefault();
         const canvas = canvasRef.current;
+        if (!canvas) return;
+        
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        const leftPadding = 70;
+        const rightPadding = learningRateData && learningRateData.length > 0 ? 70 : 20;
+        const topPadding = 35;
+        const bottomPadding = 35;
+        const plotWidth = canvas.width - leftPadding - rightPadding;
+        const plotHeight = canvas.height - topPadding - bottomPadding;
+        
+        // Check if mouse is over plot area
+        if (x < leftPadding || x > leftPadding + plotWidth || y < topPadding || y > topPadding + plotHeight) {
+            return;
+        }
+        
+        const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9;
+        
+        setZoomState(prev => {
+            if (!prev.isZoomed) {
+                // Initialize from full range
+                const epochs = lossData.map(d => typeof d.epoch === 'string' ? parseInt(d.epoch) : d.epoch);
+                const losses = lossData.map(d => d.value);
+                const minEpoch = Math.min(...epochs);
+                const maxEpoch = Math.max(...epochs);
+                let minLoss = Math.min(...losses);
+                let maxLoss = Math.max(...losses);
+                const lossRange = maxLoss - minLoss;
+                if (lossRange < 0.01) {
+                    minLoss -= 0.001;
+                    maxLoss += 0.001;
+                } else {
+                    minLoss -= lossRange * 0.05;
+                    maxLoss += lossRange * 0.05;
+                }
+                
+                let minLR = 0, maxLR = 1;
+                if (learningRateData && learningRateData.length > 0) {
+                    const lrValues = learningRateData.map(d => d.value);
+                    minLR = Math.min(...lrValues);
+                    maxLR = Math.max(...lrValues);
+                    const lrRange = maxLR - minLR;
+                    if (lrRange < 0.0001) {
+                        minLR -= 0.00001;
+                        maxLR += 0.00001;
+                    } else {
+                        minLR -= lrRange * 0.05;
+                        maxLR += lrRange * 0.05;
+                    }
+                }
+                
+                prev = {
+                    epochMin: minEpoch,
+                    epochMax: maxEpoch,
+                    lossMin: minLoss,
+                    lossMax: maxLoss,
+                    lrMin: minLR,
+                    lrMax: maxLR,
+                    isZoomed: false
+                };
+            }
+            
+            // Calculate mouse position in data coordinates
+            const epochAtMouse = prev.epochMin + ((x - leftPadding) / plotWidth) * (prev.epochMax - prev.epochMin);
+            const lossAtMouse = prev.lossMax - ((y - topPadding) / plotHeight) * (prev.lossMax - prev.lossMin);
+            
+            // Zoom around mouse position
+            const epochRange = prev.epochMax - prev.epochMin;
+            const lossRange = prev.lossMax - prev.lossMin;
+            const newEpochRange = epochRange / zoomFactor;
+            const newLossRange = lossRange / zoomFactor;
+            
+            const epochCenter = epochAtMouse;
+            const lossCenter = lossAtMouse;
+            
+            return {
+                epochMin: epochCenter - newEpochRange / 2,
+                epochMax: epochCenter + newEpochRange / 2,
+                lossMin: lossCenter - newLossRange / 2,
+                lossMax: lossCenter + newLossRange / 2,
+                lrMin: prev.lrMin,
+                lrMax: prev.lrMax,
+                isZoomed: true
+            };
+        });
+    };
+    
+    // Handle mouse down for drag selection
+    const handleMouseDown = (e: React.MouseEvent) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        const leftPadding = 70;
+        const rightPadding = learningRateData && learningRateData.length > 0 ? 70 : 20;
+        const topPadding = 35;
+        const plotWidth = canvas.width - leftPadding - rightPadding;
+        const plotHeight = canvas.height - topPadding - 35;
+        
+        // Check if mouse is over plot area
+        if (x >= leftPadding && x <= leftPadding + plotWidth && y >= topPadding && y <= topPadding + plotHeight) {
+            setIsDragging(true);
+            setDragStart({ x, y });
+            setDragEnd(null);
+        }
+    };
+    
+    // Handle mouse move for drag selection
+    const handleMouseMove = (e: React.MouseEvent) => {
+        if (!isDragging || !dragStart) return;
+        
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        setDragEnd({ x, y });
+    };
+    
+    // Handle mouse up to complete zoom selection
+    const handleMouseUp = () => {
+        if (!isDragging || !dragStart || !dragEnd) {
+            setIsDragging(false);
+            setDragStart(null);
+            setDragEnd(null);
+            return;
+        }
+        
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        
+        const leftPadding = 70;
+        const rightPadding = learningRateData && learningRateData.length > 0 ? 70 : 20;
+        const topPadding = 35;
+        const bottomPadding = 35;
+        const plotWidth = canvas.width - leftPadding - rightPadding;
+        const plotHeight = canvas.height - topPadding - bottomPadding;
+        
+        // Convert drag coordinates to data coordinates
+        const x1 = Math.max(leftPadding, Math.min(leftPadding + plotWidth, dragStart.x));
+        const y1 = Math.max(topPadding, Math.min(topPadding + plotHeight, dragStart.y));
+        const x2 = Math.max(leftPadding, Math.min(leftPadding + plotWidth, dragEnd.x));
+        const y2 = Math.max(topPadding, Math.min(topPadding + plotHeight, dragEnd.y));
+        
+        const width = Math.abs(x2 - x1);
+        const height = Math.abs(y2 - y1);
+        
+        // Only zoom if selection is large enough
+        if (width > 20 && height > 20) {
+            setZoomState(prev => {
+                const epochMin = prev.epochMin + ((Math.min(x1, x2) - leftPadding) / plotWidth) * (prev.epochMax - prev.epochMin);
+                const epochMax = prev.epochMin + ((Math.max(x1, x2) - leftPadding) / plotWidth) * (prev.epochMax - prev.epochMin);
+                const lossMax = prev.lossMax - ((Math.min(y1, y2) - topPadding) / plotHeight) * (prev.lossMax - prev.lossMin);
+                const lossMin = prev.lossMax - ((Math.max(y1, y2) - topPadding) / plotHeight) * (prev.lossMax - prev.lossMin);
+                
+                return {
+                    epochMin,
+                    epochMax,
+                    lossMin,
+                    lossMax,
+                    lrMin: prev.lrMin,
+                    lrMax: prev.lrMax,
+                    isZoomed: true
+                };
+            });
+        }
+        
+        setIsDragging(false);
+        setDragStart(null);
+        setDragEnd(null);
+    };
+    
+    // Reset zoom
+    const handleResetZoom = () => {
+        const epochs = lossData.map(d => typeof d.epoch === 'string' ? parseInt(d.epoch) : d.epoch);
+        const losses = lossData.map(d => d.value);
+        const minEpoch = Math.min(...epochs);
+        const maxEpoch = Math.max(...epochs);
+        let minLoss = Math.min(...losses);
+        let maxLoss = Math.max(...losses);
+        
+        const lossRange = maxLoss - minLoss;
+        if (lossRange < 0.01) {
+            minLoss -= 0.001;
+            maxLoss += 0.001;
+        } else {
+            minLoss -= lossRange * 0.05;
+            maxLoss += lossRange * 0.05;
+        }
+        
+        let minLR = 0;
+        let maxLR = 1;
+        if (learningRateData && learningRateData.length > 0) {
+            const lrValues = learningRateData.map(d => d.value);
+            minLR = Math.min(...lrValues);
+            maxLR = Math.max(...lrValues);
+            const lrRange = maxLR - minLR;
+            if (lrRange < 0.0001) {
+                minLR -= 0.00001;
+                maxLR += 0.00001;
+            } else {
+                minLR -= lrRange * 0.05;
+                maxLR += lrRange * 0.05;
+            }
+        }
+        
+        setZoomState({
+            epochMin: minEpoch,
+            epochMax: maxEpoch,
+            lossMin: minLoss,
+            lossMax: maxLoss,
+            lrMin: minLR,
+            lrMax: maxLR,
+            isZoomed: false
+        });
+    };
+    
+    // Helper function to draw graph to any canvas
+    const drawGraph = (canvas: HTMLCanvasElement, isModal: boolean = false) => {
         if (!canvas || !lossData || lossData.length === 0) return;
         
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
         
         const { width, height } = canvas;
-        const leftPadding = 70;   // More space for Y-axis labels
-        const rightPadding = 20;
-        const topPadding = 35;    // Space for title
-        const bottomPadding = 35; // Space for X-axis labels
+        // Scale padding for modal
+        const scale = isModal ? 1.5 : 1;
+        const leftPadding = Math.round(70 * scale);   // More space for left Y-axis labels
+        const rightPadding = learningRateData && learningRateData.length > 0 ? Math.round(70 * scale) : Math.round(20 * scale); // Space for right Y-axis if needed
+        const topPadding = Math.round(35 * scale);    // Space for title
+        const bottomPadding = Math.round(35 * scale); // Space for X-axis labels
         const plotWidth = width - leftPadding - rightPadding;
         const plotHeight = height - topPadding - bottomPadding;
         
@@ -51,7 +351,7 @@ const LossPlotOverlay: React.FC<{
         ctx.fillStyle = 'rgba(0,0,0,0.9)';
         ctx.fillRect(0, 0, width, height);
         
-        // Find min/max values with better scaling
+        // Find min/max values for validation loss
         const epochs = lossData.map(d => typeof d.epoch === 'string' ? parseInt(d.epoch) : d.epoch);
         const losses = lossData.map(d => d.value);
         const minEpoch = Math.min(...epochs);
@@ -68,6 +368,23 @@ const LossPlotOverlay: React.FC<{
         } else {
             minLoss -= lossRange * 0.05;
             maxLoss += lossRange * 0.05;
+        }
+        
+        // Find min/max values for learning rate if provided
+        let minLR = 0;
+        let maxLR = 1;
+        if (learningRateData && learningRateData.length > 0) {
+            const lrValues = learningRateData.map(d => d.value);
+            minLR = Math.min(...lrValues);
+            maxLR = Math.max(...lrValues);
+            const lrRange = maxLR - minLR;
+            if (lrRange < 0.0001) {
+                minLR -= 0.00001;
+                maxLR += 0.00001;
+            } else {
+                minLR -= lrRange * 0.05;
+                maxLR += lrRange * 0.05;
+            }
         }
         
         // Draw background grid with proper coordinates
@@ -99,9 +416,14 @@ const LossPlotOverlay: React.FC<{
         // X-axis (bottom)
         ctx.moveTo(leftPadding, topPadding + plotHeight);
         ctx.lineTo(leftPadding + plotWidth, topPadding + plotHeight);
-        // Y-axis (left)
+        // Y-axis (left) - Validation Loss
         ctx.moveTo(leftPadding, topPadding);
         ctx.lineTo(leftPadding, topPadding + plotHeight);
+        // Y-axis (right) - Learning Rate
+        if (learningRateData && learningRateData.length > 0) {
+            ctx.moveTo(leftPadding + plotWidth, topPadding);
+            ctx.lineTo(leftPadding + plotWidth, topPadding + plotHeight);
+        }
         ctx.stroke();
         
         // CRITICAL FIX: Sort loss data by epoch number before plotting!
@@ -111,7 +433,17 @@ const LossPlotOverlay: React.FC<{
             return epochA - epochB;
         });
         
-        // Draw smooth loss curve with gradient
+        // Sort learning rate data if provided
+        let sortedLRData: Array<{ epoch: number | string, value: number }> = [];
+        if (learningRateData && learningRateData.length > 0) {
+            sortedLRData = [...learningRateData].sort((a, b) => {
+                const epochA = typeof a.epoch === 'string' ? parseInt(a.epoch) : a.epoch;
+                const epochB = typeof b.epoch === 'string' ? parseInt(b.epoch) : b.epoch;
+                return epochA - epochB;
+            });
+        }
+        
+        // Draw smooth validation loss curve with gradient
         const gradient = ctx.createLinearGradient(0, topPadding, 0, topPadding + plotHeight);
         gradient.addColorStop(0, '#00ff88');
         gradient.addColorStop(1, '#00aa55');
@@ -135,7 +467,30 @@ const LossPlotOverlay: React.FC<{
         });
         ctx.stroke();
         
-        // Draw data points - make them more visible
+        // Draw learning rate curve if provided (using right Y-axis)
+        if (sortedLRData.length > 0) {
+            ctx.strokeStyle = '#ffaa00'; // Orange color for learning rate
+            ctx.lineWidth = 2;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+            
+            sortedLRData.forEach((point, i) => {
+                const epoch = typeof point.epoch === 'string' ? parseInt(point.epoch) : point.epoch;
+                const x = leftPadding + ((epoch - minEpoch) / (maxEpoch - minEpoch)) * plotWidth;
+                // Map to right Y-axis (inverted like left axis)
+                const y = topPadding + (1 - (point.value - minLR) / (maxLR - minLR)) * plotHeight;
+                
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            });
+            ctx.stroke();
+        }
+        
+        // Draw data points for validation loss - make them more visible
         ctx.fillStyle = '#00ff88';
         sortedLossData.forEach((point, i) => {
             if (i % 3 === 0) { // Show every 3rd point for better visibility
@@ -149,42 +504,159 @@ const LossPlotOverlay: React.FC<{
             }
         });
         
-        // Draw current epoch cursor with glow effect
+        // Draw current epoch cursor with glow effect - ALWAYS VISIBLE during animation
         if (currentEpoch) {
-            const currentEpochNum = parseInt(currentEpoch);
-            const x = leftPadding + ((currentEpochNum - minEpoch) / (maxEpoch - minEpoch)) * plotWidth;
+            // Parse epoch - handle both "epoch_1" format and numeric formats
+            let currentEpochNum: number;
+            if (typeof currentEpoch === 'string') {
+                // Remove "epoch_" prefix if present, then parse
+                const cleaned = currentEpoch.replace(/^epoch_/i, '');
+                currentEpochNum = parseInt(cleaned);
+            } else {
+                currentEpochNum = currentEpoch;
+            }
             
-            // Glow effect
-            ctx.shadowColor = '#ff4444';
-            ctx.shadowBlur = 10;
-            ctx.strokeStyle = '#ff4444';
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.moveTo(x, topPadding);
-            ctx.lineTo(x, topPadding + plotHeight);
-            ctx.stroke();
+            // Skip if invalid epoch number
+            if (isNaN(currentEpochNum)) {
+                return;
+            }
             
-            // Reset shadow
-            ctx.shadowBlur = 0;
+            // Calculate cursor X position based on epoch
+            const epochRange = maxEpoch - minEpoch;
+            const x = epochRange > 0 
+                ? leftPadding + ((currentEpochNum - minEpoch) / epochRange) * plotWidth
+                : leftPadding + plotWidth / 2;
             
-            // Current value marker
-            const currentPoint = lossData.find(d => {
-                const epoch = typeof d.epoch === 'string' ? parseInt(d.epoch) : d.epoch;
-                return epoch === currentEpochNum;
-            });
-            
-            if (currentPoint) {
-                const y = topPadding + (1 - (currentPoint.value - minLoss) / (maxLoss - minLoss)) * plotHeight;
-                ctx.fillStyle = '#ff4444';
+            // Only draw cursor if it's within the visible range
+            if (x >= leftPadding && x <= leftPadding + plotWidth) {
+                // Enhanced glow effect for better visibility
+                ctx.shadowColor = '#ff4444';
+                ctx.shadowBlur = 15;
+                ctx.strokeStyle = '#ff4444';
+                ctx.lineWidth = 3;
                 ctx.beginPath();
-                ctx.arc(x, y, 5, 0, 2 * Math.PI);
-                ctx.fill();
+                ctx.moveTo(x, topPadding);
+                ctx.lineTo(x, topPadding + plotHeight);
+                ctx.stroke();
                 
-                // Value label with better positioning
-                ctx.fillStyle = '#ffffff';
-                ctx.font = 'bold 12px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText(currentPoint.value.toFixed(4), x, Math.max(15, y - 12));
+                // Reset shadow
+                ctx.shadowBlur = 0;
+                
+                // Helper function to parse epoch number
+                const parseEpoch = (epoch: number | string): number => {
+                    if (typeof epoch === 'string') {
+                        const cleaned = epoch.replace(/^epoch_/i, '');
+                        return parseInt(cleaned);
+                    }
+                    return epoch;
+                };
+                
+                // Find closest validation loss point (exact match or closest)
+                let currentPoint = lossData.find(d => {
+                    const epoch = parseEpoch(d.epoch);
+                    return epoch === currentEpochNum;
+                });
+                
+                // If no exact match, find closest epoch
+                if (!currentPoint && sortedLossData.length > 0) {
+                    let closest = sortedLossData[0];
+                    let minDiff = Math.abs(parseEpoch(closest.epoch) - currentEpochNum);
+                    for (const point of sortedLossData) {
+                        const epoch = parseEpoch(point.epoch);
+                        const diff = Math.abs(epoch - currentEpochNum);
+                        if (diff < minDiff) {
+                            minDiff = diff;
+                            closest = point;
+                        }
+                    }
+                    currentPoint = closest;
+                }
+                
+                if (currentPoint) {
+                    const lossValue = currentPoint.value;
+                    const y = topPadding + (1 - (lossValue - minLoss) / (maxLoss - minLoss)) * plotHeight;
+                    
+                    // Draw validation loss marker
+                    ctx.fillStyle = '#ff4444';
+                    ctx.beginPath();
+                    ctx.arc(x, y, 6, 0, 2 * Math.PI);
+                    ctx.fill();
+                    
+                    // Draw white outline for better visibility
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    
+                    // Value label with background for readability
+                    const lossText = lossValue < 0.01 ? lossValue.toFixed(4) : 
+                                    lossValue < 0.1 ? lossValue.toFixed(3) : 
+                                    lossValue.toFixed(2);
+                    
+                    // Draw background rectangle for text
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                    ctx.fillRect(x - 35, Math.max(5, y - 25), 70, 18);
+                    
+                    // Draw validation loss label
+                    ctx.fillStyle = '#00ff88';
+                    ctx.font = 'bold 11px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`Loss: ${lossText}`, x, Math.max(16, y - 10));
+                }
+                
+                // Find closest learning rate point
+                if (sortedLRData.length > 0) {
+                    let currentLRPoint = sortedLRData.find(d => {
+                        const epoch = parseEpoch(d.epoch);
+                        return epoch === currentEpochNum;
+                    });
+                    
+                    // If no exact match, find closest epoch
+                    if (!currentLRPoint) {
+                        let closest = sortedLRData[0];
+                        let minDiff = Math.abs(parseEpoch(closest.epoch) - currentEpochNum);
+                        for (const point of sortedLRData) {
+                            const epoch = parseEpoch(point.epoch);
+                            const diff = Math.abs(epoch - currentEpochNum);
+                            if (diff < minDiff) {
+                                minDiff = diff;
+                                closest = point;
+                            }
+                        }
+                        currentLRPoint = closest;
+                    }
+                    
+                    if (currentLRPoint) {
+                        const lrValue = currentLRPoint.value;
+                        const y = topPadding + (1 - (lrValue - minLR) / (maxLR - minLR)) * plotHeight;
+                        
+                        // Draw learning rate marker
+                        ctx.fillStyle = '#ffaa00';
+                        ctx.beginPath();
+                        ctx.arc(x, y, 5, 0, 2 * Math.PI);
+                        ctx.fill();
+                        
+                        // Draw white outline
+                        ctx.strokeStyle = '#ffffff';
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                        
+                        // Format learning rate value
+                        const lrText = lrValue < 0.0001 ? lrValue.toExponential(2) :
+                                       lrValue < 0.01 ? lrValue.toFixed(5) :
+                                       lrValue < 0.1 ? lrValue.toFixed(4) :
+                                       lrValue.toFixed(3);
+                        
+                        // Draw background rectangle for text
+                        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                        ctx.fillRect(x - 35, Math.max(5, y - 25), 70, 18);
+                        
+                        // Draw learning rate label
+                        ctx.fillStyle = '#ffaa00';
+                        ctx.font = 'bold 11px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(`LR: ${lrText}`, x, Math.max(16, y - 10));
+                    }
+                }
             }
         }
         
@@ -200,9 +672,10 @@ const LossPlotOverlay: React.FC<{
             ctx.fillText(Math.round(epoch).toString(), x, height - 10);
         }
         
-        // Y-axis labels (loss values) - better formatting and positioning
+        // Left Y-axis labels (validation loss values) - better formatting and positioning
         ctx.textAlign = 'right';
         ctx.font = '12px Arial';
+        ctx.fillStyle = '#00ff88'; // Green color for loss axis
         for (let i = 0; i <= 4; i++) {
             const loss = maxLoss - (i / 4) * (maxLoss - minLoss);
             const y = topPadding + (i / 4) * plotHeight;
@@ -213,27 +686,227 @@ const LossPlotOverlay: React.FC<{
             ctx.fillText(formatted, leftPadding - 10, y + 4);
         }
         
+        // Right Y-axis labels (learning rate values) if provided
+        if (sortedLRData.length > 0) {
+            ctx.textAlign = 'left';
+            ctx.font = '12px Arial';
+            ctx.fillStyle = '#ffaa00'; // Orange color for learning rate axis
+            for (let i = 0; i <= 4; i++) {
+                const lr = maxLR - (i / 4) * (maxLR - minLR);
+                const y = topPadding + (i / 4) * plotHeight;
+                // Smart decimal formatting for learning rate
+                const formatted = lr < 0.0001 ? lr.toExponential(2) :
+                                 lr < 0.01 ? lr.toFixed(5) :
+                                 lr < 0.1 ? lr.toFixed(4) :
+                                 lr.toFixed(3);
+                ctx.fillText(formatted, leftPadding + plotWidth + 10, y + 4);
+            }
+        }
+        
         // Title with better positioning
         ctx.textAlign = 'center';
         ctx.font = 'bold 14px Arial';
+        ctx.fillStyle = '#ffffff';
         ctx.fillText(title, width / 2, 20);
         
-    }, [lossData, currentEpoch, title]);
+        // Legend if both datasets are present
+        if (sortedLRData.length > 0) {
+            ctx.font = '11px Arial';
+            ctx.textAlign = 'left';
+            // Validation Loss label
+            ctx.fillStyle = '#00ff88';
+            ctx.fillText('Loss', leftPadding + 10, topPadding + plotHeight + 20);
+            // Learning Rate label
+            ctx.fillStyle = '#ffaa00';
+            ctx.fillText('LR', leftPadding + 60, topPadding + plotHeight + 20);
+        }
+    };
+    
+    // Draw to main canvas
+    useEffect(() => {
+        if (canvasRef.current) {
+            drawGraph(canvasRef.current, false);
+        }
+    }, [lossData, learningRateData, currentEpoch, title]);
+    
+    const [showModal, setShowModal] = useState(false);
+    
+    // Draw to modal canvas when modal is open
+    useEffect(() => {
+        if (showModal && modalCanvasRef.current) {
+            drawGraph(modalCanvasRef.current, true);
+        }
+    }, [showModal, lossData, learningRateData, currentEpoch, title]);
     
     return (
-        <div style={style}>
-            <canvas 
-                ref={canvasRef}
-                width="600"
-                height="150"
-                style={{ 
-                    width: '100%', 
-                    height: '100%',
-                    borderRadius: '6px',
-                    border: '1px solid rgba(255,255,255,0.2)'
-                }}
-            />
-        </div>
+        <>
+            <div 
+                style={{...style, cursor: 'pointer'}}
+                onClick={() => setShowModal(true)}
+                title="Click to enlarge graph"
+            >
+                <canvas 
+                    ref={canvasRef}
+                    width="600"
+                    height="150"
+                    style={{ 
+                        width: '100%', 
+                        height: '100%',
+                        borderRadius: '6px',
+                        border: '1px solid rgba(255,255,255,0.2)'
+                    }}
+                />
+            </div>
+            
+            {/* Modal Popover */}
+            {showModal && (
+                <div 
+                    style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'rgba(0, 0, 0, 0.9)',
+                        zIndex: 10000,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '40px'
+                    }}
+                    onClick={() => setShowModal(false)}
+                >
+                    <div 
+                        style={{
+                            background: '#2a2a2a',
+                            borderRadius: '12px',
+                            padding: '20px',
+                            maxWidth: '90vw',
+                            maxHeight: '90vh',
+                            position: 'relative',
+                            border: '2px solid #555'
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <button
+                            onClick={() => setShowModal(false)}
+                            style={{
+                                position: 'absolute',
+                                top: '10px',
+                                right: '10px',
+                                background: '#c44',
+                                border: '1px solid #666',
+                                color: '#fff',
+                                padding: '8px 12px',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '18px',
+                                fontWeight: 'bold',
+                                zIndex: 10001
+                            }}
+                            title="Close"
+                        >
+                            ✕
+                        </button>
+                        <canvas 
+                            ref={modalCanvasRef}
+                            width="1200"
+                            height="600"
+                            style={{ 
+                                width: '100%', 
+                                height: '100%',
+                                borderRadius: '6px',
+                                border: '1px solid rgba(255,255,255,0.2)',
+                                maxWidth: '1200px',
+                                maxHeight: '600px'
+                            }}
+                        />
+                    </div>
+                </div>
+            )}
+        </>
+    );
+};
+
+// Distribution Chart Component for Scalar Columns
+const DistributionChart: React.FC<{
+    distribution: Array<{ bin: number, count: number }>;
+    min: number;
+    max: number;
+    searchValue: number | null;
+}> = ({ distribution, min, max, searchValue }) => {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const height = 80;
+    const width = 300;
+    
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        
+        ctx.clearRect(0, 0, width, height);
+        
+        const maxCount = Math.max(...distribution.map(d => d.count));
+        const padding = 5;
+        const chartWidth = width - padding * 2;
+        const chartHeight = height - padding * 2 - 15; // Extra space for labels
+        
+        // Draw bars
+        distribution.forEach((item, i) => {
+            const barWidth = chartWidth / distribution.length;
+            const barHeight = (item.count / maxCount) * chartHeight;
+            const x = padding + i * barWidth;
+            const y = padding + chartHeight - barHeight;
+            
+            ctx.fillStyle = '#4caf50';
+            ctx.fillRect(x, y, barWidth - 1, barHeight);
+        });
+        
+        // Draw search value marker
+        if (searchValue !== null && !isNaN(searchValue) && searchValue >= min && searchValue <= max) {
+            const normalizedPos = (searchValue - min) / (max - min);
+            const x = padding + normalizedPos * chartWidth;
+            
+            ctx.strokeStyle = '#ff4444';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(x, padding);
+            ctx.lineTo(x, padding + chartHeight);
+            ctx.stroke();
+            
+            // Draw marker dot
+            ctx.fillStyle = '#ff4444';
+            ctx.beginPath();
+            ctx.arc(x, padding + chartHeight, 4, 0, 2 * Math.PI);
+            ctx.fill();
+        }
+        
+        // Draw axis labels
+        ctx.fillStyle = '#aaa';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(min.toFixed(2), padding, height - 2);
+        ctx.textAlign = 'right';
+        ctx.fillText(max.toFixed(2), width - padding, height - 2);
+        
+        if (searchValue !== null && !isNaN(searchValue) && searchValue >= min && searchValue <= max) {
+            const normalizedPos = (searchValue - min) / (max - min);
+            const x = padding + normalizedPos * chartWidth;
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#ff4444';
+            ctx.fillText(searchValue.toFixed(2), x, padding - 2);
+        }
+    }, [distribution, min, max, searchValue]);
+    
+    return (
+        <canvas
+            ref={canvasRef}
+            width={width}
+            height={height}
+            style={{ width: '100%', height: `${height}px`, border: '1px solid #666', borderRadius: '3px' }}
+        />
     );
 };
 
@@ -494,7 +1167,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [frameInfo, setFrameInfo] = useState<{ current: number, total: number, visible: number, epoch?: string, validationLoss?: number } | null>(null);
     const [isPlaying, setIsPlaying] = useState(true); // Start playing automatically
     const [frameInput, setFrameInput] = useState<string>('');
-    const [showDynamicPoints, setShowDynamicPoints] = useState(false);
     const [showDynamicHulls, setShowDynamicHulls] = useState(false);
     const [trailLength, setTrailLength] = useState(12); // Default 12 epochs
     const [spotlightCluster, setSpotlightCluster] = useState<number>(-1); // -1 = off, 0+ = cluster number
@@ -755,7 +1427,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         sphereRefForCountdown.current = sphereRef;
         
         // Update sphere settings based on features
-        sphereRef.showDynamicPoints = showDynamicPoints;
+        sphereRef.showDynamicPoints = false; // Always disabled - not useful
         sphereRef.showDynamicHulls = showDynamicHulls;
         sphereRef.memoryTrailLength = trailLength;
         sphereRef.spotlightCluster = spotlightCluster;
@@ -764,7 +1436,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         compute_cluster_convex_hulls(sphereRef);
         update_cluster_spotlight(sphereRef);
         
-    }, [showDynamicPoints, showDynamicHulls, trailLength, spotlightCluster, sphereRef]);
+    }, [showDynamicHulls, trailLength, spotlightCluster, sphereRef]);
 
     // Frame control functions
     const handlePlayPause = () => {
@@ -900,12 +1572,37 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         }
     };
     
-    // Filter record list for search (same logic as FeatrixSphereColorControls)
+    // Normalize boolean values for matching
+    const normalizeBoolean = (value: any): string | null => {
+        if (value === null || value === undefined) return null;
+        const str = String(value).toLowerCase().trim();
+        // Handle various boolean representations
+        if (str === 'true' || str === '1' || str === 'yes' || str === 'y' || str === 'on') {
+            return 'true';
+        }
+        if (str === 'false' || str === '0' || str === 'no' || str === 'n' || str === 'off') {
+            return 'false';
+        }
+        return null;
+    };
+    
+    // Check if a value looks like a boolean
+    const isBooleanLike = (value: any): boolean => {
+        if (value === null || value === undefined) return false;
+        const normalized = normalizeBoolean(value);
+        return normalized !== null;
+    };
+    
+    // Filter record list for search with improved boolean handling
     const filter_record_list = (queryColumnType: any, queryColumn: any, queryValue: any) => {
         if (!sphereRef || !sphereRef.pointRecordsByID) {
             console.warn('🔍 Search: No sphereRef or pointRecordsByID');
             return [];
         }
+        
+        // Normalize the query value for boolean matching
+        const normalizedQuery = normalizeBoolean(queryValue);
+        const isBooleanQuery = normalizedQuery !== null;
         
         let results: any = [];
         let checked = 0;
@@ -914,32 +1611,87 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
             const columnValue = record.original[queryColumn];
             if (columnValue === undefined) continue;
             
+            let matches = false;
+            
             if (queryColumnType === 'string') {
                 const value = String(columnValue).toLowerCase();
                 const query = String(queryValue).toLowerCase();
-                if (value.includes(query)) {
-                    results.push(record);
+                if (isBooleanQuery) {
+                    // For boolean-like queries, try to match normalized boolean values
+                    const normalizedValue = normalizeBoolean(columnValue);
+                    if (normalizedValue !== null && normalizedValue === normalizedQuery) {
+                        matches = true;
+                    } else if (!normalizedValue) {
+                        // Fallback to string matching if value isn't boolean-like
+                        matches = value.includes(query);
+                    }
+                } else {
+                    matches = value.includes(query);
                 }
             } else if (queryColumnType === 'set') {
                 const value = String(columnValue).toLowerCase();
                 const query = String(queryValue).toLowerCase();
-                if (value === query) {
-                    results.push(record);
+                if (isBooleanQuery) {
+                    // For boolean-like queries, try to match normalized boolean values
+                    const normalizedValue = normalizeBoolean(columnValue);
+                    if (normalizedValue !== null && normalizedValue === normalizedQuery) {
+                        matches = true;
+                    } else if (!normalizedValue) {
+                        // Fallback to exact match if value isn't boolean-like
+                        matches = value === query;
+                    }
+                } else {
+                    matches = value === query;
                 }
             } else if (queryColumnType === 'scalar') {
-                // Handle scalar columns - convert to string for comparison
-                const value = String(columnValue).toLowerCase();
-                const query = String(queryValue).toLowerCase();
-                if (value.includes(query)) {
-                    results.push(record);
+                // Handle scalar columns - check if it's a boolean-like value
+                if (isBooleanQuery) {
+                    const normalizedValue = normalizeBoolean(columnValue);
+                    if (normalizedValue !== null && normalizedValue === normalizedQuery) {
+                        matches = true;
+                    } else if (!normalizedValue) {
+                        // Fallback to numeric/string matching
+                        const value = String(columnValue).toLowerCase();
+                        const query = String(queryValue).toLowerCase();
+                        matches = value.includes(query);
+                    }
+                } else {
+                    // Regular scalar matching
+                    const value = String(columnValue).toLowerCase();
+                    const query = String(queryValue).toLowerCase();
+                    matches = value.includes(query);
                 }
+            }
+            
+            if (matches) {
+                results.push(record);
             }
         }
         console.log(`🔍 Search: Checked ${checked} records, found ${results.length} matches for "${queryValue}" in column "${queryColumn}" (type: ${queryColumnType})`);
         return results;
     };
     
-    // Handle search input
+    // State for search result statistics
+    const [searchResultStats, setSearchResultStats] = useState<{
+        yes: number;
+        no: number;
+        unknown: number;
+        isBoolean: boolean;
+    } | null>(null);
+    const [hideUnknown, setHideUnknown] = useState(false);
+    
+    // Column vocabulary/distribution state
+    const [columnVocabulary, setColumnVocabulary] = useState<{
+        type: 'scalar' | 'set' | 'string';
+        distribution?: Array<{ bin: number, count: number }>; // For scalars
+        vocabulary?: string[]; // For non-scalars
+        min?: number;
+        max?: number;
+        mean?: number;
+        median?: number;
+    } | null>(null);
+    
+    // Handle search input with boolean color coding
     const handleSearchInput = (e: React.ChangeEvent<HTMLInputElement>) => {
         const inputValue = e.target.value;
         setSearchQuery(inputValue);
@@ -958,16 +1710,201 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         if (inputValue === "") {
             clear_colors(sphereRef);
             render_sphere(sphereRef);
+            setSearchResultStats(null);
             return;
         }
         
-        // Filter and highlight results
+        // Filter results
         const queryColumnType = columnTypes[selectedSearchColumn];
         const theRecords = filter_record_list(queryColumnType, selectedSearchColumn, inputValue);
+        
+        // Check if this is a boolean query
+        const normalizedQuery = normalizeBoolean(inputValue);
+        const isBooleanQuery = normalizedQuery !== null;
+        
+        // Categorize results for boolean columns
+        if (isBooleanQuery && theRecords.length > 0) {
+            let yesCount = 0;
+            let noCount = 0;
+            let unknownCount = 0;
+            
+            clear_colors(sphereRef);
+            clear_selected_objects(sphereRef);
+            
+            for (const record of theRecords) {
+                const columnValue = record.original[selectedSearchColumn];
+                const normalizedValue = normalizeBoolean(columnValue);
+                
+                if (normalizedValue === null) {
+                    // Unknown value
+                    unknownCount++;
+                    if (!hideUnknown) {
+                        add_selected_record(sphereRef, record.id);
+                        change_object_color(sphereRef, record.id, '#888888'); // Gray for unknown
+                    }
+                } else if (normalizedValue === 'true') {
+                    // Yes/True
+                    yesCount++;
+                    add_selected_record(sphereRef, record.id);
+                    change_object_color(sphereRef, record.id, '#00ff00'); // Green for yes
+                } else {
+                    // No/False
+                    noCount++;
+                    add_selected_record(sphereRef, record.id);
+                    change_object_color(sphereRef, record.id, '#ff0000'); // Red for no
+                }
+            }
+            
+            setSearchResultStats({
+                yes: yesCount,
+                no: noCount,
+                unknown: unknownCount,
+                isBoolean: true
+            });
+        } else {
+            // Non-boolean search - use default red highlighting
+            show_search_results(sphereRef, theRecords);
+            setSearchResultStats({
+                yes: 0,
+                no: 0,
+                unknown: 0,
+                isBoolean: false
+            });
+        }
+        
         console.log(`🔍 Search: Highlighting ${theRecords.length} records`);
-        show_search_results(sphereRef, theRecords);
         render_sphere(sphereRef);
     };
+    
+    // Fetch vocabulary/distribution when column changes
+    useEffect(() => {
+        if (!selectedSearchColumn || !sphereRef || !sphereRef.pointRecordsByID || !columnTypes) {
+            setColumnVocabulary(null);
+            return;
+        }
+        
+        const colType = columnTypes[selectedSearchColumn];
+        if (!colType) {
+            setColumnVocabulary(null);
+            return;
+        }
+        
+        // Collect all values for this column
+        const values: any[] = [];
+        for (const record of sphereRef.pointRecordsByID.values()) {
+            const val = record.original[selectedSearchColumn];
+            if (val !== undefined && val !== null) {
+                values.push(val);
+            }
+        }
+        
+        if (values.length === 0) {
+            setColumnVocabulary(null);
+            return;
+        }
+        
+        if (colType === 'scalar') {
+            // Calculate distribution for scalar columns
+            const numericValues = values.map(v => {
+                const num = typeof v === 'number' ? v : parseFloat(String(v));
+                return isNaN(num) ? null : num;
+            }).filter(v => v !== null) as number[];
+            
+            if (numericValues.length === 0) {
+                setColumnVocabulary(null);
+                return;
+            }
+            
+            const min = Math.min(...numericValues);
+            const max = Math.max(...numericValues);
+            const sorted = [...numericValues].sort((a, b) => a - b);
+            const mean = numericValues.reduce((a, b) => a + b, 0) / numericValues.length;
+            const median = sorted.length % 2 === 0
+                ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
+                : sorted[Math.floor(sorted.length / 2)];
+            
+            // Create histogram with 20 bins
+            const numBins = 20;
+            const binWidth = (max - min) / numBins;
+            const bins: number[] = new Array(numBins).fill(0);
+            
+            numericValues.forEach(val => {
+                let binIndex = Math.floor((val - min) / binWidth);
+                if (binIndex >= numBins) binIndex = numBins - 1; // Handle edge case
+                bins[binIndex]++;
+            });
+            
+            const distribution = bins.map((count, i) => ({
+                bin: min + (i + 0.5) * binWidth,
+                count: count
+            }));
+            
+            setColumnVocabulary({
+                type: 'scalar',
+                distribution,
+                min,
+                max,
+                mean,
+                median
+            });
+        } else {
+            // For set/string columns, show vocabulary (unique values)
+            const uniqueValues = Array.from(new Set(values.map(v => String(v)))).sort();
+            setColumnVocabulary({
+                type: colType as 'set' | 'string',
+                vocabulary: uniqueValues.slice(0, 100) // Limit to 100 for performance
+            });
+        }
+    }, [selectedSearchColumn, sphereRef, columnTypes]);
+    
+    // Update when hideUnknown changes
+    useEffect(() => {
+        if (searchQuery && sphereRef && columnTypes && selectedSearchColumn) {
+            // Re-trigger search to apply hideUnknown setting
+            const queryColumnType = columnTypes[selectedSearchColumn];
+            const theRecords = filter_record_list(queryColumnType, selectedSearchColumn, searchQuery);
+            const normalizedQuery = normalizeBoolean(searchQuery);
+            const isBooleanQuery = normalizedQuery !== null;
+            
+            if (isBooleanQuery && theRecords.length > 0) {
+                let yesCount = 0;
+                let noCount = 0;
+                let unknownCount = 0;
+                
+                clear_colors(sphereRef);
+                clear_selected_objects(sphereRef);
+                
+                for (const record of theRecords) {
+                    const columnValue = record.original[selectedSearchColumn];
+                    const normalizedValue = normalizeBoolean(columnValue);
+                    
+                    if (normalizedValue === null) {
+                        unknownCount++;
+                        if (!hideUnknown) {
+                            add_selected_record(sphereRef, record.id);
+                            change_object_color(sphereRef, record.id, '#888888');
+                        }
+                    } else if (normalizedValue === 'true') {
+                        yesCount++;
+                        add_selected_record(sphereRef, record.id);
+                        change_object_color(sphereRef, record.id, '#00ff00');
+                    } else {
+                        noCount++;
+                        add_selected_record(sphereRef, record.id);
+                        change_object_color(sphereRef, record.id, '#ff0000');
+                    }
+                }
+                
+                setSearchResultStats({
+                    yes: yesCount,
+                    no: noCount,
+                    unknown: unknownCount,
+                    isBoolean: true
+                });
+                render_sphere(sphereRef);
+            }
+        }
+    }, [hideUnknown]);
 
     if (loading) {
         return (
@@ -977,8 +1914,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 alignItems: 'center',
                 justifyContent: 'center',
                 height: '770px',
-                background: '#000',
-                color: '#fff',
+                background: '#2a2a2a',
+                color: '#d0d0d0',
                 position: 'relative'
             }}>
                 <div style={{
@@ -1000,8 +1937,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         <div style={{ 
                             width: '40px', 
                             height: '40px', 
-                            border: '3px solid #333', 
-                            borderTop: '3px solid #fff',
+                            border: '3px solid #555', 
+                            borderTop: '3px solid #d0d0d0',
                             borderRadius: '50%',
                             animation: 'spin 1s linear infinite',
                             marginBottom: '15px'
@@ -1044,8 +1981,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         <div style={{ 
                             width: '40px', 
                             height: '40px', 
-                            border: '3px solid #333', 
-                            borderTop: '3px solid #fff',
+                            border: '3px solid #555', 
+                            borderTop: '3px solid #d0d0d0',
                             borderRadius: '50%',
                             animation: 'spin 1s linear infinite',
                             marginBottom: '15px'
@@ -1068,7 +2005,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 alignItems: 'center',
                 justifyContent: 'center',
                 height: '770px',
-                background: '#000',
+                background: '#2a2a2a',
                 color: '#ff4444',
                 position: 'relative'
             }}>
@@ -1101,8 +2038,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 alignItems: 'center',
                 justifyContent: 'center',
                 height: '770px',
-                background: '#000',
-                color: '#fff'
+                background: '#2a2a2a',
+                color: '#d0d0d0'
             }}>
                 No training movie data available
             </div>
@@ -1115,8 +2052,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
             width: '100%',
             height: '100vh',
             minHeight: '800px',
-            background: '#000',
-            color: '#fff',
+            background: '#2a2a2a',
+            color: '#d0d0d0',
             overflow: 'hidden'
         }}>
             {/* Sphere Container - Full width in fullscreen, 75% otherwise */}
@@ -1125,7 +2062,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 width: isFullscreen && !showSidePanelInFullscreen ? '100%' : '75%',
                 height: '100vh',
                 position: 'relative',
-                background: '#000',
+                background: '#2a2a2a',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center'
@@ -1139,9 +2076,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             top: '10px',
                             right: showSidePanelInFullscreen ? 'calc(25% + 10px)' : '10px',
                             zIndex: 10000,
-                            background: 'rgba(0, 0, 0, 0.8)',
-                            border: '1px solid #555',
-                            color: '#fff',
+                            background: 'rgba(42, 42, 42, 0.8)',
+                            border: '1px solid #666',
+                            color: '#d0d0d0',
                             padding: '8px 12px',
                             borderRadius: '4px',
                             cursor: 'pointer',
@@ -1161,8 +2098,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         top: '50%',
                         left: '50%',
                         transform: 'translate(-50%, -50%)',
-                        background: 'rgba(0, 0, 0, 0.9)',
-                        color: '#fff',
+                        background: 'rgba(42, 42, 42, 0.9)',
+                        color: '#d0d0d0',
                         padding: '30px 50px',
                         borderRadius: '12px',
                         fontSize: '32px',
@@ -1277,7 +2214,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         justifyContent: 'center',
                         fontSize: '16px',
                         color: '#666',
-                        background: '#111'
+                        background: '#2a2a2a'
                     }}>
                         Initializing 3D sphere...
                     </div>
@@ -1291,13 +2228,13 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 flex: '0 0 25%',
                 width: '25%',
                 height: '100vh',
-                background: '#1a1a1a',
-                borderLeft: '1px solid #333',
+                background: '#3a3a3a',
+                borderLeft: '1px solid #555',
                 overflowY: 'auto',
                 padding: '16px',
                 fontFamily: 'monospace',
                 fontSize: '14px',
-                color: '#fff',
+                color: '#d0d0d0',
                 transition: isFullscreen ? 'transform 0.3s ease' : 'none',
                 transform: isFullscreen && !showSidePanelInFullscreen ? 'translateX(100%)' : 'translateX(0)'
             }}>
@@ -1305,9 +2242,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 <div className="build-display" style={{
                     marginBottom: '16px',
                     padding: '8px',
-                    background: 'rgba(0,0,0,0.8)',
+                    background: 'rgba(42, 42, 42, 0.8)',
                     borderRadius: '6px',
-                    border: '1px solid #555'
+                    border: '1px solid #666'
                 }}>
                     <div style={{ color: '#ff0000', fontSize: '12px' }}>v{BUILD_TIMESTAMP.slice(0, 19).replace('T', ' ')}</div>
                     {/* Training Status */}
@@ -1389,7 +2326,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     )}
                 </div>
 
-                {/* Loss Plot */}
+                {/* Loss Plot with Dual Y-Axis (Validation Loss + Learning Rate) */}
                 {lossData && (() => {
                     // Debug: log lossData structure
                     if (lossData && !lossData.validation_loss) {
@@ -1397,7 +2334,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         console.log('🔍 Loss plot debug - lossData:', lossData);
                     }
                     
-                    // Try different possible structures
+                    // Try different possible structures for validation loss
                     let validationLossData = null;
                     if (lossData.validation_loss && Array.isArray(lossData.validation_loss)) {
                         validationLossData = lossData.validation_loss;
@@ -1416,74 +2353,59 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         return null;
                     }
                     
+                    // Extract learning rate data for dual Y-axis
+                    let learningRateData = null;
+                    
+                    // Debug: log what we have
+                    console.log('🔍 Learning rate extraction - lossData keys:', Object.keys(lossData));
+                    
+                    // Try different possible structures
+                    if (lossData.learning_rate && Array.isArray(lossData.learning_rate)) {
+                        learningRateData = lossData.learning_rate;
+                        console.log('✅ Found learning_rate array:', learningRateData.length);
+                    } else if (lossData.training_info && lossData.training_info.loss_history) {
+                        // Extract learning rate from loss_history
+                        const lossHistory = lossData.training_info.loss_history;
+                        console.log('🔍 Found loss_history with', lossHistory.length, 'items');
+                        console.log('🔍 First item sample:', lossHistory[0]);
+                        
+                        learningRateData = lossHistory
+                            .filter((item: any) => item.current_learning_rate !== undefined || item.learning_rate !== undefined)
+                            .map((item: any) => ({
+                                epoch: item.epoch || item.epoch_number || 0,
+                                value: item.current_learning_rate || item.learning_rate || 0
+                            }));
+                        console.log('✅ Extracted learning rate data:', learningRateData.length, 'points');
+                    } else if (Array.isArray(lossData) && lossData.length > 0 && lossData[0].current_learning_rate !== undefined) {
+                        // If lossData is an array of loss_history items
+                        learningRateData = lossData
+                            .filter((item: any) => item.current_learning_rate !== undefined || item.learning_rate !== undefined)
+                            .map((item: any) => ({
+                                epoch: item.epoch || item.epoch_number || 0,
+                                value: item.current_learning_rate || item.learning_rate || 0
+                            }));
+                        console.log('✅ Extracted learning rate from array:', learningRateData.length, 'points');
+                    }
+                    
+                    if (learningRateData && learningRateData.length > 0) {
+                        console.log('✅ Rendering dual Y-axis plot with validation loss and learning rate');
+                    } else {
+                        console.warn('⚠️ No learning rate data found - showing only validation loss');
+                    }
+                    
                     return (
                         <div style={{ marginBottom: '16px' }}>
                             <LossPlotOverlay 
                                 lossData={validationLossData} 
+                                learningRateData={learningRateData && learningRateData.length > 0 ? learningRateData : undefined}
                                 currentEpoch={frameInfo?.epoch} 
+                                title="Validation Loss"
                                 style={{
                                     width: '100%',
                                     height: '120px',
                                     pointerEvents: 'none'
                                 }}
                             />
-                            {/* Learning Rate Plot */}
-                            {(() => {
-                                let learningRateData = null;
-                                
-                                // Debug: log what we have
-                                console.log('🔍 Learning rate extraction - lossData keys:', Object.keys(lossData));
-                                
-                                // Try different possible structures
-                                if (lossData.learning_rate && Array.isArray(lossData.learning_rate)) {
-                                    learningRateData = lossData.learning_rate;
-                                    console.log('✅ Found learning_rate array:', learningRateData.length);
-                                } else if (lossData.training_info && lossData.training_info.loss_history) {
-                                    // Extract learning rate from loss_history
-                                    const lossHistory = lossData.training_info.loss_history;
-                                    console.log('🔍 Found loss_history with', lossHistory.length, 'items');
-                                    console.log('🔍 First item sample:', lossHistory[0]);
-                                    
-                                    learningRateData = lossHistory
-                                        .filter((item: any) => item.current_learning_rate !== undefined || item.learning_rate !== undefined)
-                                        .map((item: any) => ({
-                                            epoch: item.epoch || item.epoch_number || 0,
-                                            value: item.current_learning_rate || item.learning_rate || 0
-                                        }));
-                                    console.log('✅ Extracted learning rate data:', learningRateData.length, 'points');
-                                } else if (Array.isArray(lossData) && lossData.length > 0 && lossData[0].current_learning_rate !== undefined) {
-                                    // If lossData is an array of loss_history items
-                                    learningRateData = lossData
-                                        .filter((item: any) => item.current_learning_rate !== undefined || item.learning_rate !== undefined)
-                                        .map((item: any) => ({
-                                            epoch: item.epoch || item.epoch_number || 0,
-                                            value: item.current_learning_rate || item.learning_rate || 0
-                                        }));
-                                    console.log('✅ Extracted learning rate from array:', learningRateData.length, 'points');
-                                }
-                                
-                                if (!learningRateData || !Array.isArray(learningRateData) || learningRateData.length === 0) {
-                                    console.warn('⚠️ No learning rate data found');
-                                    return null;
-                                }
-                                
-                                console.log('✅ Rendering learning rate plot with', learningRateData.length, 'points');
-                                
-                                return (
-                                    <div style={{ marginTop: '8px' }}>
-                                        <LossPlotOverlay 
-                                            lossData={learningRateData} 
-                                            currentEpoch={frameInfo?.epoch} 
-                                            title="Learning Rate"
-                                            style={{
-                                                width: '100%',
-                                                height: '100px',
-                                                pointerEvents: 'none'
-                                            }}
-                                        />
-                                    </div>
-                                );
-                            })()}
                         </div>
                     );
                 })()}
@@ -1491,10 +2413,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 {/* Frame Controls */}
                 {frameInfo && frameInfo.total > 0 && (
                     <div style={{
-                        background: 'rgba(0,0,0,0.6)',
+                        background: 'rgba(42, 42, 42, 0.6)',
                         padding: '12px',
                         borderRadius: '8px',
-                        border: '1px solid #555',
+                        border: '1px solid #666',
                         marginBottom: '16px'
                     }}>
                         {/* Scrub Slider */}
@@ -1520,7 +2442,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 }
                             }}
                         >
-                            <span style={{ color: '#fff', fontSize: '14px', minWidth: '45px', flexShrink: 0 }}>Frame:</span>
+                            <span style={{ color: '#d0d0d0', fontSize: '14px', minWidth: '45px', flexShrink: 0 }}>Frame:</span>
                             <input
                                 type="range"
                                 min="1"
@@ -1534,7 +2456,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     minWidth: 0
                                 }}
                             />
-                            <span style={{ color: '#fff', fontSize: '14px', minWidth: '60px', textAlign: 'right', flexShrink: 0 }}>
+                            <span style={{ color: '#d0d0d0', fontSize: '14px', minWidth: '60px', textAlign: 'right', flexShrink: 0 }}>
                                 {frameInfo.current} / {frameInfo.total}
                             </span>
                         </div>
@@ -1548,24 +2470,24 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             justifyContent: 'center',
                             marginBottom: '12px'
                         }}>
-                            <button onClick={handleStepBackward} style={{ background: '#333', border: '1px solid #555', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', flexShrink: 0 }} title="Previous Frame">|&lt;</button>
-                            <button onClick={handlePlayPause} style={{ background: isPlaying ? '#c44' : '#4c4', border: '1px solid #555', color: '#fff', padding: '6px 14px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', minWidth: '50px', fontWeight: 'bold', flexShrink: 0 }} title={isPlaying ? "Pause" : "Play"}>{isPlaying ? '||' : '&gt;'}</button>
-                            <button onClick={handleStepForward} style={{ background: '#333', border: '1px solid #555', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', flexShrink: 0 }} title="Next Frame">&gt;|</button>
+                            <button onClick={handleStepBackward} style={{ background: '#555', border: '1px solid #666', color: '#d0d0d0', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', flexShrink: 0 }} title="Previous Frame">⏮</button>
+                            <button onClick={handlePlayPause} style={{ background: isPlaying ? '#c44' : '#4c4', border: '1px solid #666', color: '#d0d0d0', padding: '6px 14px', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', minWidth: '50px', fontWeight: 'bold', flexShrink: 0 }} title={isPlaying ? "Pause" : "Play"}>{isPlaying ? '⏸' : '▶'}</button>
+                            <button onClick={handleStepForward} style={{ background: '#555', border: '1px solid #666', color: '#d0d0d0', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', flexShrink: 0 }} title="Next Frame">⏭</button>
                             <div style={{ margin: '0 4px', color: '#888', flexShrink: 0 }}>|</div>
-                            <input type="number" value={frameInput} onChange={(e) => setFrameInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleGotoFrame()} placeholder="#" style={{ background: '#222', border: '1px solid #555', color: '#fff', padding: '6px 8px', borderRadius: '4px', width: '60px', fontSize: '14px', flexShrink: 0 }} min="1" max={frameInfo?.total || 1} />
-                            <button onClick={handleGotoFrame} style={{ background: '#333', border: '1px solid #555', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0 }} title="Go to Frame">Go</button>
+                            <input type="number" value={frameInput} onChange={(e) => setFrameInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleGotoFrame()} placeholder="#" style={{ background: '#444', border: '1px solid #666', color: '#d0d0d0', padding: '6px 8px', borderRadius: '4px', width: '60px', fontSize: '14px', flexShrink: 0 }} min="1" max={frameInfo?.total || 1} />
+                            <button onClick={handleGotoFrame} style={{ background: '#555', border: '1px solid #666', color: '#d0d0d0', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', flexShrink: 0 }} title="Go to Frame">✓</button>
                             <div style={{ margin: '0 4px', color: '#888', flexShrink: 0 }}>|</div>
-                            <button onClick={handleStop} style={{ background: '#633', border: '1px solid #555', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0 }} title="Stop">[]</button>
-                            <button onClick={handleReplay} style={{ background: '#333', border: '1px solid #555', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0 }} title="Replay">R</button>
+                            <button onClick={handleStop} style={{ background: '#633', border: '1px solid #666', color: '#d0d0d0', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', flexShrink: 0 }} title="Stop">⏹</button>
+                            <button onClick={handleReplay} style={{ background: '#555', border: '1px solid #666', color: '#d0d0d0', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', flexShrink: 0 }} title="Replay">↻</button>
                         </div>
                     </div>
                 )}
 
                 {/* Search & Bounds Box Controls */}
-                <div style={{ background: 'rgba(0,0,0,0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #555', marginBottom: '16px' }}>
+                <div style={{ background: 'rgba(42, 42, 42, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #666', marginBottom: '16px' }}>
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <button onClick={() => setShowSearch(!showSearch)} style={{ background: showSearch ? '#4c4' : '#333', border: '1px solid #555', color: '#fff', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0 }} title="Toggle Search">Search</button>
-                        <button onClick={() => { setShowBoundsBox(!showBoundsBox); if (sphereRef) { toggle_bounds_box(sphereRef, !showBoundsBox); render_sphere(sphereRef); } }} style={{ background: showBoundsBox ? '#4c4' : '#333', border: '1px solid #555', color: '#fff', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0 }} title="Toggle Bounds Box">Bounds</button>
+                        <button onClick={() => setShowSearch(!showSearch)} style={{ background: showSearch ? '#4c4' : '#555', border: '1px solid #666', color: '#d0d0d0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0 }} title="Toggle Search">Search</button>
+                        <button onClick={() => { setShowBoundsBox(!showBoundsBox); if (sphereRef) { toggle_bounds_box(sphereRef, !showBoundsBox); render_sphere(sphereRef); } }} style={{ background: showBoundsBox ? '#4c4' : '#555', border: '1px solid #666', color: '#d0d0d0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0 }} title="Toggle Bounds Box">Bounds</button>
                     </div>
                     {showBoundsBox && sphereRef && sphereRef.boundsBoxVolumeUtilization !== undefined && (
                         <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #555', fontSize: '13px', color: '#00ff00' }}>
@@ -1579,45 +2501,223 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
 
                 {/* Search Panel - Inline in side panel */}
                 {showSearch && columnTypes && Object.keys(columnTypes).length > 0 && (
-                    <div style={{ background: 'rgba(0,0,0,0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #555', marginBottom: '16px' }}>
+                    <div style={{ background: 'rgba(42, 42, 42, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #666', marginBottom: '16px' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                <label style={{ color: '#fff', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '14px' }}>
+                                <label style={{ color: '#d0d0d0', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '14px' }}>
                                     Column:
-                                    <select value={selectedSearchColumn} onChange={(e) => setSelectedSearchColumn(e.target.value)} style={{ marginLeft: '4px', fontSize: '13px', padding: '4px 6px', backgroundColor: '#333', color: '#fff', border: '1px solid #555', borderRadius: '3px', cursor: 'pointer' }}>
+                                    <select value={selectedSearchColumn} onChange={(e) => setSelectedSearchColumn(e.target.value)} style={{ marginLeft: '4px', fontSize: '13px', padding: '4px 6px', backgroundColor: '#555', color: '#d0d0d0', border: '1px solid #666', borderRadius: '3px', cursor: 'pointer' }}>
                                         {Object.keys(columnTypes).map((col) => (<option key={col} value={col}>{col}</option>))}
                                     </select>
                                 </label>
-                                <input type="text" value={searchQuery} onChange={handleSearchInput} placeholder="Search..." style={{ background: '#222', border: '1px solid #555', color: '#fff', padding: '6px 10px', borderRadius: '3px', fontSize: '14px', flex: 1, minWidth: '150px' }} />
-                                {searchQuery && (<button onClick={() => { setSearchQuery(''); if (sphereRef) { clear_colors(sphereRef); render_sphere(sphereRef); } }} style={{ background: '#633', border: '1px solid #555', color: '#fff', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '13px' }} title="Clear Search">✕</button>)}
+                                {(() => {
+                                    // Get placeholder text based on column type
+                                    const colType = selectedSearchColumn ? columnTypes[selectedSearchColumn] : null;
+                                    let placeholder = 'Type to search...';
+                                    if (colType === 'set') {
+                                        placeholder = 'Type exact value...';
+                                    } else if (colType === 'scalar') {
+                                        placeholder = 'Type number or value...';
+                                    }
+                                    
+                                    // Check if column contains boolean-like values
+                                    let hasBooleanValues = false;
+                                    if (sphereRef && sphereRef.pointRecordsByID && selectedSearchColumn) {
+                                        const sampleValues = new Set<string>();
+                                        for (const record of sphereRef.pointRecordsByID.values()) {
+                                            const val = record.original[selectedSearchColumn];
+                                            if (val !== undefined) {
+                                                if (isBooleanLike(val)) {
+                                                    hasBooleanValues = true;
+                                                    break;
+                                                }
+                                                sampleValues.add(String(val));
+                                                if (sampleValues.size >= 10) break;
+                                            }
+                                        }
+                                    }
+                                    
+                                    return (
+                                        <input 
+                                            type="text" 
+                                            value={searchQuery} 
+                                            onChange={handleSearchInput} 
+                                            placeholder={placeholder}
+                                            style={{ background: '#444', border: '1px solid #666', color: '#d0d0d0', padding: '6px 10px', borderRadius: '3px', fontSize: '14px', flex: 1, minWidth: '150px' }} 
+                                        />
+                                    );
+                                })()}
+                                {searchQuery && (<button onClick={() => { 
+                                    setSearchQuery(''); 
+                                    setSearchResultStats(null);
+                                    if (sphereRef) { 
+                                        clear_colors(sphereRef); 
+                                        render_sphere(sphereRef); 
+                                    } 
+                                }} style={{ background: '#633', border: '1px solid #666', color: '#d0d0d0', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '13px' }} title="Clear Search">✕</button>)}
                             </div>
+                            
+                            {/* Help text for boolean columns */}
+                            {(() => {
+                                if (!selectedSearchColumn || !sphereRef || !sphereRef.pointRecordsByID) return null;
+                                
+                                // Check if this column has boolean-like values
+                                const sampleValues = new Set<string>();
+                                let hasBoolean = false;
+                                for (const record of sphereRef.pointRecordsByID.values()) {
+                                    const val = record.original[selectedSearchColumn];
+                                    if (val !== undefined) {
+                                        if (isBooleanLike(val)) {
+                                            hasBoolean = true;
+                                        }
+                                        sampleValues.add(String(val));
+                                        if (sampleValues.size >= 20) break;
+                                    }
+                                }
+                                
+                                if (hasBoolean) {
+                                    return (
+                                        <div style={{ padding: '8px', background: 'rgba(76, 175, 80, 0.1)', border: '1px solid rgba(76, 175, 80, 0.3)', borderRadius: '4px', fontSize: '12px', color: '#4caf50' }}>
+                                            <strong>Boolean column detected:</strong> Try: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px' }}>true</code>, <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px' }}>1</code>, <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px' }}>yes</code> or <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px' }}>false</code>, <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px' }}>0</code>, <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px' }}>no</code>
+                                        </div>
+                                    );
+                                }
+                                return null;
+                            })()}
+                            
+                            {/* Color Key for Boolean Search Results */}
+                            {searchResultStats && searchResultStats.isBoolean && (
+                                <div style={{ padding: '8px', background: 'rgba(42, 42, 42, 0.8)', border: '1px solid #666', borderRadius: '4px', fontSize: '12px' }}>
+                                    <div style={{ color: '#d0d0d0', fontWeight: 'bold', marginBottom: '6px' }}>Search Results:</div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <div style={{ width: '16px', height: '16px', background: '#00ff00', border: '1px solid #666', borderRadius: '2px' }}></div>
+                                            <span style={{ color: '#d0d0d0' }}>Yes/True: <strong>{searchResultStats.yes}</strong></span>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <div style={{ width: '16px', height: '16px', background: '#ff0000', border: '1px solid #666', borderRadius: '2px' }}></div>
+                                            <span style={{ color: '#d0d0d0' }}>No/False: <strong>{searchResultStats.no}</strong></span>
+                                        </div>
+                                        {searchResultStats.unknown > 0 && (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <div style={{ width: '16px', height: '16px', background: '#888888', border: '1px solid #666', borderRadius: '2px' }}></div>
+                                                <span style={{ color: '#d0d0d0' }}>Unknown: <strong>{searchResultStats.unknown}</strong></span>
+                                                <label style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '11px' }}>
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={hideUnknown} 
+                                                        onChange={(e) => setHideUnknown(e.target.checked)}
+                                                        style={{ cursor: 'pointer', width: '14px', height: '14px' }}
+                                                    />
+                                                    Hide
+                                                </label>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                            
+                            {/* Column Distribution/Vocabulary */}
+                            {columnVocabulary && (
+                                <div style={{ padding: '8px', background: 'rgba(42, 42, 42, 0.8)', border: '1px solid #666', borderRadius: '4px', fontSize: '12px' }}>
+                                    {columnVocabulary.type === 'scalar' && columnVocabulary.distribution && (
+                                        <div>
+                                            <div style={{ color: '#d0d0d0', fontWeight: 'bold', marginBottom: '6px' }}>
+                                                Distribution
+                                                {columnVocabulary.min !== undefined && columnVocabulary.max !== undefined && (
+                                                    <span style={{ fontSize: '11px', fontWeight: 'normal', color: '#aaa', marginLeft: '8px' }}>
+                                                        ({columnVocabulary.min.toFixed(2)} - {columnVocabulary.max.toFixed(2)})
+                                                    </span>
+                                                )}
+                                            </div>
+                                            {columnVocabulary.mean !== undefined && columnVocabulary.median !== undefined && (
+                                                <div style={{ fontSize: '11px', color: '#aaa', marginBottom: '6px' }}>
+                                                    Mean: {columnVocabulary.mean.toFixed(2)} | Median: {columnVocabulary.median.toFixed(2)}
+                                                </div>
+                                            )}
+                                            <DistributionChart 
+                                                distribution={columnVocabulary.distribution}
+                                                min={columnVocabulary.min || 0}
+                                                max={columnVocabulary.max || 0}
+                                                searchValue={searchQuery ? parseFloat(searchQuery) : null}
+                                            />
+                                        </div>
+                                    )}
+                                    {columnVocabulary.type !== 'scalar' && columnVocabulary.vocabulary && (
+                                        <div>
+                                            <div style={{ color: '#d0d0d0', fontWeight: 'bold', marginBottom: '6px' }}>
+                                                Vocabulary ({columnVocabulary.vocabulary.length} unique values)
+                                            </div>
+                                            <div style={{ maxHeight: '150px', overflowY: 'auto', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                                {columnVocabulary.vocabulary.map((val, idx) => (
+                                                    <button
+                                                        key={idx}
+                                                        onClick={() => {
+                                                            setSearchQuery(val);
+                                                            const fakeEvent = { target: { value: val } } as React.ChangeEvent<HTMLInputElement>;
+                                                            handleSearchInput(fakeEvent);
+                                                        }}
+                                                        style={{
+                                                            background: searchQuery === val ? '#4c4' : '#555',
+                                                            border: '1px solid #666',
+                                                            color: '#d0d0d0',
+                                                            padding: '2px 6px',
+                                                            borderRadius: '3px',
+                                                            cursor: 'pointer',
+                                                            fontSize: '11px',
+                                                            whiteSpace: 'nowrap'
+                                                        }}
+                                                        title={`Click to search for: ${val}`}
+                                                    >
+                                                        {val.length > 20 ? val.substring(0, 20) + '...' : val}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                            
                             {/* Example Queries */}
-                            <div style={{ borderTop: '1px solid #555', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                <div style={{ color: '#888', fontSize: '13px', marginBottom: '4px' }}>Example queries:</div>
+                            <div style={{ borderTop: '1px solid #666', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <div style={{ color: '#aaa', fontSize: '13px', marginBottom: '4px' }}>Example values from data:</div>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                                     {(() => {
                                         const examples: string[] = [];
                                         if (selectedSearchColumn && columnTypes[selectedSearchColumn]) {
                                             const colType = columnTypes[selectedSearchColumn];
-                                            if (colType === 'string') {
-                                                examples.push('a', 'test', 'value');
-                                            } else if (colType === 'set') {
-                                                const sampleValues = new Set<string>();
-                                                if (sphereRef && sphereRef.pointRecordsByID) {
-                                                    for (const record of sphereRef.pointRecordsByID.values()) {
-                                                        const val = record.original[selectedSearchColumn];
-                                                        if (val !== undefined) {
-                                                            sampleValues.add(String(val));
-                                                            if (sampleValues.size >= 3) break;
-                                                        }
+                                            const sampleValues = new Set<string>();
+                                            
+                                            if (sphereRef && sphereRef.pointRecordsByID) {
+                                                for (const record of sphereRef.pointRecordsByID.values()) {
+                                                    const val = record.original[selectedSearchColumn];
+                                                    if (val !== undefined) {
+                                                        sampleValues.add(String(val));
+                                                        if (sampleValues.size >= 8) break; // Get more examples
                                                     }
                                                 }
-                                                examples.push(...Array.from(sampleValues).slice(0, 3));
+                                            }
+                                            
+                                            if (colType === 'set' || colType === 'scalar') {
+                                                // For set/scalar, show actual values
+                                                examples.push(...Array.from(sampleValues).slice(0, 8));
+                                            } else if (colType === 'string') {
+                                                // For strings, show first few unique values
+                                                examples.push(...Array.from(sampleValues).slice(0, 5));
                                             }
                                         }
                                         return examples.length > 0 ? examples.map((ex, idx) => (
-                                            <button key={idx} onClick={() => { setSearchQuery(ex); if (sphereRef && columnTypes && selectedSearchColumn) { const queryColumnType = columnTypes[selectedSearchColumn]; const theRecords = filter_record_list(queryColumnType, selectedSearchColumn, ex); show_search_results(sphereRef, theRecords); render_sphere(sphereRef); } }} style={{ background: '#444', border: '1px solid #666', color: '#fff', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '13px' }}>{ex}</button>
-                                        )) : null;
+                                            <button key={idx} onClick={() => { 
+                                                setSearchQuery(ex); 
+                                                // Trigger search using the same handler
+                                                if (sphereRef && columnTypes && selectedSearchColumn) {
+                                                    const fakeEvent = { target: { value: ex } } as React.ChangeEvent<HTMLInputElement>;
+                                                    handleSearchInput(fakeEvent);
+                                                }
+                                            }} style={{ background: '#555', border: '1px solid #777', color: '#d0d0d0', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '13px' }} title={`Click to search for: ${ex}`}>{ex.length > 15 ? ex.substring(0, 15) + '...' : ex}</button>
+                                        )) : (
+                                            <div style={{ color: '#888', fontSize: '12px', fontStyle: 'italic' }}>No sample values found</div>
+                                        );
                                     })()}
                                 </div>
                             </div>
@@ -1627,28 +2727,25 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
 
                 {/* Visual Controls */}
                 {frameInfo && (
-                    <div style={{ background: 'rgba(0,0,0,0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #555', marginBottom: '16px' }}>
-                        <div style={{ color: '#fff', fontSize: '16px', fontWeight: 'bold', marginBottom: '8px' }}>Visual Controls</div>
+                    <div style={{ background: 'rgba(42, 42, 42, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #666', marginBottom: '16px' }}>
+                        <div style={{ color: '#d0d0d0', fontSize: '16px', fontWeight: 'bold', marginBottom: '8px' }}>Visual Controls</div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            <label style={{ color: '#fff', fontSize: '14px', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                                <input type="checkbox" checked={showDynamicPoints} onChange={(e) => { console.log('🔹 Point sizing toggled:', e.target.checked); setShowDynamicPoints(e.target.checked); }} style={{ marginRight: '8px', cursor: 'pointer', width: '16px', height: '16px' }} />
-                                Dynamic Point Sizing
+                            <label style={{ color: frameInfo.visible >= 4 ? '#d0d0d0' : '#888', fontSize: '14px', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                                <input type="checkbox" checked={showDynamicHulls} onChange={(e) => { console.log('🔮 Cluster spheres toggled:', e.target.checked, 'clusters:', frameInfo.visible); setShowDynamicHulls(e.target.checked); }} style={{ marginRight: '8px', cursor: 'pointer', width: '16px', height: '16px' }} disabled={frameInfo.visible < 4} />
+                                Show Cluster Spheres
+                                <span style={{ fontSize: '12px', color: '#888', marginLeft: '8px' }}>({frameInfo.visible} clusters - translucent spheres around each cluster)</span>
                             </label>
-                            <label style={{ color: frameInfo.visible >= 4 ? '#fff' : '#888', fontSize: '14px', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                                <input type="checkbox" checked={showDynamicHulls} onChange={(e) => { console.log('🔮 Sphere sizing toggled:', e.target.checked, 'clusters:', frameInfo.visible); setShowDynamicHulls(e.target.checked); }} style={{ marginRight: '8px', cursor: 'pointer', width: '16px', height: '16px' }} disabled={frameInfo.visible < 4} />
-                                Dynamic Spheres ({frameInfo.visible} clusters)
-                            </label>
-                            <div style={{ marginTop: '8px', borderTop: '1px solid #555', paddingTop: '8px' }}>
-                                <label style={{ color: '#fff', fontSize: '14px', display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
+                            <div style={{ marginTop: '8px', borderTop: '1px solid #666', paddingTop: '8px' }}>
+                                <label style={{ color: '#d0d0d0', fontSize: '14px', display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
                                     Trail Length:
                                     <input type="range" min="2" max="15" value={trailLength} onChange={(e) => { const newLength = parseInt(e.target.value); console.log('🛤️ Trail length changed:', newLength); setTrailLength(newLength); }} style={{ marginLeft: '8px', marginRight: '8px', cursor: 'pointer', flex: 1 }} />
-                                    <span style={{ fontSize: '14px', color: '#ccc', minWidth: '20px' }}>{trailLength}</span>
+                                    <span style={{ fontSize: '14px', color: '#aaa', minWidth: '20px' }}>{trailLength}</span>
                                 </label>
                             </div>
-                            <div style={{ marginTop: '8px', borderTop: '1px solid #555', paddingTop: '8px' }}>
-                                <label style={{ color: '#fff', fontSize: '14px', display: 'flex', alignItems: 'center' }}>
+                            <div style={{ marginTop: '8px', borderTop: '1px solid #666', paddingTop: '8px' }}>
+                                <label style={{ color: '#d0d0d0', fontSize: '14px', display: 'flex', alignItems: 'center' }}>
                                     Focus Cluster:
-                                    <select value={spotlightCluster} onChange={(e) => { const cluster = parseInt(e.target.value); console.log('🎯 Spotlight cluster changed:', cluster); setSpotlightCluster(cluster); if (sphereRef) { sphereRef.spotlightCluster = cluster; update_cluster_spotlight(sphereRef); render_sphere(sphereRef); } }} style={{ marginLeft: '8px', fontSize: '13px', padding: '4px 6px', backgroundColor: '#333', color: '#fff', border: '1px solid #555', borderRadius: '3px', cursor: 'pointer', flex: 1 }}>
+                                    <select value={spotlightCluster} onChange={(e) => { const cluster = parseInt(e.target.value); console.log('🎯 Spotlight cluster changed:', cluster); setSpotlightCluster(cluster); if (sphereRef) { sphereRef.spotlightCluster = cluster; update_cluster_spotlight(sphereRef); render_sphere(sphereRef); } }} style={{ marginLeft: '8px', fontSize: '13px', padding: '4px 6px', backgroundColor: '#555', color: '#d0d0d0', border: '1px solid #666', borderRadius: '3px', cursor: 'pointer', flex: 1 }}>
                                         <option value={-1}>Off</option>
                                         {frameInfo.visible > 0 && Array.from({length: frameInfo.visible}, (_, i) => (<option key={i} value={i}>C{i}</option>))}
                                     </select>
@@ -1659,18 +2756,18 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 )}
 
                 {/* Other Controls */}
-                <div style={{ background: 'rgba(0,0,0,0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #555', marginBottom: '16px' }}>
+                <div style={{ background: 'rgba(42, 42, 42, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #666', marginBottom: '16px' }}>
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                        <button onClick={() => setShowClusterDebug(!showClusterDebug)} style={{ background: showClusterDebug ? '#4c4' : '#333', border: '1px solid #555', color: '#fff', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }} title="Toggle Cluster Inspector">Debug</button>
-                        <button onClick={() => setShowColorLegend(!showColorLegend)} style={{ background: showColorLegend ? '#4c4' : '#333', border: '1px solid #555', color: '#fff', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }} title="Toggle Color Legend">Colors</button>
-                        <button onClick={toggleFullscreen} style={{ background: isFullscreen ? '#4c4' : '#333', border: '1px solid #555', color: '#fff', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }} title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}>{isFullscreen ? 'Exit' : 'Full'}</button>
-                        <button onClick={() => setRotationEnabled(!rotationEnabled)} style={{ background: rotationEnabled ? '#4c4' : '#c44', border: '1px solid #555', color: '#fff', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }} title={rotationEnabled ? "Disable Rotation" : "Enable Rotation"}>{rotationEnabled ? 'On' : 'Off'}</button>
+                        <button onClick={() => setShowClusterDebug(!showClusterDebug)} style={{ background: showClusterDebug ? '#4c4' : '#555', border: '1px solid #666', color: '#d0d0d0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }} title="Toggle Cluster Inspector">Debug</button>
+                        <button onClick={() => setShowColorLegend(!showColorLegend)} style={{ background: showColorLegend ? '#4c4' : '#555', border: '1px solid #666', color: '#d0d0d0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }} title="Toggle Color Legend">Colors</button>
+                        <button onClick={toggleFullscreen} style={{ background: isFullscreen ? '#4c4' : '#555', border: '1px solid #666', color: '#d0d0d0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }} title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}>{isFullscreen ? 'Exit' : 'Full'}</button>
+                        <button onClick={() => setRotationEnabled(!rotationEnabled)} style={{ background: rotationEnabled ? '#4c4' : '#c44', border: '1px solid #666', color: '#d0d0d0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }} title={rotationEnabled ? "Disable Rotation" : "Enable Rotation"}>{rotationEnabled ? 'On' : 'Off'}</button>
                     </div>
                 </div>
 
                 {/* Color Legend - Inline in side panel */}
                 {showColorLegend && frameInfo && (
-                    <div style={{ background: 'rgba(0,0,0,0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #555', marginBottom: '16px' }}>
+                    <div style={{ background: 'rgba(42, 42, 42, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #666', marginBottom: '16px' }}>
                         <div style={{ color: '#4c4', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center', fontSize: '16px' }}>Cluster Colors</div>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
                             {frameInfo.visible > 0 && Array.from({length: frameInfo.visible}, (_, i) => {
@@ -1686,7 +2783,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
 
                 {/* Cluster Debug Panel - Inline in side panel */}
                 {showClusterDebug && (
-                    <div style={{ background: 'rgba(0,0,0,0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #555', marginBottom: '16px' }}>
+                    <div style={{ background: 'rgba(42, 42, 42, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #666', marginBottom: '16px' }}>
                         <div style={{ color: '#4c4', fontWeight: 'bold', marginBottom: '8px', fontSize: '16px' }}>Cluster Inspector</div>
                         {frameInfo && (<div style={{ marginBottom: '8px', fontSize: '14px' }}><div>Frame: {frameInfo.current}/{frameInfo.total}</div><div>Visible Clusters: {frameInfo.visible}</div><div>Epoch: {frameInfo.epoch || 'unknown'}</div></div>)}
                         {selectedPointInfo && (<div style={{ marginTop: '8px', borderTop: '1px solid #444', paddingTop: '8px', fontSize: '13px' }}><div style={{ color: '#ff4', fontWeight: 'bold' }}>Selected Point:</div><div>Record ID: {selectedPointInfo.recordId}</div><div>Row Offset: {selectedPointInfo.rowOffset}</div><div>Cluster ID: {selectedPointInfo.clusterId}</div><div>Color: <span style={{ background: selectedPointInfo.color, padding: '2px 6px', borderRadius: '2px' }}>{selectedPointInfo.color}</span></div><div>Position: {selectedPointInfo.position}</div></div>)}
