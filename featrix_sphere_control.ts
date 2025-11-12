@@ -723,7 +723,11 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
         return epochA - epochB;
     });
     const totalFrames = epochKeys.length;
-    const frameDelay = (durationSeconds * 1000) / totalFrames;
+    
+    // Fixed duration per frame (1 second per frame) - total duration scales with frame count
+    // This ensures smooth animation regardless of how many epochs we have
+    const fixedFrameDuration = 1000; // 1 second per frame
+    const frameDelay = fixedFrameDuration;
     
 
     
