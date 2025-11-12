@@ -620,6 +620,93 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         loadTrainingData();
     }, [sessionId, apiBaseUrl]); // Load when sessionId or apiBaseUrl changes
 
+    // Poll for new epochs if training is in progress
+    useEffect(() => {
+        if (!sessionId || !trainingData) return;
+
+        const checkForNewEpochs = async () => {
+            try {
+                // Check session status to see if training is in progress
+                const sessionStatus = await fetch_session_status(sessionId, apiBaseUrl);
+                if (!sessionStatus) return;
+
+                // Check if training is still in progress
+                const isTraining = sessionStatus.session?.status === 'training' || 
+                                  sessionStatus.session?.status === 'running' ||
+                                  sessionStatus.session?.status === 'pending';
+                if (!isTraining) {
+                    console.log('✅ Training complete or not in progress, stopping epoch polling');
+                    return;
+                }
+
+                // Get current epoch keys
+                const currentEpochKeys = Object.keys(trainingData);
+                const currentMaxEpoch = Math.max(...currentEpochKeys.map(k => {
+                    const epochNum = parseInt(k.replace('epoch_', ''));
+                    return isNaN(epochNum) ? 0 : epochNum;
+                }));
+
+                // Fetch latest epoch projections to see if there are new epochs
+                const latestData = await fetch_training_metrics(sessionId, apiBaseUrl);
+                if (latestData && latestData.epoch_projections) {
+                    const newEpochKeys = Object.keys(latestData.epoch_projections);
+                    const newMaxEpoch = Math.max(...newEpochKeys.map(k => {
+                        const epochNum = parseInt(k.replace('epoch_', ''));
+                        return isNaN(epochNum) ? 0 : epochNum;
+                    }));
+
+                    if (newMaxEpoch > currentMaxEpoch) {
+                        console.log(`🆕 New epoch detected! Current: ${currentMaxEpoch}, New: ${newMaxEpoch}`);
+                        
+                        // Find all new epochs
+                        const newEpochs: Record<string, any> = {};
+                        newEpochKeys.forEach(epochKey => {
+                            const epochNum = parseInt(epochKey.replace('epoch_', ''));
+                            if (epochNum > currentMaxEpoch && !trainingData[epochKey]) {
+                                newEpochs[epochKey] = latestData.epoch_projections[epochKey];
+                            }
+                        });
+
+                        if (Object.keys(newEpochs).length > 0) {
+                            console.log(`📥 Adding ${Object.keys(newEpochs).length} new epochs to training movie`);
+                            
+                            // Merge new epochs into existing training data
+                            const updatedTrainingData = {
+                                ...trainingData,
+                                ...newEpochs
+                            };
+                            
+                            setTrainingData(updatedTrainingData);
+                            
+                            // Update sphere with new epochs if it's already loaded
+                            if (sphereRef && sphereRef.trainingMovieData) {
+                                sphereRef.trainingMovieData = updatedTrainingData;
+                                console.log('🔄 Updated sphere training movie data with new epochs');
+                            }
+
+                            // Update loss data if available
+                            if (latestData.training_metrics) {
+                                setLossData(latestData.training_metrics);
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.warn('⚠️ Error checking for new epochs:', error);
+            }
+        };
+
+        // Poll every 30 seconds
+        const pollInterval = setInterval(checkForNewEpochs, 30000);
+        
+        // Check immediately on mount
+        checkForNewEpochs();
+
+        return () => {
+            clearInterval(pollInterval);
+        };
+    }, [sessionId, apiBaseUrl, trainingData, sphereRef]);
+
     // Handle dynamic visualization feature changes
     useEffect(() => {
         if (!sphereRef) return;
