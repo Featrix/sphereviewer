@@ -1278,9 +1278,9 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
         
         // Start smooth interpolation to target positions
         // Calculate optimal interpolation duration based on frame timing
-        const epochKeys = Object.keys(sphere.trainingMovieData || {});
-        const frameDelay = (10 * 1000) / epochKeys.length; // Same calc as play_training_movie
-        const interpolationDuration = Math.max(50, frameDelay * 0.8); // 80% of frame delay to finish before next frame
+        // Fixed 1 second per frame (matches play_training_movie)
+        const fixedFrameDuration = 1000; // 1 second per frame
+        const interpolationDuration = Math.max(50, fixedFrameDuration * 0.8); // 80% of frame delay to finish before next frame
         
         start_point_interpolation(sphere, targetPositions, interpolationDuration);
         
