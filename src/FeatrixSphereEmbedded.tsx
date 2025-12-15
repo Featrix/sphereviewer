@@ -15,8 +15,9 @@ import { fetch_session_data, fetch_session_projections, fetch_training_metrics, 
 import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 
-// Build timestamp for cache busting verification
+// Build timestamp for cache busting verification - set at module load time
 const BUILD_TIMESTAMP = new Date().toISOString();
+console.log('🔨 BUILD TIMESTAMP:', BUILD_TIMESTAMP);
 
 // Loss Plot Screen Overlay Component - MUCH BETTER VERSION with Dual Y-Axis Support and Zoom
 const LossPlotOverlay: React.FC<{
@@ -1157,7 +1158,7 @@ const TrainingMovieSphere: React.FC<{
             set_visual_options(sphereRef.current, 0.025, 0.9);
             
             // Load training movie data (like it was working)
-            load_training_movie(sphereRef.current, trainingData, lossData);
+            load_training_movie(sphereRef.current, trainingData, lossData, sessionProjections);
             
             // Force initial resize to fill container completely
             if (actualContainerRef.current && sphereRef.current) {
@@ -1370,8 +1371,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     console.log('✅ Got training movie data from API:', Object.keys(apiTrainingData.epoch_projections).length, 'epochs');
                     console.log('✅ Using finalClusterResults for cluster assignments, ignoring deprecated cluster_pre');
                     
-                    // Try to fetch final projections for cluster results
+                    // Try to fetch final projections for cluster results AND full dataset
                     let clusterResults = {};
+                    let fullProjectionsCoords: any[] = [];
                     try {
                         const baseUrl = apiBaseUrl || (window.location.hostname === 'localhost' 
                             ? window.location.origin + '/proxy/featrix'
@@ -1384,16 +1386,31 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 clusterResults = projectionsData.projections.entire_cluster_results;
                                 console.log('✅ Found cluster results in final projections:', Object.keys(clusterResults).length, 'cluster counts');
                             }
+                            // CRITICAL: Get full dataset coords (not just sampled training movie data)
+                            console.log('🔍 DEBUG: projectionsData structure:', {
+                                hasProjections: !!projectionsData.projections,
+                                projectionsKeys: projectionsData.projections ? Object.keys(projectionsData.projections) : [],
+                                hasCoords: !!projectionsData.projections?.coords,
+                                coordsLength: projectionsData.projections?.coords?.length || 0
+                            });
+                            if (projectionsData.projections?.coords) {
+                                fullProjectionsCoords = projectionsData.projections.coords;
+                                console.log(`✅ Found full dataset: ${fullProjectionsCoords.length} points (vs ${apiTrainingData.epoch_projections[Object.keys(apiTrainingData.epoch_projections)[0]].coords.length} sampled)`);
+                            } else {
+                                console.warn('⚠️ Full dataset coords not found in projections response. Response structure:', Object.keys(projectionsData));
+                            }
                         }
                     } catch (err) {
                         console.warn('⚠️ Could not fetch final projections for cluster results:', err);
                     }
                     
                     setTrainingData(apiTrainingData.epoch_projections);
-                    // Use API data for session projections with cluster results
+                    // Use API data for session projections with cluster results AND full dataset coords
                     const sessionData = {
                         ...apiTrainingData,
-                        entire_cluster_results: clusterResults
+                        entire_cluster_results: clusterResults,
+                        // CRITICAL: Use full dataset coords if available, otherwise fall back to sampled
+                        coords: fullProjectionsCoords.length > 0 ? fullProjectionsCoords : (apiTrainingData.epoch_projections[Object.keys(apiTrainingData.epoch_projections)[0]]?.coords || [])
                     };
                     setSessionProjections(sessionData);
                     
@@ -1507,7 +1524,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 stop_training_movie(sphereRef);
                                 
                                 // Reload training movie with updated data
-                                load_training_movie(sphereRef, updatedTrainingData, latestData.training_metrics || lossData);
+                                load_training_movie(sphereRef, updatedTrainingData, latestData.training_metrics || lossData, sessionProjections);
                                 
                                 // Reset to frame 1 and replay
                                 goto_training_movie_frame(sphereRef, 1);
@@ -1551,10 +1568,13 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         };
     }, [sessionId, apiBaseUrl, trainingData, sphereRef]);
     
-    // Set loading status when loading
+    // Set loading status when loading - clear it when loading completes
     useEffect(() => {
         if (loading) {
             setTrainingStatus('loading');
+        } else {
+            // Clear loading status when loading completes (unless already set to training/completed)
+            setTrainingStatus(prev => prev === 'loading' ? null : prev);
         }
     }, [loading]);
 
@@ -1734,8 +1754,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     
     // Filter record list for search with improved boolean handling
     const filter_record_list = (queryColumnType: any, queryColumn: any, queryValue: any) => {
-        if (!sphereRef || !sphereRef.pointRecordsByID) {
-            console.warn('🔍 Search: No sphereRef or pointRecordsByID');
+        if (!sphereRef || !sphereRef.current || !sphereRef.current.pointRecordsByID) {
+            console.warn('🔍 Search: No sphereRef or pointRecordsByID', { 
+                hasSphereRef: !!sphereRef, 
+                hasCurrent: !!sphereRef?.current,
+                hasPointRecordsByID: !!sphereRef?.current?.pointRecordsByID 
+            });
             return [];
         }
         
@@ -1745,7 +1769,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         
         let results: any = [];
         let checked = 0;
-        for (const record of sphereRef.pointRecordsByID.values()) {
+        for (const record of sphereRef.current.pointRecordsByID.values()) {
             checked++;
             const columnValue = record.original[queryColumn];
             if (columnValue === undefined) continue;
@@ -1949,62 +1973,96 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         }
     }, [colorRules.length, sphereRef]); // Only depend on length, not the array itself
     
+    // Extract search submit logic to reusable function
+    const handleSearchSubmit = () => {
+        console.log('🔍🔍🔍 handleSearchSubmit CALLED!', { 
+            sphereRef: !!sphereRef, 
+            sphereRefCurrent: !!sphereRef?.current,
+            sphereRefType: typeof sphereRef,
+            columnTypes: !!columnTypes,
+            columnTypesKeys: columnTypes ? Object.keys(columnTypes) : null,
+            selectedSearchColumn, 
+            searchQuery: searchQuery,
+            searchQueryTrimmed: searchQuery.trim(),
+            searchQueryLength: searchQuery.trim().length
+        });
+        
+        if (!sphereRef || !sphereRef.current) {
+            console.error('🔍❌ Missing sphereRef or sphereRef.current', { 
+                hasSphereRef: !!sphereRef,
+                hasCurrent: !!sphereRef?.current 
+            });
+            return;
+        }
+        
+        if (!columnTypes) {
+            console.error('🔍❌ Missing columnTypes');
+            return;
+        }
+        
+        if (!selectedSearchColumn) {
+            console.error('🔍❌ Missing selectedSearchColumn');
+            return;
+        }
+        
+        if (!searchQuery.trim()) {
+            console.error('🔍❌ Empty search query');
+            return;
+        }
+        
+        console.log('🔍✅ All requirements met, proceeding with search...');
+        
+        // Filter results
+        const queryColumnType = columnTypes[selectedSearchColumn];
+        console.log('🔍 Query column type:', queryColumnType, 'for column:', selectedSearchColumn);
+        
+        const theRecords = filter_record_list(queryColumnType, selectedSearchColumn, searchQuery.trim());
+        
+        console.log(`🔍 Found ${theRecords.length} records for query "${searchQuery.trim()}"`);
+        console.log('🔍 First 5 records:', theRecords.slice(0, 5).map(r => ({ id: r.id, value: r.original[selectedSearchColumn] })));
+        
+        if (theRecords.length === 0) {
+            console.warn('🔍⚠️ No results found for search query');
+            alert(`No results found for "${searchQuery.trim()}" in column "${selectedSearchColumn}"`);
+            return;
+        }
+        
+        // Get next color from palette
+        const colorIndex = colorRules.length % colorPalette.length;
+        const color = colorPalette[colorIndex];
+        
+        // Create new color rule
+        const newRule = {
+            id: uuid4(),
+            query: searchQuery.trim(),
+            column: selectedSearchColumn,
+            color: color,
+            recordIds: theRecords.map(r => r.id)
+        };
+        
+        console.log(`🎨 Creating color rule:`, newRule);
+        
+        // Add to color rules
+        setColorRules(prev => {
+            const updated = [...prev, newRule];
+            console.log(`🎨 Color rules updated: ${updated.length} rules`);
+            return updated;
+        });
+        
+        // Clear search input
+        setSearchQuery('');
+        setSearchResultStats(null);
+        
+        console.log(`✅ Color rule created: "${newRule.query}" in column "${newRule.column}" with color ${newRule.color} for ${newRule.recordIds.length} records`);
+    };
+    
     // Handle Enter key to create color rule
     const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
             e.preventDefault();
             e.stopPropagation();
-            
-            console.log('🔍 Enter pressed!', { 
-                sphereRef: !!sphereRef, 
-                columnTypes: !!columnTypes, 
-                selectedSearchColumn, 
-                searchQuery: searchQuery.trim() 
-            });
-            
-            if (!sphereRef || !columnTypes || !selectedSearchColumn || !searchQuery.trim()) {
-                console.warn('🔍 Missing requirements for color rule');
-                return;
-            }
-            
-            // Filter results
-            const queryColumnType = columnTypes[selectedSearchColumn];
-            const theRecords = filter_record_list(queryColumnType, selectedSearchColumn, searchQuery.trim());
-            
-            console.log(`🔍 Found ${theRecords.length} records for query "${searchQuery.trim()}"`);
-            
-            if (theRecords.length === 0) {
-                console.warn('🔍 No results found for search query');
-                return;
-            }
-            
-            // Get next color from palette
-            const colorIndex = colorRules.length % colorPalette.length;
-            const color = colorPalette[colorIndex];
-            
-            // Create new color rule
-            const newRule = {
-                id: uuid4(),
-                query: searchQuery.trim(),
-                column: selectedSearchColumn,
-                color: color,
-                recordIds: theRecords.map(r => r.id)
-            };
-            
-            console.log(`🎨 Creating color rule:`, newRule);
-            
-            // Add to color rules
-            setColorRules(prev => {
-                const updated = [...prev, newRule];
-                console.log(`🎨 Color rules updated: ${updated.length} rules`);
-                return updated;
-            });
-            
-            // Clear search input
-            setSearchQuery('');
-            setSearchResultStats(null);
-            
-            console.log(`✅ Color rule created: "${newRule.query}" in column "${newRule.column}" with color ${newRule.color} for ${newRule.recordIds.length} records`);
+            console.log('🔍 Enter key pressed, calling handleSearchSubmit');
+            handleSearchSubmit();
         }
     };
     
@@ -2080,7 +2138,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     
     // Fetch vocabulary/distribution when column changes
     useEffect(() => {
-        if (!selectedSearchColumn || !sphereRef || !sphereRef.pointRecordsByID || !columnTypes) {
+        if (!selectedSearchColumn || !sphereRef || !sphereRef.current || !sphereRef.current.pointRecordsByID || !columnTypes) {
             setColumnVocabulary(null);
             return;
         }
@@ -2093,7 +2151,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         
         // Collect all values for this column
         const values: any[] = [];
-        for (const record of sphereRef.pointRecordsByID.values()) {
+        for (const record of sphereRef.current.pointRecordsByID.values()) {
             const val = record.original[selectedSearchColumn];
             if (val !== undefined && val !== null) {
                 values.push(val);
@@ -2358,6 +2416,27 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
             color: '#d0d0d0',
             overflow: 'hidden'
         }}>
+            {/* Build Timestamp - ALWAYS VISIBLE in top-right corner */}
+            <div style={{
+                position: 'fixed',
+                top: '10px',
+                right: isFullscreen && !showSidePanelInFullscreen ? '10px' : 'calc(25% + 10px)',
+                zIndex: 10001,
+                fontSize: '14px',
+                fontWeight: 'bold',
+                color: '#ff0000',
+                fontFamily: 'monospace',
+                background: 'rgba(255, 0, 0, 0.3)',
+                padding: '6px 10px',
+                borderRadius: '4px',
+                border: '2px solid rgba(255, 0, 0, 0.8)',
+                pointerEvents: 'none',
+                transition: 'right 0.3s ease',
+                boxShadow: '0 2px 8px rgba(255, 0, 0, 0.5)'
+            }}>
+                🔨 BUILD: {BUILD_TIMESTAMP.slice(0, 19).replace('T', ' ')}
+            </div>
+            
             {/* Sphere Container - ALWAYS FILLS AVAILABLE SPACE */}
             <div style={{
                 flex: isFullscreen && !showSidePanelInFullscreen ? '1 1 100%' : '1 1 75%',
@@ -3024,9 +3103,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     
                                     // Check if column contains boolean-like values
                                     let hasBooleanValues = false;
-                                    if (sphereRef && sphereRef.pointRecordsByID && selectedSearchColumn) {
+                                    if (sphereRef && sphereRef.current && sphereRef.current.pointRecordsByID && selectedSearchColumn) {
                                         const sampleValues = new Set<string>();
-                                        for (const record of sphereRef.pointRecordsByID.values()) {
+                                        for (const record of sphereRef.current.pointRecordsByID.values()) {
                                             const val = record.original[selectedSearchColumn];
                                             if (val !== undefined) {
                                                 if (isBooleanLike(val)) {
@@ -3040,21 +3119,44 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     }
                                     
                                     return (
-                                        <input 
-                                            type="text" 
-                                            value={searchQuery} 
-                                            onChange={handleSearchInput}
-                                            onKeyDown={handleSearchKeyDown}
-                                            placeholder={placeholder + ' (Press Enter to create color rule)'}
-                                            style={{ background: '#444', border: '1px solid #666', color: '#d0d0d0', padding: '6px 10px', borderRadius: '3px', fontSize: '14px', flex: 1, minWidth: '150px' }} 
-                                        />
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
+                                            <input 
+                                                type="text" 
+                                                value={searchQuery} 
+                                                onChange={handleSearchInput}
+                                                onKeyDown={handleSearchKeyDown}
+                                                placeholder={placeholder + ' (Press Enter or click Go)'}
+                                                style={{ background: '#444', border: '1px solid #666', color: '#d0d0d0', padding: '6px 10px', borderRadius: '3px', fontSize: '14px', flex: 1, minWidth: '150px' }} 
+                                            />
+                                            <button 
+                                                onClick={() => {
+                                                    console.log('🔍🔍🔍 GO BUTTON CLICKED!', { searchQuery, selectedSearchColumn });
+                                                    handleSearchSubmit();
+                                                }}
+                                                disabled={!searchQuery.trim()}
+                                                style={{ 
+                                                    background: searchQuery.trim() ? '#4a4' : '#555', 
+                                                    border: '1px solid #666', 
+                                                    color: '#d0d0d0', 
+                                                    padding: '6px 12px', 
+                                                    borderRadius: '3px', 
+                                                    cursor: searchQuery.trim() ? 'pointer' : 'not-allowed', 
+                                                    fontSize: '13px',
+                                                    fontWeight: 'bold',
+                                                    opacity: searchQuery.trim() ? 1 : 0.5
+                                                }} 
+                                                title="Create color rule from search"
+                                            >
+                                                GO
+                                            </button>
+                                        </div>
                                     );
                                 })()}
                                 {searchQuery && (<button onClick={() => { 
                                     setSearchQuery(''); 
                                     setSearchResultStats(null);
                                     applyColorRules();
-                                }} style={{ background: '#633', border: '1px solid #666', color: '#d0d0d0', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '13px' }} title="Clear Search">✕</button>)}
+                                }} style={{ background: '#633', border: '1px solid #666', color: '#d0d0d0', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '13px', marginLeft: '4px' }} title="Clear Search">✕</button>)}
                             </div>
                             
                             {/* Color Rules List - Always show, even when empty */}
@@ -3125,12 +3227,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             
                             {/* Help text for boolean columns */}
                             {(() => {
-                                if (!selectedSearchColumn || !sphereRef || !sphereRef.pointRecordsByID) return null;
+                                if (!selectedSearchColumn || !sphereRef || !sphereRef.current || !sphereRef.current.pointRecordsByID) return null;
                                 
                                 // Check if this column has boolean-like values
                                 const sampleValues = new Set<string>();
                                 let hasBoolean = false;
-                                for (const record of sphereRef.pointRecordsByID.values()) {
+                                for (const record of sphereRef.current.pointRecordsByID.values()) {
                                     const val = record.original[selectedSearchColumn];
                                     if (val !== undefined) {
                                         if (isBooleanLike(val)) {
@@ -3254,8 +3356,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                             const colType = columnTypes[selectedSearchColumn];
                                             const sampleValues = new Set<string>();
                                             
-                                            if (sphereRef && sphereRef.pointRecordsByID) {
-                                                for (const record of sphereRef.pointRecordsByID.values()) {
+                                            if (sphereRef && sphereRef.current && sphereRef.current.pointRecordsByID) {
+                                                for (const record of sphereRef.current.pointRecordsByID.values()) {
                                                     const val = record.original[selectedSearchColumn];
                                                     if (val !== undefined) {
                                                         sampleValues.add(String(val));

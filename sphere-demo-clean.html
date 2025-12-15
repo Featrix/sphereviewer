@@ -152,7 +152,7 @@
 <body>
     <div class="container">
         <h1>🌟 Clean Sphere Viewer Demo</h1>
-        <p><strong>Session:</strong> 20250716-142858_653c60</p>
+        <p><strong>Session:</strong> public-alphafreight-xxlarge-derived1-375e6c5d-985d-4ef6-9728-fadc2c82e06f</p>
         
         <!-- Sphere Viewer Container -->
         <div id="sphere-viewer-container" class="sphere-viewer">
@@ -259,7 +259,7 @@
     
     <!-- Load the sphere viewer -->
     <script src="dist/sphere-viewer.js" 
-            data-session-id="20250716-142858_653c60"
+            data-session-id="public-alphafreight-xxlarge-derived1-375e6c5d-985d-4ef6-9728-fadc2c82e06f"
             data-container-id="sphere-viewer-container"
             data-is-rotating="true"
             data-rotation-speed="0.1"
@@ -607,7 +607,7 @@
             try {
                 showStatus('🎬 Loading training movie data...', 'info');
                 
-                const response = await fetch('https://sphere-api.featrix.com/compute/session/20250716-142858_653c60/training_metrics');
+                const response = await fetch('https://sphere-api.featrix.com/compute/session/public-alphafreight-xxlarge-derived1-375e6c5d-985d-4ef6-9728-fadc2c82e06f/training_metrics');
                 const data = await response.json();
                 
                 const trainingHistory = data.training_metrics.training_info.loss_history;

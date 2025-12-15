@@ -2,7 +2,7 @@
 
 ## Overview
 
-**YES!** The sample session `20250716-142858_653c60` contains the **complete training movie data** with epoch-by-epoch progression of the embedding training process.
+**YES!** The sample session `public-alphafreight-xxlarge-derived1-375e6c5d-985d-4ef6-9728-fadc2c82e06f` contains the **complete training movie data** with epoch-by-epoch progression of the embedding training process.
 
 ## 📊 What's Available
 
@@ -45,7 +45,7 @@ GET https://sphere-api.featrix.com/compute/session/{session_id}/training_metrics
 ### Method 1: Direct API Call
 ```javascript
 // Fetch training movie data
-const response = await fetch('https://sphere-api.featrix.com/compute/session/20250716-142858_653c60/training_metrics');
+const response = await fetch('https://sphere-api.featrix.com/compute/session/public-alphafreight-xxlarge-derived1-375e6c5d-985d-4ef6-9728-fadc2c82e06f/training_metrics');
 const data = await response.json();
 const trainingHistory = data.training_metrics.training_info.loss_history;
 
@@ -62,7 +62,7 @@ console.log(`Epoch range: ${trainingHistory[0].epoch} - ${trainingHistory[traini
 ```javascript
 import { fetch_training_metrics } from './src/embed-data-access';
 
-const trainingData = await fetch_training_metrics('20250716-142858_653c60');
+const trainingData = await fetch_training_metrics('public-alphafreight-xxlarge-derived1-375e6c5d-985d-4ef6-9728-fadc2c82e06f');
 const lossHistory = trainingData.training_metrics.training_info.loss_history;
 ```
 

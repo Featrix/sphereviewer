@@ -426,3 +426,6 @@ viewer.init({ data: window.myFeatrixData, containerId: 'test' });
 
 **Made with ❤️ by [Featrix](https://featrix.com)** - Professional ML Data Visualization
 
+
+
+

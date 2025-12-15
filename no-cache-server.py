@@ -6,18 +6,123 @@ import time
 import subprocess
 import sys
 import signal
+import urllib.request
+import urllib.parse
+import json
+import ssl
 from datetime import datetime
+
+FEATRIX_API_BASE = "https://sphere-api.featrix.com"
 
 class NoCacheHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
         self.send_header('Pragma', 'no-cache') 
         self.send_header('Expires', '0')
+        # Add CORS headers for proxy requests
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         super().end_headers()
     
     def log_message(self, format, *args):
         timestamp = datetime.now().strftime('[%Y-%m-%d %H:%M:%S]')
         print(f"{self.address_string()} - - {timestamp} {format % args}")
+    
+    def do_OPTIONS(self):
+        """Handle CORS preflight requests"""
+        self.send_response(200)
+        self.end_headers()
+    
+    def do_GET(self):
+        """Handle GET requests, including proxy requests"""
+        if self.path.startswith('/proxy/featrix/'):
+            self.handle_proxy_request()
+        else:
+            super().do_GET()
+    
+    def do_POST(self):
+        """Handle POST requests, including proxy requests"""
+        if self.path.startswith('/proxy/featrix/'):
+            self.handle_proxy_request()
+        else:
+            super().do_POST()
+    
+    def do_PUT(self):
+        """Handle PUT requests, including proxy requests"""
+        if self.path.startswith('/proxy/featrix/'):
+            self.handle_proxy_request()
+        else:
+            super().do_PUT()
+    
+    def do_DELETE(self):
+        """Handle DELETE requests, including proxy requests"""
+        if self.path.startswith('/proxy/featrix/'):
+            self.handle_proxy_request()
+        else:
+            super().do_DELETE()
+    
+    def handle_proxy_request(self):
+        """Proxy requests to Featrix API"""
+        try:
+            # Extract endpoint from path: /proxy/featrix/compute/session/...
+            endpoint = self.path.replace('/proxy/featrix/', '')
+            target_url = f"{FEATRIX_API_BASE}/{endpoint}"
+            
+            # Get query string if present
+            if '?' in endpoint:
+                endpoint, query = endpoint.split('?', 1)
+                target_url = f"{FEATRIX_API_BASE}/{endpoint}?{query}"
+            
+            # Prepare request
+            method = self.command
+            headers = {
+                'Content-Type': 'application/json',
+                'User-Agent': 'FeatrixSphereViewer/1.0'
+            }
+            
+            # Get request body for POST/PUT
+            data = None
+            if method in ['POST', 'PUT']:
+                content_length = int(self.headers.get('Content-Length', 0))
+                if content_length > 0:
+                    data = self.rfile.read(content_length)
+            
+            # Create request
+            req = urllib.request.Request(target_url, data=data, headers=headers, method=method)
+            
+            # Create SSL context that doesn't verify certificates (for local dev)
+            # In production, you'd want proper certificate verification
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            
+            # Make request
+            with urllib.request.urlopen(req, timeout=30, context=ssl_context) as response:
+                # Send response
+                self.send_response(response.getcode())
+                self.send_header('Content-Type', response.headers.get('Content-Type', 'application/json'))
+                self.end_headers()
+                
+                # Copy response body
+                self.wfile.write(response.read())
+                
+                self.log_message(f"Proxied {method} {endpoint} -> {response.getcode()}")
+                
+        except urllib.error.HTTPError as e:
+            self.send_response(e.code)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            error_body = e.read() if hasattr(e, 'read') else str(e).encode()
+            self.wfile.write(error_body)
+            self.log_message(f"Proxy error: {method} {endpoint} -> {e.code}")
+        except Exception as e:
+            self.send_response(500)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            error_response = json.dumps({'error': f'Proxy request failed: {str(e)}'}).encode()
+            self.wfile.write(error_response)
+            self.log_message(f"Proxy exception: {str(e)}")
 
 def kill_existing_instances():
     """Kill existing instances of this server and other servers on port 8080"""

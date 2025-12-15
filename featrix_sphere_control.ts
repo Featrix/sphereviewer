@@ -259,22 +259,54 @@ const kColorTable = [
     0xffcccc,
 ];
 
+let getColorCallCount = 0;
 const getColor = (record: SphereRecord) => {
     try {
-        const idx = record.featrix_meta?.cluster_pre;
-        if (idx) {
-            if (idx < kColorTable.length) {
-                return kColorTable[idx];
+        // Color based on is_bad_account value instead of cluster assignments
+        // Try multiple field name variations (case-insensitive)
+        let isBadAccount = record.original?.is_bad_account;
+        if (isBadAccount === undefined) {
+            isBadAccount = record.original?.isBadAccount;
+        }
+        if (isBadAccount === undefined) {
+            // Try case-insensitive search
+            const originalKeys = record?.original ? Object.keys(record.original) : [];
+            const badAccountKey = originalKeys.find(k => 
+                k.toLowerCase() === 'is_bad_account' || 
+                k.toLowerCase() === 'isbadaccount'
+            );
+            if (badAccountKey) {
+                isBadAccount = record.original[badAccountKey];
             }
-            return 0xff0000;
+        }
+        
+        // DEBUG: Log first few calls to see what data we have
+        getColorCallCount++;
+        if (getColorCallCount <= 5) {
+            console.log(`🎨 getColor call ${getColorCallCount}: is_bad_account=`, isBadAccount, 
+                'type:', typeof isBadAccount, 'original keys:', record?.original ? Object.keys(record.original).slice(0, 10) : 'no original');
+        }
+        
+        // Handle different value types: 0/1, true/false, null/NaN/undefined
+        if (isBadAccount === 0 || isBadAccount === false || isBadAccount === "0" || isBadAccount === "false") {
+            // Good account (0/false) -> Green
+            return 0x00ff00; // Green
+        } else if (isBadAccount === 1 || isBadAccount === true || isBadAccount === "1" || isBadAccount === "true") {
+            // Bad account (1/true) -> Red
+            return 0xff0000; // Red
+        } else if (isBadAccount === null || isBadAccount === undefined || (typeof isBadAccount === 'number' && isNaN(isBadAccount))) {
+            // Null/NaN/undefined -> Gray
+            return 0x999999; // Gray
         } else {
+            // Unknown value -> Gray
+            return 0x999999; // Gray
         }
     } catch (ex) {
         // console.error(ex);
     }
 
-    // Default color is red.
-    return 0xff0000;
+    // Default color is gray if we can't determine the value
+    return 0x999999;
 }
 
 function add_point_to_sphere(sphere: SphereData, record: SphereRecord) {
@@ -676,7 +708,7 @@ export function update_all_point_visuals(sphere: SphereData) {
 }
 
 // Training Movie Functions
-export function load_training_movie(sphere: SphereData, trainingMovieData: any, lossData?: any) {
+export function load_training_movie(sphere: SphereData, trainingMovieData: any, lossData?: any, fullSessionData?: any) {
     // CRITICAL: Clear all existing points to prevent accumulation when restarting
     clear_all_points(sphere);
     
@@ -760,6 +792,93 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any, 
     
     console.log(`🎬 Initializing sphere with ${firstEpochData.coords.length} points from ${firstEpochKey}`);
     
+    // Get original data from session projections (jsonData) if available
+    // This contains the full original data columns like is_bad_account
+    // CRITICAL: Use fullSessionData if provided (contains all rows), otherwise fall back to sphere.jsonData?.coords (sampled)
+    const sessionCoords = fullSessionData?.coords || sphere.jsonData?.coords || [];
+    const originalDataByRowOffset = new Map<number, any>();
+    
+    console.log(`📊 Using ${fullSessionData ? 'FULL SESSION DATA' : 'SAMPLED DATA'} for original data lookup: ${sessionCoords.length} entries`);
+    console.log(`📊 DEBUG: fullSessionData provided: ${!!fullSessionData}, has coords: ${!!fullSessionData?.coords}, coords length: ${fullSessionData?.coords?.length || 0}`);
+    console.log(`📊 DEBUG: sphere.jsonData has coords: ${!!sphere.jsonData?.coords}, coords length: ${sphere.jsonData?.coords?.length || 0}`);
+    
+    // Build a map of original data by row_offset AND row_id for quick lookup
+    // Some datasets use row_offset, others use row_id, so we need to support both
+    sessionCoords.forEach((coord: any) => {
+        const rowOffset = coord.__featrix_row_offset;
+        const rowId = coord.__featrix_row_id;
+        
+        const originalData = {
+            ...(coord.set_columns || {}),
+            ...(coord.scalar_columns || {}),
+            ...(coord.string_columns || {})
+        };
+        
+        // Map by row_offset if available
+        if (rowOffset !== undefined && rowOffset !== null) {
+            originalDataByRowOffset.set(rowOffset, originalData);
+        }
+        // Also map by row_id if different from rowOffset (for fallback lookup)
+        if (rowId !== undefined && rowId !== null && rowId !== rowOffset) {
+            originalDataByRowOffset.set(rowId, originalData);
+        }
+    });
+    
+    // DEBUG: Check what rowOffset values exist in the full dataset
+    if (sessionCoords.length > 0 && sessionCoords.length <= 10) {
+        console.log('📊 Sample rowOffset values in full dataset:', sessionCoords.slice(0, 5).map((c: any) => ({
+            rowOffset: c.__featrix_row_offset,
+            rowId: c.__featrix_row_id,
+            hasIsBadAccount: !!(c.scalar_columns?.is_bad_account !== undefined || c.set_columns?.is_bad_account !== undefined || c.string_columns?.is_bad_account !== undefined)
+        })));
+    } else if (sessionCoords.length > 10) {
+        const sampleOffsets = sessionCoords.slice(0, 5).map((c: any) => c.__featrix_row_offset);
+        const sampleIds = sessionCoords.slice(0, 5).map((c: any) => c.__featrix_row_id);
+        console.log('📊 Sample rowOffset values in full dataset (first 5):', sampleOffsets);
+        console.log('📊 Sample rowId values in full dataset (first 5):', sampleIds);
+    }
+    
+    console.log(`📊 Built original data map with ${originalDataByRowOffset.size} entries`);
+    if (originalDataByRowOffset.size > 0) {
+        const firstEntry = originalDataByRowOffset.values().next().value;
+        const allKeys = Object.keys(firstEntry);
+        console.log(`📊 Sample original data keys (${allKeys.length} total):`, allKeys);
+        
+        // Check specifically for is_bad_account variations
+        const badAccountKeys = allKeys.filter(k => 
+            k.toLowerCase().includes('bad') || 
+            k.toLowerCase().includes('account') ||
+            k === 'is_bad_account' ||
+            k === 'isBadAccount'
+        );
+        if (badAccountKeys.length > 0) {
+            console.log(`✅ Found potential is_bad_account fields:`, badAccountKeys);
+            const sampleValues = Array.from(originalDataByRowOffset.values()).slice(0, 20).map(e => e[badAccountKeys[0]]);
+            console.log(`📊 Sample values for ${badAccountKeys[0]}:`, sampleValues);
+            
+            // Count distribution in the source data
+            let zeroCount = 0;
+            let oneCount = 0;
+            let nullCount = 0;
+            let undefinedCount = 0;
+            originalDataByRowOffset.forEach((data: any) => {
+                const val = data[badAccountKeys[0]];
+                if (val === 0 || val === false || val === "0" || val === "false") {
+                    zeroCount++;
+                } else if (val === 1 || val === true || val === "1" || val === "true") {
+                    oneCount++;
+                } else if (val === null) {
+                    nullCount++;
+                } else if (val === undefined) {
+                    undefinedCount++;
+                }
+            });
+            console.log(`📊 Source data distribution: 0s=${zeroCount}, 1s=${oneCount}, nulls=${nullCount}, undefined=${undefinedCount}, total=${originalDataByRowOffset.size}`);
+        } else {
+            console.warn(`⚠️ No is_bad_account field found. Available fields:`, allKeys.slice(0, 20));
+        }
+    }
+    
     // Convert first epoch coords to sphere records
     const recordList: SphereRecord[] = firstEpochData.coords.map((entry: any, index: number) => {
         // Handle both object format {x, y, z} and array format [x, y, z]
@@ -778,21 +897,109 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any, 
             }
         }
 
+        const rowOffset = entry.__featrix_row_offset ?? index;
+        const rowId = entry.__featrix_row_id;
+        
+        // CRITICAL: The epoch entry SHOULD have is_bad_account (sample respects important columns for viz)
+        // Start with epoch entry data as primary source
+        const epochEntryData = {
+            ...(entry.set_columns || {}),
+            ...(entry.scalar_columns || {}),
+            ...(entry.string_columns || {})
+        };
+        
+        // Try to get full dataset data to supplement missing fields
+        // Try multiple lookup strategies since datasets may use different identifiers
+        let fullDatasetData = originalDataByRowOffset.get(rowOffset);
+        
+        // If not found by rowOffset, try to find by __featrix_row_id
+        if (!fullDatasetData && rowId !== undefined && rowId !== null) {
+            fullDatasetData = originalDataByRowOffset.get(rowId);
+        }
+        
+        // Merge: epoch entry data takes priority (has important columns), full dataset supplements missing fields
+        const originalData = {
+            ...(fullDatasetData || {}),  // Full dataset as base (has all 57 fields)
+            ...epochEntryData            // Epoch entry OVERRIDES (has important columns like is_bad_account)
+        };
+        
+        // DEBUG: Check what we got
+        if (index < 5) {
+            const hasEpochIsBadAccount = epochEntryData.is_bad_account !== undefined;
+            const hasFullIsBadAccount = fullDatasetData?.is_bad_account !== undefined;
+            const epochKeys = Object.keys(epochEntryData);
+            const epochHasBadAccountInKeys = epochKeys.some(k => k.toLowerCase().includes('bad') && k.toLowerCase().includes('account'));
+            const epochValue = epochEntryData.is_bad_account;
+            const fullValue = fullDatasetData?.is_bad_account;
+            console.log(`🔍 Record ${index}: rowOffset=${rowOffset}, epoch keys=${epochKeys.length}, epoch is_bad_account=${epochValue} (type: ${typeof epochValue}), full is_bad_account=${fullValue} (type: ${typeof fullValue}), merged=${originalData.is_bad_account}`);
+            
+            // Also check raw entry structure - log expanded to see actual values
+            if (index === 0) {
+                const sampleEntries = firstEpochData.coords.slice(0, 20).map((e: any) => ({
+                    rowOffset: e.__featrix_row_offset,
+                    scalarIsBadAccount: e.scalar_columns?.is_bad_account,
+                    setIsBadAccount: e.set_columns?.is_bad_account,
+                    stringIsBadAccount: e.string_columns?.is_bad_account
+                }));
+                
+                console.log(`🔍 DEBUG: entry structure for record 0:`);
+                console.log(`  - hasSetColumns:`, !!entry.set_columns);
+                console.log(`  - hasScalarColumns:`, !!entry.scalar_columns);
+                console.log(`  - hasStringColumns:`, !!entry.string_columns);
+                console.log(`  - scalarColumnsKeys (first 10):`, entry.scalar_columns ? Object.keys(entry.scalar_columns).slice(0, 10) : []);
+                console.log(`  - scalarHasIsBadAccount:`, entry.scalar_columns?.is_bad_account !== undefined);
+                console.log(`  - scalarIsBadAccountValue:`, entry.scalar_columns?.is_bad_account);
+                console.log(`  - scalarIsBadAccountType:`, typeof entry.scalar_columns?.is_bad_account);
+                console.log(`  - setHasIsBadAccount:`, entry.set_columns?.is_bad_account !== undefined);
+                console.log(`  - stringHasIsBadAccount:`, entry.string_columns?.is_bad_account !== undefined);
+                console.log(`  - Sample entries (first 20) is_bad_account values:`);
+                sampleEntries.forEach((e, i) => {
+                    const val = e.setIsBadAccount ?? e.scalarIsBadAccount ?? e.stringIsBadAccount;
+                    console.log(`    Entry ${i}: rowOffset=${e.rowOffset}, is_bad_account=${val} (from set=${e.setIsBadAccount}, scalar=${e.scalarIsBadAccount}, string=${e.stringIsBadAccount})`);
+                });
+                
+                // Count non-null values in sample (values that are not null and not undefined)
+                const nonNullCount = sampleEntries.filter(e => {
+                    const scalarVal = e.scalarIsBadAccount;
+                    const setVal = e.setIsBadAccount;
+                    const stringVal = e.stringIsBadAccount;
+                    return (scalarVal !== null && scalarVal !== undefined) ||
+                           (setVal !== null && setVal !== undefined) ||
+                           (stringVal !== null && stringVal !== undefined);
+                }).length;
+                console.log(`  - Non-null is_bad_account values in first 20 entries:`, nonNullCount);
+            }
+        }
+        
+        // DEBUG: Log first few records to verify original data
+        if (index < 5) {
+            console.log(`📝 Record ${index}: rowOffset=${rowOffset}, original keys:`, Object.keys(originalData).length, 
+                'is_bad_account=', originalData.is_bad_account);
+        }
+
+        // CRITICAL: Create a deep copy of originalData to prevent it from being modified
+        // This ensures the full 57 keys are preserved even if the source data changes
+        const originalDataCopy = originalData ? JSON.parse(JSON.stringify(originalData)) : {};
+        
         return {
             coords: { x, y, z },
             id: String(index),
             featrix_meta: {
                 // Don't use deprecated cluster_pre - use direct lookup from finalClusterResults
                 webgl_id: null,
-                __featrix_row_id: index,
-                __featrix_row_offset: index,
+                __featrix_row_id: entry.__featrix_row_id ?? index,
+                __featrix_row_offset: rowOffset,
             },
-            original: {}
+            original: originalDataCopy
         };
     });
     
     // Add points to sphere
     add_points_to_sphere(sphere, recordList);
+    
+    // CRITICAL: Update first frame immediately to set correct colors
+    // This prevents red dots from appearing at the start
+    update_training_movie_frame(sphere, firstEpochKey);
     
     // Force initial render
     render_sphere(sphere);
@@ -804,6 +1011,13 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
     if (!sphere.trainingMovieData || sphere.isPlayingMovie) return;
     
     sphere.isPlayingMovie = true;
+    
+    // CRITICAL: Stop auto-rotation during training movie to preserve manual rotation
+    // The user's manual rotation should be preserved, not overridden by auto-rotation
+    const wasAnimating = sphere.isAnimating;
+    if (wasAnimating) {
+        stop_animation(sphere);
+    }
     
     const epochKeys = Object.keys(sphere.trainingMovieData).sort((a, b) => {
         const epochA = parseInt(a.replace('epoch_', ''));
@@ -822,7 +1036,9 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
     sphere.currentEpoch = 0;
     sphere.isInRotationPhase = false;
     sphere.rotationStartTime = undefined;
-    sphere.rotationStartAngle = undefined;
+    // Preserve current camera angle instead of resetting it
+    // sphere.rotationStartAngle = undefined;
+    sphere.rotationStartAngle = sphere.angle; // Preserve current rotation
     
     const animate = () => {
         if (!sphere.isPlayingMovie) return;
@@ -1293,21 +1509,86 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
                     // Skip color update for manually selected records - preserve search/selection colors
                     // Only update position, not color
                 } else {
-                    // Use direct color mapping - cluster assignments are 0-based
+                    // Color based on is_bad_account value instead of cluster assignments
                     let newColor;
                     
-                    // FIRST: Check if there's a custom color for this cluster
-                    if (sphere.customClusterColors && sphere.customClusterColors.has(clusterAssignment)) {
-                        newColor = sphere.customClusterColors.get(clusterAssignment)!;
-                    } else if (clusterAssignment >= 0 && clusterAssignment < visibleClusters && clusterAssignment < kColorTable.length) {
-                        // Direct mapping - cluster 0 -> color 0, cluster 1 -> color 1, etc.
-                        newColor = kColorTable[clusterAssignment];
-                    } else if (clusterAssignment >= 0 && clusterAssignment >= visibleClusters) {
-                        // Cluster exists but not yet revealed in this frame
-                        newColor = 0x999999; // Gray for unrevealed clusters
+                    // Get is_bad_account from record's original data
+                    // Try multiple field name variations (case-insensitive)
+                    let isBadAccount = record?.original?.is_bad_account;
+                    if (isBadAccount === undefined) {
+                        isBadAccount = record?.original?.isBadAccount;
+                    }
+                    if (isBadAccount === undefined) {
+                        // Try case-insensitive search
+                        const originalKeys = record?.original ? Object.keys(record.original) : [];
+                        const badAccountKey = originalKeys.find(k => 
+                            k.toLowerCase() === 'is_bad_account' || 
+                            k.toLowerCase() === 'isbadaccount'
+                        );
+                        if (badAccountKey) {
+                            isBadAccount = record?.original[badAccountKey];
+                        }
+                    }
+                    
+                    // STATS: Count colors for first frame only (to see distribution)
+                    if (totalPoints === 1 && epochKey === Object.keys(sphere.trainingMovieData || {}).sort((a, b) => {
+                        const epochA = parseInt(a.replace('epoch_', ''));
+                        const epochB = parseInt(b.replace('epoch_', ''));
+                        return epochA - epochB;
+                    })[0]) {
+                        // First point of first frame - count all colors
+                        let greenCount = 0;
+                        let redCount = 0;
+                        let grayCount = 0;
+                        let nullCount = 0;
+                        let zeroCount = 0;
+                        let oneCount = 0;
+                        let undefinedCount = 0;
+                        let sampleValues: any[] = [];
+                        sphere.pointRecordsByID.forEach((r: any, rid: string) => {
+                            const iba = r?.original?.is_bad_account;
+                            if (sampleValues.length < 10) {
+                                sampleValues.push({ id: rid, rowOffset: r?.featrix_meta?.__featrix_row_offset, value: iba, type: typeof iba });
+                            }
+                            if (iba === 0 || iba === false || iba === "0" || iba === "false") {
+                                greenCount++;
+                                zeroCount++;
+                            } else if (iba === 1 || iba === true || iba === "1" || iba === "true") {
+                                redCount++;
+                                oneCount++;
+                            } else if (iba === null) {
+                                nullCount++;
+                                grayCount++;
+                            } else if (iba === undefined) {
+                                undefinedCount++;
+                                grayCount++;
+                            } else {
+                                grayCount++;
+                            }
+                        });
+                        console.log(`📊 COLOR STATS: Green=${greenCount} (0s=${zeroCount}), Red=${redCount} (1s=${oneCount}), Gray=${grayCount} (nulls=${nullCount}, undefined=${undefinedCount}), Total=${sphere.pointRecordsByID.size}`);
+                        console.log(`📊 Sample is_bad_account values:`, sampleValues);
+                    }
+                    
+                    // DEBUG: Log first few records to see what data we have
+                    if (totalPoints <= 5) {
+                        console.log(`🎨 Point ${totalPoints-1}: recordId="${recordId}", rowOffset=${record?.featrix_meta?.__featrix_row_offset}, is_bad_account=`, isBadAccount, 
+                            'type:', typeof isBadAccount, 'original keys:', record?.original ? Object.keys(record.original).length + ' keys' : 'no original');
+                    }
+                    
+                    // Handle different value types: 0/1, true/false, null/NaN/undefined
+                    if (isBadAccount === 0 || isBadAccount === false || isBadAccount === "0" || isBadAccount === "false") {
+                        // Good account (0/false) -> Green
+                        newColor = 0x00ff00; // Green
+                    } else if (isBadAccount === 1 || isBadAccount === true || isBadAccount === "1" || isBadAccount === "true") {
+                        // Bad account (1/true) -> Red
+                        newColor = 0xff0000; // Red
+                    } else if (isBadAccount === null || isBadAccount === undefined || (typeof isBadAccount === 'number' && isNaN(isBadAccount))) {
+                        // Null/NaN/undefined -> Gray
+                        newColor = 0x999999; // Gray
                     } else {
-                        // Invalid or missing cluster assignment - use default gray
-                        newColor = 0x999999; // Gray for invalid
+                        // Unknown value -> Gray
+                        newColor = 0x999999; // Gray
                     }
                     
                     // Apply the color to the mesh
@@ -1551,7 +1832,9 @@ export function update_memory_trails(sphere: SphereData) {
         // First pass: calculate all distances to determine max distance for normalization
         const distances: number[] = [];
         for (let i = 0; i < maxSegments; i++) {
-            const currentPos = pointMesh.position.clone(); // Use live position so arcs chase the points
+            // For first segment (i=0): connect live position to history[1] (previous epoch)
+            // For subsequent segments: connect history[i] to history[i+1]
+            const currentPos = (i === 0) ? pointMesh.position.clone() : history[i].clone();
             const previousPos = history[i + 1].clone();
             const distance = currentPos.distanceTo(previousPos);
             distances.push(distance);
@@ -1561,8 +1844,9 @@ export function update_memory_trails(sphere: SphereData) {
         const distanceRange = maxDistance - minDistance;
         
         for (let i = 0; i < maxSegments; i++) {
-            // Create great circle arc from current position (use live mesh position, not history[0]) to previous position
-            const currentPos = pointMesh.position.clone(); // Use live position so arcs chase the points
+            // For first segment (i=0): connect live position to history[1] (previous epoch)
+            // For subsequent segments: connect history[i] to history[i+1] (connecting historical positions)
+            const currentPos = (i === 0) ? pointMesh.position.clone() : history[i].clone();
             const previousPos = history[i + 1].clone();
             const distance = distances[i];
             
@@ -1581,9 +1865,10 @@ export function update_memory_trails(sphere: SphereData) {
             }
             
             // Generate great circle arc points
+            // Trail should go from previousPos to currentPos (forward in time, showing movement direction)
             // Adjust segments based on arc length for efficiency
             const segments = Math.max(4, Math.min(16, Math.floor(distance * 8))); // 4-16 segments based on distance
-            const arcPoints = createGreatCircleArc(currentPos, previousPos, segments);
+            const arcPoints = createGreatCircleArc(previousPos, currentPos, segments);
             
             const lineGeometry = new THREE.BufferGeometry().setFromPoints(arcPoints);
             const lineMaterial = new THREE.LineBasicMaterial({
@@ -1596,7 +1881,7 @@ export function update_memory_trails(sphere: SphereData) {
             const line = new THREE.Line(lineGeometry, lineMaterial);
             sphere.memoryTrailsGroup.add(line);
             
-            // Add arrowhead at each epoch point (pointing in direction of movement)
+            // Add arrowhead at the start of the segment (previousPos) pointing toward currentPos
             // Arrow size scales with distance to show magnitude
             const direction = new THREE.Vector3().subVectors(currentPos, previousPos);
             const distanceNormalized = direction.length();
@@ -1609,6 +1894,7 @@ export function update_memory_trails(sphere: SphereData) {
                 const arrowHeadWidth = arrowHeadLength * 0.7;
                 
                 // Create arrow geometry
+                // Arrow starts at previousPos and points toward currentPos (forward in time)
                 const arrowHelper = new THREE.ArrowHelper(
                     direction,
                     previousPos, // Position at the start of the segment (epoch point)
@@ -2164,6 +2450,347 @@ function handle_mouse_highlight(sphere: SphereData) {
 // CONVEX HULL FUNCTIONS
 // ============================================================================
 
+/**
+ * Normalize a point to the unit sphere surface (r=1)
+ */
+function normalize_to_sphere_surface(point: THREE.Vector3): THREE.Vector3 {
+    return point.clone().normalize();
+}
+
+/**
+ * Normalize an array of points to the unit sphere surface
+ */
+function normalize_points_to_sphere_surface(points: THREE.Vector3[]): THREE.Vector3[] {
+    return points.map(p => normalize_to_sphere_surface(p));
+}
+
+/**
+ * Compute spherical convex hull on the unit sphere surface
+ * Uses spherical coordinates and projects points onto sphere surface before computing hull
+ */
+function compute_spherical_convex_hull(points: THREE.Vector3[]): THREE.Vector3[] {
+    if (points.length < 3) return points;
+    
+    // Normalize all points to sphere surface
+    const normalizedPoints = normalize_points_to_sphere_surface(points);
+    
+    // For spherical convex hull, we need to find the points that form the boundary
+    // on the sphere surface. We'll use a spherical triangulation approach.
+    
+    if (normalizedPoints.length < 4) {
+        return normalizedPoints;
+    }
+    
+    // For a proper spherical convex hull, find boundary points using angular distance
+    // Since all points are already on the sphere surface, we use angular distance from centroid
+    
+    // Compute centroid on sphere
+    const centroid = new THREE.Vector3();
+    normalizedPoints.forEach(p => centroid.add(p));
+    centroid.normalize();
+    
+    // Find boundary points by checking angular distance from centroid
+    // Points with maximum angular distance are likely on the boundary
+    const pointsWithAngularDistance = normalizedPoints.map(p => {
+        // Angular distance = arccos(dot product) since both are unit vectors
+        const dot = p.dot(centroid);
+        const angularDistance = Math.acos(Math.max(-1, Math.min(1, dot)));
+        return { point: p, angularDistance };
+    });
+    
+    // Sort by angular distance (farthest first)
+    pointsWithAngularDistance.sort((a, b) => b.angularDistance - a.angularDistance);
+    
+    // Take the outermost points (boundary of the cluster)
+    // Use a reasonable number based on cluster size
+    const numBoundaryPoints = Math.min(Math.max(8, Math.floor(normalizedPoints.length * 0.3)), 32);
+    const boundaryPoints = pointsWithAngularDistance
+        .slice(0, numBoundaryPoints)
+        .map(item => item.point);
+    
+    return boundaryPoints;
+}
+
+/**
+ * Subdivide a triangle on the sphere surface by creating intermediate points along edges
+ * This ensures the triangle follows the sphere curvature instead of cutting through it
+ */
+function subdivide_spherical_triangle(v0: THREE.Vector3, v1: THREE.Vector3, v2: THREE.Vector3, subdivisions: number = 2): THREE.Vector3[] {
+    const vertices: THREE.Vector3[] = [];
+    
+    // Normalize all vertices to sphere surface
+    const p0 = normalize_to_sphere_surface(v0);
+    const p1 = normalize_to_sphere_surface(v1);
+    const p2 = normalize_to_sphere_surface(v2);
+    
+    // Create subdivided triangle using spherical interpolation
+    for (let i = 0; i <= subdivisions; i++) {
+        for (let j = 0; j <= subdivisions - i; j++) {
+            const k = subdivisions - i - j;
+            
+            // Barycentric coordinates
+            const u = i / subdivisions;
+            const v = j / subdivisions;
+            const w = k / subdivisions;
+            
+            // Spherical interpolation (slerp) to stay on sphere surface
+            // Interpolate along edges first, then across
+            let point = new THREE.Vector3();
+            
+            if (u === 0) {
+                // On edge v1-v2
+                const t = v / (v + w);
+                const angle = p1.angleTo(p2);
+                if (angle > 0.001) {
+                    const sinAngle = Math.sin(angle);
+                    const a = Math.sin((1 - t) * angle) / sinAngle;
+                    const b = Math.sin(t * angle) / sinAngle;
+                    point.copy(p1).multiplyScalar(a).addScaledVector(p2, b);
+                } else {
+                    point.lerpVectors(p1, p2, t);
+                }
+            } else if (v === 0) {
+                // On edge v0-v2
+                const t = u / (u + w);
+                const angle = p0.angleTo(p2);
+                if (angle > 0.001) {
+                    const sinAngle = Math.sin(angle);
+                    const a = Math.sin((1 - t) * angle) / sinAngle;
+                    const b = Math.sin(t * angle) / sinAngle;
+                    point.copy(p0).multiplyScalar(a).addScaledVector(p2, b);
+                } else {
+                    point.lerpVectors(p0, p2, t);
+                }
+            } else if (w === 0) {
+                // On edge v0-v1
+                const t = u / (u + v);
+                const angle = p0.angleTo(p1);
+                if (angle > 0.001) {
+                    const sinAngle = Math.sin(angle);
+                    const a = Math.sin((1 - t) * angle) / sinAngle;
+                    const b = Math.sin(t * angle) / sinAngle;
+                    point.copy(p0).multiplyScalar(a).addScaledVector(p1, b);
+                } else {
+                    point.lerpVectors(p0, p1, t);
+                }
+            } else {
+                // Interior point - interpolate across triangle
+                // First interpolate along v0-v1 edge
+                const t01 = u / (u + v);
+                const angle01 = p0.angleTo(p1);
+                let edge01: THREE.Vector3;
+                if (angle01 > 0.001) {
+                    const sinAngle01 = Math.sin(angle01);
+                    const a01 = Math.sin((1 - t01) * angle01) / sinAngle01;
+                    const b01 = Math.sin(t01 * angle01) / sinAngle01;
+                    edge01 = new THREE.Vector3().copy(p0).multiplyScalar(a01).addScaledVector(p1, b01);
+                } else {
+                    edge01 = new THREE.Vector3().lerpVectors(p0, p1, t01);
+                }
+                edge01.normalize();
+                
+                // Then interpolate from edge01 to v2
+                const t02 = (u + v) / subdivisions;
+                const angle02 = edge01.angleTo(p2);
+                if (angle02 > 0.001) {
+                    const sinAngle02 = Math.sin(angle02);
+                    const a02 = Math.sin((1 - t02) * angle02) / sinAngle02;
+                    const b02 = Math.sin(t02 * angle02) / sinAngle02;
+                    point.copy(edge01).multiplyScalar(a02).addScaledVector(p2, b02);
+                } else {
+                    point.lerpVectors(edge01, p2, t02);
+                }
+            }
+            
+            // Ensure point is on sphere surface
+            point.normalize();
+            vertices.push(point);
+        }
+    }
+    
+    return vertices;
+}
+
+/**
+ * Create a surface mesh geometry on the unit sphere from hull points
+ * This creates a triangulated surface that follows the sphere surface by subdividing triangles
+ */
+function create_spherical_hull_geometry(hullPoints: THREE.Vector3[]): THREE.BufferGeometry | null {
+    if (hullPoints.length < 3) return null;
+    
+    // Normalize all points to sphere surface
+    const normalizedPoints = normalize_points_to_sphere_surface(hullPoints);
+    
+    try {
+        const geometry = new THREE.BufferGeometry();
+        const vertices: number[] = [];
+        const indices: number[] = [];
+        const vertexMap = new Map<string, number>();
+        
+        // Subdivision level - higher = smoother but more vertices
+        // Increased for better resolution on sphere surface
+        const subdivisions = 6;
+        
+        // Function to get or add vertex index
+        function getVertexIndex(point: THREE.Vector3): number {
+            const key = `${point.x.toFixed(6)},${point.y.toFixed(6)},${point.z.toFixed(6)}`;
+            if (vertexMap.has(key)) {
+                return vertexMap.get(key)!;
+            }
+            const index = vertices.length / 3;
+            vertices.push(point.x, point.y, point.z);
+            vertexMap.set(key, index);
+            return index;
+        }
+        
+        const numPoints = normalizedPoints.length;
+        
+        // Create triangles and subdivide them
+        if (numPoints === 3) {
+            // Single triangle - subdivide it
+            const subdivided = subdivide_spherical_triangle(
+                normalizedPoints[0],
+                normalizedPoints[1],
+                normalizedPoints[2],
+                subdivisions
+            );
+            
+            // Create indices for subdivided triangle
+            let baseIndex = vertices.length / 3;
+            subdivided.forEach(p => {
+                vertices.push(p.x, p.y, p.z);
+            });
+            
+            // Create triangular faces from subdivided vertices
+            let rowStart = baseIndex;
+            for (let i = 0; i < subdivisions; i++) {
+                const nextRowStart = rowStart + (subdivisions - i + 1);
+                const currentRowSize = subdivisions - i + 1;
+                const nextRowSize = subdivisions - i;
+                
+                for (let j = 0; j < currentRowSize - 1; j++) {
+                    const v0 = rowStart + j;
+                    const v1 = rowStart + j + 1;
+                    const v2 = nextRowStart + j;
+                    
+                    indices.push(v0, v1, v2);
+                    
+                    if (j < nextRowSize - 1) {
+                        const v3 = nextRowStart + j + 1;
+                        indices.push(v1, v3, v2);
+                    }
+                }
+                
+                rowStart = nextRowStart;
+            }
+        } else {
+            // Multiple points - use fan triangulation and subdivide each triangle
+            for (let i = 1; i < numPoints - 1; i++) {
+                const tri = subdivide_spherical_triangle(
+                    normalizedPoints[0],
+                    normalizedPoints[i],
+                    normalizedPoints[i + 1],
+                    subdivisions
+                );
+                
+                let baseIndex = vertices.length / 3;
+                tri.forEach(p => {
+                    vertices.push(p.x, p.y, p.z);
+                });
+                
+                // Create triangular faces from subdivided vertices
+                let rowStart = baseIndex;
+                for (let row = 0; row < subdivisions; row++) {
+                    const nextRowStart = rowStart + (subdivisions - row + 1);
+                    const currentRowSize = subdivisions - row + 1;
+                    const nextRowSize = subdivisions - row;
+                    
+                    for (let j = 0; j < currentRowSize - 1; j++) {
+                        const v0 = rowStart + j;
+                        const v1 = rowStart + j + 1;
+                        const v2 = nextRowStart + j;
+                        
+                        indices.push(v0, v1, v2);
+                        
+                        if (j < nextRowSize - 1) {
+                            const v3 = nextRowStart + j + 1;
+                            indices.push(v1, v3, v2);
+                        }
+                    }
+                    
+                    rowStart = nextRowStart;
+                }
+            }
+            
+            // Close the fan
+            const tri = subdivide_spherical_triangle(
+                normalizedPoints[0],
+                normalizedPoints[numPoints - 1],
+                normalizedPoints[1],
+                subdivisions
+            );
+            
+            let baseIndex = vertices.length / 3;
+            tri.forEach(p => {
+                vertices.push(p.x, p.y, p.z);
+            });
+            
+            // Create triangular faces from subdivided vertices
+            let rowStart = baseIndex;
+            for (let row = 0; row < subdivisions; row++) {
+                const nextRowStart = rowStart + (subdivisions - row + 1);
+                const currentRowSize = subdivisions - row + 1;
+                const nextRowSize = subdivisions - row;
+                
+                for (let j = 0; j < currentRowSize - 1; j++) {
+                    const v0 = rowStart + j;
+                    const v1 = rowStart + j + 1;
+                    const v2 = nextRowStart + j;
+                    
+                    indices.push(v0, v1, v2);
+                    
+                    if (j < nextRowSize - 1) {
+                        const v3 = nextRowStart + j + 1;
+                        indices.push(v1, v3, v2);
+                    }
+                }
+                
+                rowStart = nextRowStart;
+            }
+        }
+        
+        // Set geometry data
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        geometry.setIndex(indices);
+        
+        // Compute normals pointing outward from sphere center
+        geometry.computeVertexNormals();
+        
+        // Ensure normals point outward (from center of sphere)
+        const positions = geometry.attributes.position;
+        const normals = geometry.attributes.normal;
+        for (let i = 0; i < positions.count; i++) {
+            const i3 = i * 3;
+            const nx = positions.array[i3];
+            const ny = positions.array[i3 + 1];
+            const nz = positions.array[i3 + 2];
+            // Normalize and set as normal (pointing outward from origin)
+            const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+            if (len > 0) {
+                normals.array[i3] = nx / len;
+                normals.array[i3 + 1] = ny / len;
+                normals.array[i3 + 2] = nz / len;
+            }
+        }
+        normals.needsUpdate = true;
+        
+        return geometry;
+    } catch (error) {
+        console.warn('Error creating spherical hull geometry:', error);
+        return null;
+    }
+}
+
 export function show_convex_hulls(sphere: SphereData) {
     if (!sphere) {
         console.warn('🔗 show_convex_hulls: No sphere provided');
@@ -2458,7 +3085,8 @@ function create_dynamic_cluster_hulls(sphere: SphereData) {
         if (!record || record.featrix_meta.cluster_pre === null) return;
         
         const cluster = record.featrix_meta.cluster_pre;
-        const currentPos = pointMesh.position.clone();
+        // Normalize point to sphere surface BEFORE adding to cluster
+        const currentPos = normalize_to_sphere_surface(pointMesh.position);
         const color = pointMesh.material.color.clone();
         
         // Calculate this point's movement envelope for cluster-level calculation
@@ -2481,20 +3109,20 @@ function create_dynamic_cluster_hulls(sphere: SphereData) {
     
     console.log('🔷 Found', clusterData.size, 'clusters for dynamic hulls');
     
-    // Create dynamic sphere hulls for each cluster
+    // Create spherical convex hulls for each cluster (on sphere surface)
     let hullsCreated = 0;
     clusterData.forEach((clusterInfo, cluster) => {
-        if (clusterInfo.points.length >= 3) { // Need at least 3 points for a meaningful sphere
-            // Calculate sphere scale and opacity based on cluster movement
-            const movementScale = Math.max(1.0, Math.min(3.0, 1.0 + clusterInfo.movementEnvelope * 5.0));
-            const sphereOpacity = Math.max(0.05, Math.min(0.2, 0.2 - clusterInfo.movementEnvelope * 0.3));
+        if (clusterInfo.points.length >= 3) { // Need at least 3 points for a convex hull
+            // Compute spherical convex hull on sphere surface
+            const hullPoints = compute_spherical_convex_hull(clusterInfo.points);
             
-            create_dynamic_sphere_hull(sphere, clusterInfo.points, clusterInfo.color, cluster, movementScale, sphereOpacity);
+            // Create surface mesh on sphere
+            create_spherical_convex_hull_mesh(sphere, hullPoints, clusterInfo.color, cluster);
             hullsCreated++;
         }
     });
     
-    console.log('🔷 Created', hullsCreated, 'DYNAMIC cluster hulls with movement-based sizing');
+    console.log('🔷 Created', hullsCreated, 'SPHERICAL convex hulls on sphere surface');
 }
 
 function create_dynamic_sphere_hull(sphere: SphereData, hullPoints: THREE.Vector3[], clusterColor: THREE.Color, cluster: number, scale: number, opacity: number) {
@@ -2719,47 +3347,21 @@ function compute_3d_convex_hull(points: THREE.Vector3[]): THREE.Vector3[] | null
 }
 
 function compute_simple_convex_hull(points: THREE.Vector3[]): THREE.Vector3[] {
-    // Simple approach: create a hull from the extremal points
-    if (points.length < 4) return points;
-    
-    // Find extremal points in each direction
-    let minX = points[0], maxX = points[0];
-    let minY = points[0], maxY = points[0]; 
-    let minZ = points[0], maxZ = points[0];
-    
-    for (const point of points) {
-        if (point.x < minX.x) minX = point;
-        if (point.x > maxX.x) maxX = point;
-        if (point.y < minY.y) minY = point;
-        if (point.y > maxY.y) maxY = point;
-        if (point.z < minZ.z) minZ = point;
-        if (point.z > maxZ.z) maxZ = point;
-    }
-    
-    // Return unique extremal points
-    const extremalPoints = [minX, maxX, minY, maxY, minZ, maxZ];
-    const uniquePoints: THREE.Vector3[] = [];
-    
-    for (const point of extremalPoints) {
-        const isDuplicate = uniquePoints.some(existing => 
-            existing.distanceTo(point) < 0.001
-        );
-        if (!isDuplicate) {
-            uniquePoints.push(point);
-        }
-    }
-    
-    return uniquePoints;
+    // For convex hulls on sphere surface, use spherical convex hull computation
+    return compute_spherical_convex_hull(points);
 }
 
-function create_convex_hull_mesh(sphere: SphereData, hullPoints: THREE.Vector3[], clusterColor: THREE.Color, cluster: number) {
-    if (!sphere.convexHullsGroup || hullPoints.length < 4) return;
+/**
+ * Create a spherical convex hull mesh on the unit sphere surface
+ */
+function create_spherical_convex_hull_mesh(sphere: SphereData, hullPoints: THREE.Vector3[], clusterColor: THREE.Color, cluster: number) {
+    if (!sphere.convexHullsGroup || hullPoints.length < 3) return;
     
     try {
-        // Create FILLED convex hull with triangulated faces
-        const filledGeometry = create_filled_hull_geometry(hullPoints);
+        // Create spherical hull geometry (on sphere surface)
+        const sphericalGeometry = create_spherical_hull_geometry(hullPoints);
         
-        if (filledGeometry) {
+        if (sphericalGeometry) {
             // Create semi-transparent filled material
             const filledMaterial = new THREE.MeshBasicMaterial({
                 color: clusterColor,
@@ -2778,21 +3380,26 @@ function create_convex_hull_mesh(sphere: SphereData, hullPoints: THREE.Vector3[]
             });
             
             // Create both filled and wireframe meshes
-            const filledMesh = new THREE.Mesh(filledGeometry, filledMaterial);
-            const wireframeMesh = new THREE.Mesh(filledGeometry.clone(), wireframeMaterial);
+            const filledMesh = new THREE.Mesh(sphericalGeometry, filledMaterial);
+            const wireframeMesh = new THREE.Mesh(sphericalGeometry.clone(), wireframeMaterial);
             
             // Add both to convex hulls group
             sphere.convexHullsGroup.add(filledMesh);
             sphere.convexHullsGroup.add(wireframeMesh);
             
-            console.log(`✨ Created FILLED convex hull for cluster ${cluster} with ${hullPoints.length} vertices`);
+            console.log(`✨ Created SPHERICAL convex hull on sphere surface for cluster ${cluster} with ${hullPoints.length} vertices`);
         } else {
-            console.warn(`⚠️ Failed to create filled geometry for cluster ${cluster}`);
+            console.warn(`⚠️ Failed to create spherical geometry for cluster ${cluster}`);
         }
         
     } catch (error) {
-        console.warn(`Failed to create convex hull for cluster ${cluster}:`, error);
+        console.warn(`Failed to create spherical convex hull for cluster ${cluster}:`, error);
     }
+}
+
+function create_convex_hull_mesh(sphere: SphereData, hullPoints: THREE.Vector3[], clusterColor: THREE.Color, cluster: number) {
+    // Use spherical convex hull mesh instead
+    create_spherical_convex_hull_mesh(sphere, hullPoints, clusterColor, cluster);
 }
 
 function create_filled_hull_geometry(hullPoints: THREE.Vector3[]): THREE.BufferGeometry | null {
@@ -2911,29 +3518,30 @@ export function compute_embedding_convex_hull(sphere: SphereData) {
         return;
     }
     
-    // Collect all point positions
+    // Collect all point positions and normalize to sphere surface
     const allPoints: THREE.Vector3[] = [];
     sphere.pointObjectsByRecordID.forEach((mesh) => {
-        allPoints.push(mesh.position.clone());
+        // Normalize to sphere surface before computing hull
+        allPoints.push(normalize_to_sphere_surface(mesh.position));
     });
     
-    if (allPoints.length < 4) {
-        console.warn('📦 Need at least 4 points for convex hull');
+    if (allPoints.length < 3) {
+        console.warn('📦 Need at least 3 points for convex hull');
         return;
     }
     
-    // Compute convex hull using extremal points approach
-    const hullPoints = compute_simple_convex_hull(allPoints);
+    // Compute spherical convex hull on sphere surface
+    const hullPoints = compute_spherical_convex_hull(allPoints);
     
-    // Create geometry from hull points
-    const geometry = create_filled_hull_geometry(hullPoints);
+    // Create spherical geometry from hull points (on sphere surface)
+    const geometry = create_spherical_hull_geometry(hullPoints);
     
     if (!geometry) {
         console.warn('📦 Failed to create embedding hull geometry');
         return;
     }
     
-    // Calculate surface area
+    // Calculate surface area on sphere
     const hullArea = calculateSurfaceArea(geometry);
     sphere.embeddingHullArea = hullArea;
     
@@ -2941,7 +3549,7 @@ export function compute_embedding_convex_hull(sphere: SphereData) {
     const unitSphereArea = 4 * Math.PI;
     const coveragePercent = (hullArea / unitSphereArea) * 100;
     
-    console.log(`📦 Embedding convex hull: area=${hullArea.toFixed(4)}, unit sphere area=${unitSphereArea.toFixed(4)}, coverage=${coveragePercent.toFixed(2)}%`);
+    console.log(`📦 Embedding convex hull (on sphere surface): area=${hullArea.toFixed(4)}, unit sphere area=${unitSphereArea.toFixed(4)}, coverage=${coveragePercent.toFixed(2)}%`);
     
     // Remove old hull if exists
     if (sphere.embeddingHull) {
@@ -2958,7 +3566,7 @@ export function compute_embedding_convex_hull(sphere: SphereData) {
         }
     }
     
-    // Create mesh for embedding hull
+    // Create mesh for embedding hull (on sphere surface)
     const material = new THREE.MeshBasicMaterial({
         color: 0x00ffff,
         transparent: true,

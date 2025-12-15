@@ -70,7 +70,7 @@ python3 full-data-example-server.py
 
 ### Default Featrix Session
 
-The HTML file includes a default session ID: `20250716-142858_653c60`
+The HTML file includes a default session ID: `public-alphafreight-xxlarge-derived1-375e6c5d-985d-4ef6-9728-fadc2c82e06f`
 
 To use a different session:
 1. Enter your session ID in the "Featrix Session ID" field
@@ -100,7 +100,7 @@ The Flask server provides:
 ## 📝 Usage Workflow
 
 1. **Load a Featrix Session**
-   - Enter session ID (default: `20250716-142858_653c60`)
+   - Enter session ID (default: `public-alphafreight-xxlarge-derived1-375e6c5d-985d-4ef6-9728-fadc2c82e06f`)
    - Click "📥 Load Session Data"
    - Sphere populates with your data
 
@@ -156,7 +156,7 @@ sudo lsof -ti:8080 | xargs kill -9
 
 ## 🎯 Example Session IDs
 
-- `20250716-142858_653c60` - Logistics dataset with training movie
+- `public-alphafreight-xxlarge-derived1-375e6c5d-985d-4ef6-9728-fadc2c82e06f` - Logistics dataset with training movie
 - (Add your own session IDs here)
 
 ## 🔗 Related Documentation
