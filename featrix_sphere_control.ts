@@ -7,6 +7,52 @@ const RED = "#ff0000";
 const BLACK = "#000000";
 const GRAY = "#dddddd";
 
+/**
+ * Helper function to extract x, y, z coordinates from various data formats.
+ * Handles:
+ * - Object with named properties: {x: n, y: n, z: n}
+ * - Object with numeric keys: {0: n, 1: n, 2: n}
+ * - Array format: [x, y, z]
+ *
+ * @param coords The coordinate data in any supported format
+ * @returns Object with x, y, z properties or null if invalid
+ */
+function extractCoordinates(coords: any): { x: number, y: number, z: number } | null {
+    if (!coords || typeof coords !== 'object') {
+        return null;
+    }
+
+    let x, y, z;
+
+    if (Array.isArray(coords)) {
+        // Array format: [x, y, z]
+        x = coords[0];
+        y = coords[1];
+        z = coords[2];
+    } else if ('x' in coords && 'y' in coords && 'z' in coords) {
+        // Object with named properties: {x, y, z}
+        x = coords.x;
+        y = coords.y;
+        z = coords.z;
+    } else if (0 in coords && 1 in coords && 2 in coords) {
+        // Object with numeric keys: {0, 1, 2}
+        x = coords[0];
+        y = coords[1];
+        z = coords[2];
+    } else {
+        return null;
+    }
+
+    // Validate all coordinates are valid numbers
+    if (typeof x !== 'number' || isNaN(x) ||
+        typeof y !== 'number' || isNaN(y) ||
+        typeof z !== 'number' || isNaN(z)) {
+        return null;
+    }
+
+    return { x, y, z };
+}
+
 export interface SphereData {
     scene: THREE.Scene;
     camera: THREE.PerspectiveCamera;
@@ -881,21 +927,24 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any, 
     
     // Convert first epoch coords to sphere records
     const recordList: SphereRecord[] = firstEpochData.coords.map((entry: any, index: number) => {
-        // Handle both object format {x, y, z} and array format [x, y, z]
-        let x, y, z;
-        if (entry && typeof entry === 'object') {
-            if (Array.isArray(entry)) {
-                // Array format: [x, y, z]
-                x = entry[0];
-                y = entry[1]; 
-                z = entry[2];
-            } else {
-                // Object format: {x, y, z}
-                x = entry.x;
-                y = entry.y;
-                z = entry.z;
-            }
+        // Use helper function to extract coordinates from any format
+        const extractedCoords = extractCoordinates(entry);
+        if (!extractedCoords) {
+            console.warn(`⚠️ Record ${index}: Failed to extract coordinates from entry:`, entry);
+            // Use default coords as fallback
+            return {
+                coords: { x: 0, y: 0, z: 0 },
+                id: String(index),
+                featrix_meta: {
+                    cluster_pre: null,
+                    webgl_id: null,
+                    __featrix_row_id: null,
+                    __featrix_row_offset: index,
+                },
+                original: {}
+            };
         }
+        const { x, y, z } = extractedCoords;
 
         const rowOffset = entry.__featrix_row_offset ?? index;
         const rowId = entry.__featrix_row_id;
@@ -1454,26 +1503,12 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
         
         if (rowOffset < epochData.coords.length) {
             const newCoords = epochData.coords[rowOffset];
-            
-            // Handle both object format {x, y, z} and array format [x, y, z]
-            let x, y, z;
-            if (newCoords && typeof newCoords === 'object') {
-                if (Array.isArray(newCoords)) {
-                    // Array format: [x, y, z]
-                    x = newCoords[0];
-                    y = newCoords[1]; 
-                    z = newCoords[2];
-                } else {
-                    // Object format: {x, y, z}
-                    x = newCoords.x;
-                    y = newCoords.y;
-                    z = newCoords.z;
-                }
-            }
-            
-            if (typeof x === 'number' && !isNaN(x) &&
-                typeof y === 'number' && !isNaN(y) &&
-                typeof z === 'number' && !isNaN(z)) {
+
+            // Use helper function to extract coordinates from any format
+            const extractedCoords = extractCoordinates(newCoords);
+
+            if (extractedCoords) {
+                const { x, y, z } = extractedCoords;
                     
                 // Store target position for smooth interpolation instead of direct movement
                 targetPositions.set(recordId, new THREE.Vector3(x, y, z));
@@ -1809,19 +1844,44 @@ export function update_memory_trails(sphere: SphereData) {
     if (!sphere.memoryTrailsGroup || !sphere.pointPositionHistory) {
         return;
     }
-    
-    // Clear existing trail lines
+
+    // PERFORMANCE: Skip trail updates if disabled or if we have too many points
+    const pointCount = sphere.pointObjectsByRecordID.size;
+    if (pointCount > 1000) {
+        // Too many points - trails will kill performance
+        if (sphere.memoryTrailsGroup.visible) {
+            console.warn(`⚠️ Disabling trails - too many points (${pointCount}) for trail rendering`);
+            sphere.memoryTrailsGroup.visible = false;
+        }
+        return;
+    }
+
+    // Clear existing trail lines - dispose geometries and materials properly
     while (sphere.memoryTrailsGroup.children.length > 0) {
         const child = sphere.memoryTrailsGroup.children[0];
         sphere.memoryTrailsGroup.remove(child);
         if (child.geometry) child.geometry.dispose();
-        if (child.material) child.material.dispose();
+        if (child.material) {
+            if (Array.isArray(child.material)) {
+                child.material.forEach(m => m.dispose());
+            } else {
+                child.material.dispose();
+            }
+        }
     }
-    
+
+    // PERFORMANCE: Limit trail rendering - only show trails for subset of points
+    const maxTrailPoints = Math.min(200, pointCount); // Max 200 points with trails
+    let trailPointsRendered = 0;
+
     // Create trails for each point
     sphere.pointObjectsByRecordID.forEach((pointMesh, recordId) => {
+        if (trailPointsRendered >= maxTrailPoints) return; // Skip excess points
+
         const history = sphere.pointPositionHistory?.get(recordId);
         if (!history || history.length < 2) return;
+
+        trailPointsRendered++;
         
         // Get point color
         const pointColor = pointMesh.material.color;
@@ -1864,12 +1924,11 @@ export function update_memory_trails(sphere: SphereData) {
                 alpha = 0.4; // All segments same distance - keep moderate
             }
             
-            // Generate great circle arc points
+            // Generate great circle arc points - REDUCED segments for performance
             // Trail should go from previousPos to currentPos (forward in time, showing movement direction)
-            // Adjust segments based on arc length for efficiency
-            const segments = Math.max(4, Math.min(16, Math.floor(distance * 8))); // 4-16 segments based on distance
+            const segments = Math.max(2, Math.min(8, Math.floor(distance * 4))); // Reduced: 2-8 segments (was 4-16)
             const arcPoints = createGreatCircleArc(previousPos, currentPos, segments);
-            
+
             const lineGeometry = new THREE.BufferGeometry().setFromPoints(arcPoints);
             const lineMaterial = new THREE.LineBasicMaterial({
                 color: pointColor.clone(),
@@ -1877,46 +1936,14 @@ export function update_memory_trails(sphere: SphereData) {
                 opacity: alpha,
                 linewidth: 1
             });
-            
+
             const line = new THREE.Line(lineGeometry, lineMaterial);
             sphere.memoryTrailsGroup.add(line);
-            
-            // Add arrowhead at the start of the segment (previousPos) pointing toward currentPos
-            // Arrow size scales with distance to show magnitude
-            const direction = new THREE.Vector3().subVectors(currentPos, previousPos);
-            const distanceNormalized = direction.length();
-            if (distanceNormalized > 0.001) { // Only show arrow if there's meaningful movement
-                direction.normalize();
-                
-                // Arrow length proportional to distance (shows magnitude)
-                const arrowLength = Math.min(0.15, Math.max(0.03, distance * 0.4));
-                const arrowHeadLength = Math.min(0.03, Math.max(0.01, distance * 0.08));
-                const arrowHeadWidth = arrowHeadLength * 0.7;
-                
-                // Create arrow geometry
-                // Arrow starts at previousPos and points toward currentPos (forward in time)
-                const arrowHelper = new THREE.ArrowHelper(
-                    direction,
-                    previousPos, // Position at the start of the segment (epoch point)
-                    arrowLength, // Arrow length proportional to distance (shows magnitude)
-                    pointColor.getHex(),
-                    arrowHeadLength, // Arrow head length
-                    arrowHeadWidth // Arrow head width
-                );
-                
-                // Set arrow opacity to match the line (but slightly more visible)
-                const arrowAlpha = Math.min(1.0, alpha * 1.5); // Make arrows slightly more visible
-                if (arrowHelper.line && arrowHelper.line.material) {
-                    (arrowHelper.line.material as THREE.LineBasicMaterial).transparent = true;
-                    (arrowHelper.line.material as THREE.LineBasicMaterial).opacity = arrowAlpha;
-                }
-                if (arrowHelper.cone && arrowHelper.cone.material) {
-                    (arrowHelper.cone.material as THREE.MeshBasicMaterial).transparent = true;
-                    (arrowHelper.cone.material as THREE.MeshBasicMaterial).opacity = arrowAlpha;
-                }
-                
-                sphere.memoryTrailsGroup.add(arrowHelper);
-            }
+
+            // PERFORMANCE: Skip arrows entirely - they're too expensive
+            // ArrowHelper creates multiple meshes per arrow, causing severe performance issues
+            // With 500 points * 5 trail segments = 2500 arrows = 7500+ Three.js objects
+            // Removing arrows saves ~90% of trail rendering cost
         }
     });
 }

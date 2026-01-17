@@ -1281,9 +1281,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     // Rotation control state
     const [rotationEnabled, setRotationEnabled] = useState(true); // Default enabled
     
-    // Point visual controls
-    const [pointSize, setPointSize] = useState(0.05); // Default point size
-    const [pointAlpha, setPointAlpha] = useState(0.5); // Default opacity (alpha)
+    // Point visual controls - optimized for performance
+    const [pointSize, setPointSize] = useState(0.02); // Smaller points for better performance
+    const [pointAlpha, setPointAlpha] = useState(0.4); // Lower alpha for better performance
     const [loadingProgress, setLoadingProgress] = useState<{ loaded: number, total: number } | null>(null);
     
     // Search state
@@ -1580,21 +1580,31 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
 
     // Handle dynamic visualization feature changes
     useEffect(() => {
-        if (!sphereRef) return;
-        
+        console.log('🔮 Visual features effect triggered:', { showDynamicHulls, trailLength, spotlightCluster, hasSphereRef: !!sphereRef });
+
+        if (!sphereRef) {
+            console.warn('🔮 No sphereRef available');
+            return;
+        }
+
         // Update the ref for countdown as well
         sphereRefForCountdown.current = sphereRef;
-        
+
         // Update sphere settings based on features
+        console.log('🔮 Setting sphere visual options:', { showDynamicHulls, trailLength, spotlightCluster });
         sphereRef.showDynamicPoints = false; // Always disabled - not useful
         sphereRef.showDynamicHulls = showDynamicHulls;
         sphereRef.memoryTrailLength = trailLength;
         sphereRef.spotlightCluster = spotlightCluster;
 
         // Call the unified compute function with all settings
+        console.log('🔮 Calling compute_cluster_convex_hulls');
         compute_cluster_convex_hulls(sphereRef);
+        console.log('🔮 Calling update_cluster_spotlight');
         update_cluster_spotlight(sphereRef);
-        
+        console.log('🔮 Rendering sphere');
+        render_sphere(sphereRef);
+
     }, [showDynamicHulls, trailLength, spotlightCluster, sphereRef]);
 
     // Frame control functions
@@ -2416,26 +2426,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
             color: '#d0d0d0',
             overflow: 'hidden'
         }}>
-            {/* Build Timestamp - ALWAYS VISIBLE in top-right corner */}
-            <div style={{
-                position: 'fixed',
-                top: '10px',
-                right: isFullscreen && !showSidePanelInFullscreen ? '10px' : 'calc(25% + 10px)',
-                zIndex: 10001,
-                fontSize: '14px',
-                fontWeight: 'bold',
-                color: '#ff0000',
-                fontFamily: 'monospace',
-                background: 'rgba(255, 0, 0, 0.3)',
-                padding: '6px 10px',
-                borderRadius: '4px',
-                border: '2px solid rgba(255, 0, 0, 0.8)',
-                pointerEvents: 'none',
-                transition: 'right 0.3s ease',
-                boxShadow: '0 2px 8px rgba(255, 0, 0, 0.5)'
-            }}>
-                🔨 BUILD: {BUILD_TIMESTAMP.slice(0, 19).replace('T', ' ')}
-            </div>
+            {/* Build Timestamp - Hidden */}
             
             {/* Sphere Container - ALWAYS FILLS AVAILABLE SPACE */}
             <div style={{
@@ -3120,13 +3111,13 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     
                                     return (
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
-                                            <input 
-                                                type="text" 
-                                                value={searchQuery} 
+                                            <input
+                                                type="text"
+                                                value={searchQuery}
                                                 onChange={handleSearchInput}
                                                 onKeyDown={handleSearchKeyDown}
                                                 placeholder={placeholder + ' (Press Enter or click Go)'}
-                                                style={{ background: '#444', border: '1px solid #666', color: '#d0d0d0', padding: '6px 10px', borderRadius: '3px', fontSize: '14px', flex: 1, minWidth: '150px' }} 
+                                                style={{ background: '#2a2a2a', border: '2px solid #0088ff', color: '#ffffff', padding: '6px 10px', borderRadius: '3px', fontSize: '14px', flex: 1, minWidth: '150px' }} 
                                             />
                                             <button 
                                                 onClick={() => {
@@ -3355,13 +3346,28 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                         if (selectedSearchColumn && columnTypes[selectedSearchColumn]) {
                                             const colType = columnTypes[selectedSearchColumn];
                                             const sampleValues = new Set<string>();
-                                            
+
+                                            // Try pointRecordsByID first
                                             if (sphereRef && sphereRef.current && sphereRef.current.pointRecordsByID) {
                                                 for (const record of sphereRef.current.pointRecordsByID.values()) {
                                                     const val = record.original[selectedSearchColumn];
                                                     if (val !== undefined) {
                                                         sampleValues.add(String(val));
-                                                        if (sampleValues.size >= 8) break; // Get more examples
+                                                        if (sampleValues.size >= 10) break;
+                                                    }
+                                                }
+                                            }
+
+                                            // Fallback to jsonData if pointRecordsByID empty
+                                            if (sampleValues.size === 0 && sphereRef && sphereRef.current && sphereRef.current.jsonData) {
+                                                const coords = sphereRef.current.jsonData.coords || sphereRef.current.jsonData.projections;
+                                                if (coords && Array.isArray(coords)) {
+                                                    for (const point of coords.slice(0, 20)) {
+                                                        const val = point.original?.[selectedSearchColumn];
+                                                        if (val !== undefined) {
+                                                            sampleValues.add(String(val));
+                                                            if (sampleValues.size >= 10) break;
+                                                        }
                                                     }
                                                 }
                                             }
@@ -3449,15 +3455,20 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 return (
                                     <div key={`cluster-${i}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
                                         <span style={{ fontSize: '12px' }}>C{i}</span>
-                                        <input 
-                                            type="color" 
+                                        <input
+                                            type="color"
                                             value={color}
                                             onChange={(e) => {
-                                                if (sphereRef) {
+                                                console.log('🎨 Color picker changed for cluster', i, 'to', e.target.value);
+                                                if (sphereRef && sphereRef.current) {
                                                     const newColor = e.target.value;
-                                                    set_cluster_color(sphereRef, i, newColor);
-                                                    // Force re-render
-                                                    render_sphere(sphereRef);
+                                                    console.log('🎨 Calling set_cluster_color with:', { sphereRef: sphereRef.current, clusterId: i, color: newColor });
+                                                    set_cluster_color(sphereRef.current, i, newColor);
+                                                    render_sphere(sphereRef.current);
+                                                    // Force component re-render
+                                                    setShowColorLegend(prev => prev);
+                                                } else {
+                                                    console.warn('🎨 sphereRef not available:', { hasSphereRef: !!sphereRef, hasCurrent: !!sphereRef?.current });
                                                 }
                                             }}
                                             style={{ 
@@ -3474,11 +3485,14 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 );
                             })}
                         </div>
-                        <button 
+                        <button
                             onClick={() => {
-                                if (sphereRef) {
-                                    clear_cluster_colors(sphereRef);
-                                    render_sphere(sphereRef);
+                                console.log('🎨 Reset colors button clicked');
+                                if (sphereRef && sphereRef.current) {
+                                    console.log('🎨 Calling clear_cluster_colors');
+                                    clear_cluster_colors(sphereRef.current);
+                                    render_sphere(sphereRef.current);
+                                    setShowColorLegend(prev => prev);
                                 }
                             }}
                             style={{ 
@@ -3505,6 +3519,24 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         {frameInfo && (<div style={{ marginBottom: '8px', fontSize: '14px' }}><div>Frame: {frameInfo.current}/{frameInfo.total}</div><div>Visible Clusters: {frameInfo.visible}</div><div>Epoch: {frameInfo.epoch || 'unknown'}</div></div>)}
                         {selectedPointInfo && (<div style={{ marginTop: '8px', borderTop: '1px solid #444', paddingTop: '8px', fontSize: '13px' }}><div style={{ color: '#ff4', fontWeight: 'bold' }}>Selected Point:</div><div>Record ID: {selectedPointInfo.recordId}</div><div>Row Offset: {selectedPointInfo.rowOffset}</div><div>Cluster ID: {selectedPointInfo.clusterId}</div><div>Color: <span style={{ background: selectedPointInfo.color, padding: '2px 6px', borderRadius: '2px' }}>{selectedPointInfo.color}</span></div><div>Position: {selectedPointInfo.position}</div></div>)}
                         <div style={{ marginTop: '8px', fontSize: '13px', color: '#888' }}>Click points on sphere to inspect</div>
+                    </div>
+                )}
+
+                {/* Session Metadata */}
+                {lossData && (
+                    <div style={{ background: 'rgba(42, 42, 42, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #666', marginTop: '16px' }}>
+                        <div style={{ color: '#aaa', fontSize: '11px', fontFamily: 'monospace' }}>
+                            <div style={{ marginBottom: '4px' }}><strong>Session:</strong> {sessionId}</div>
+                            {lossData.training_info && lossData.training_info.featrix_version && (
+                                <div style={{ marginBottom: '4px' }}><strong>Featrix Version:</strong> {lossData.training_info.featrix_version}</div>
+                            )}
+                            {lossData.training_info && lossData.training_info.software_version && (
+                                <div style={{ marginBottom: '4px' }}><strong>Software Version:</strong> {lossData.training_info.software_version}</div>
+                            )}
+                            {frameInfo && (
+                                <div><strong>Epochs:</strong> {frameInfo.total}</div>
+                            )}
+                        </div>
                     </div>
                 )}
             </div>
