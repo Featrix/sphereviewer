@@ -12,12 +12,11 @@ import React, { Suspense, useEffect, useRef, useState, useCallback } from "react
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
 import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch } from './embed-data-access';
-import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles, register_event_listener, set_cluster_color_mode } from '../featrix_sphere_control';
+import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles, register_event_listener, set_cluster_color_mode, compute_epoch_movement_stats } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 
 // Build timestamp for cache busting verification - set at module load time
 const BUILD_TIMESTAMP = new Date().toISOString();
-console.log('BUILD TIMESTAMP:', BUILD_TIMESTAMP);
 
 // Loss Plot Screen Overlay Component - MUCH BETTER VERSION with Dual Y-Axis Support and Zoom
 const LossPlotOverlay: React.FC<{
@@ -880,6 +879,207 @@ const LossPlotOverlay: React.FC<{
     );
 };
 
+// Movement Plot Overlay - shows how far points moved between epochs to evaluate convergence
+const MovementPlotOverlay: React.FC<{
+    movementData: Array<{ epoch: string, mean: number, median: number, p90: number, max: number }>,
+    currentEpoch?: string,
+    style?: React.CSSProperties
+}> = ({ movementData, currentEpoch, style }) => {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+
+    const drawGraph = useCallback((canvas: HTMLCanvasElement) => {
+        if (!canvas || !movementData || movementData.length === 0) return;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const { width, height } = canvas;
+        const leftPadding = 60;
+        const rightPadding = 20;
+        const topPadding = 30;
+        const bottomPadding = 30;
+        const plotWidth = width - leftPadding - rightPadding;
+        const plotHeight = height - topPadding - bottomPadding;
+
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = 'rgba(0,0,0,0.9)';
+        ctx.fillRect(0, 0, width, height);
+
+        // Parse epoch numbers
+        const epochs = movementData.map(d => parseInt(d.epoch.replace('epoch_', '')));
+        const minEpoch = Math.min(...epochs);
+        const maxEpoch = Math.max(...epochs);
+        const epochRange = maxEpoch - minEpoch || 1;
+
+        // Find Y range from p90 values (mean and median will fit within this)
+        const p90Values = movementData.map(d => d.p90);
+        const meanValues = movementData.map(d => d.mean);
+        let maxY = Math.max(...p90Values) * 1.1;
+        if (maxY === 0) maxY = 1;
+        const minY = 0;
+
+        // Grid
+        ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 4; i++) {
+            const y = topPadding + (i / 4) * plotHeight;
+            ctx.beginPath();
+            ctx.moveTo(leftPadding, y);
+            ctx.lineTo(leftPadding + plotWidth, y);
+            ctx.stroke();
+        }
+        for (let i = 0; i <= 5; i++) {
+            const x = leftPadding + (i / 5) * plotWidth;
+            ctx.beginPath();
+            ctx.moveTo(x, topPadding);
+            ctx.lineTo(x, topPadding + plotHeight);
+            ctx.stroke();
+        }
+
+        // Axes
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(leftPadding, topPadding + plotHeight);
+        ctx.lineTo(leftPadding + plotWidth, topPadding + plotHeight);
+        ctx.moveTo(leftPadding, topPadding);
+        ctx.lineTo(leftPadding, topPadding + plotHeight);
+        ctx.stroke();
+
+        // Helper to map data to canvas coords
+        const toX = (epoch: number) => leftPadding + ((epoch - minEpoch) / epochRange) * plotWidth;
+        const toY = (val: number) => topPadding + (1 - (val - minY) / (maxY - minY)) * plotHeight;
+
+        // Draw p90 line (faint)
+        ctx.strokeStyle = 'rgba(255, 100, 100, 0.4)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        movementData.forEach((d, i) => {
+            const x = toX(epochs[i]);
+            const y = toY(d.p90);
+            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+
+        // Draw median line
+        ctx.strokeStyle = '#ffaa00';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        movementData.forEach((d, i) => {
+            const x = toX(epochs[i]);
+            const y = toY(d.median);
+            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+
+        // Draw mean line (primary)
+        const gradient = ctx.createLinearGradient(0, topPadding, 0, topPadding + plotHeight);
+        gradient.addColorStop(0, '#00ccff');
+        gradient.addColorStop(1, '#0088aa');
+        ctx.strokeStyle = gradient;
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        movementData.forEach((d, i) => {
+            const x = toX(epochs[i]);
+            const y = toY(d.mean);
+            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+
+        // Current epoch cursor
+        if (currentEpoch) {
+            const currentEpochNum = parseInt(currentEpoch.replace(/^epoch_/i, ''));
+            if (!isNaN(currentEpochNum) && currentEpochNum >= minEpoch && currentEpochNum <= maxEpoch) {
+                const x = toX(currentEpochNum);
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([4, 4]);
+                ctx.beginPath();
+                ctx.moveTo(x, topPadding);
+                ctx.lineTo(x, topPadding + plotHeight);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // Find matching data point for callout
+                const matchIdx = movementData.findIndex(d => d.epoch === currentEpoch || parseInt(d.epoch.replace('epoch_', '')) === currentEpochNum);
+                if (matchIdx >= 0) {
+                    const d = movementData[matchIdx];
+                    const meanY = toY(d.mean);
+                    // Dot on the mean line
+                    ctx.fillStyle = '#00ccff';
+                    ctx.beginPath();
+                    ctx.arc(x, meanY, 5, 0, 2 * Math.PI);
+                    ctx.fill();
+                    // Callout text
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 11px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`${d.mean.toFixed(4)}`, x, Math.max(topPadding + 12, meanY - 10));
+                }
+            }
+        }
+
+        // X-axis labels
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '11px Arial';
+        ctx.textAlign = 'center';
+        for (let i = 0; i <= 5; i++) {
+            const epoch = minEpoch + (i / 5) * epochRange;
+            const x = leftPadding + (i / 5) * plotWidth;
+            ctx.fillText(Math.round(epoch).toString(), x, height - 8);
+        }
+
+        // Y-axis labels
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#00ccff';
+        for (let i = 0; i <= 4; i++) {
+            const val = maxY - (i / 4) * (maxY - minY);
+            const y = topPadding + (i / 4) * plotHeight;
+            ctx.fillText(val < 0.01 ? val.toExponential(1) : val.toFixed(3), leftPadding - 8, y + 4);
+        }
+
+        // Title
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 13px Arial';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText('Point Movement (epoch-to-epoch)', width / 2, 16);
+
+        // Legend
+        ctx.font = '10px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#00ccff';
+        ctx.fillText('mean', leftPadding + 10, topPadding + plotHeight + 18);
+        ctx.fillStyle = '#ffaa00';
+        ctx.fillText('median', leftPadding + 50, topPadding + plotHeight + 18);
+        ctx.fillStyle = 'rgba(255,100,100,0.7)';
+        ctx.fillText('p90', leftPadding + 100, topPadding + plotHeight + 18);
+    }, [movementData, currentEpoch]);
+
+    useEffect(() => {
+        if (canvasRef.current) {
+            drawGraph(canvasRef.current);
+        }
+    }, [drawGraph]);
+
+    return (
+        <div style={{...style}}>
+            <canvas
+                ref={canvasRef}
+                width="600"
+                height="150"
+                style={{
+                    width: '100%',
+                    height: '100%',
+                    borderRadius: '6px',
+                    border: '1px solid rgba(255,255,255,0.2)'
+                }}
+            />
+        </div>
+    );
+};
+
 // Distribution Chart Component for Scalar Columns
 const DistributionChart: React.FC<{
     distribution: Array<{ bin: number, count: number }>;
@@ -999,7 +1199,7 @@ const getColumnTypes = (projections: any) => {
 
         return d
     } catch (error) {
-        console.error("Error getting column types:", error);
+        // Error getting column types
         return null;
     }
 }
@@ -1104,7 +1304,6 @@ const TrainingMovieSphere: React.FC<{
             const firstEpoch = Object.keys(trainingData)[0];
             const firstEpochData = trainingData[firstEpoch];
             const trainingRecordIds = new Set(firstEpochData.coords.map((c: any) => c.__featrix_row_id || c.__featrix_row_offset));
-            console.log('Training movie contains', trainingRecordIds.size, 'unique records');
 
             // Extract cluster results from first epoch (each epoch has its own cluster results)
             const clusterResults = firstEpochData.entire_cluster_results || sessionProjections.entire_cluster_results || {};
@@ -1120,7 +1319,6 @@ const TrainingMovieSphere: React.FC<{
             
             // Initialize sphere with filtered records that match training movie
             const recordList = create_record_list(filteredSessionData);
-            console.log('Created record list with', recordList.length, 'points for training movie');
             // Use batched loading for large datasets (batchSize = 200 points per frame)
             const batchSize = recordList.length > 500 ? 200 : 0; // 0 = no batching for small datasets
             sphereRef.current = initialize_sphere(actualContainerRef.current, recordList, batchSize, onLoadingProgress || undefined);
@@ -1187,8 +1385,6 @@ const TrainingMovieSphere: React.FC<{
             
             // Start playing the training movie
             play_training_movie(sphereRef.current, 10);
-            console.log('Training movie started');
-
             // Notify parent that sphere is ready
             if (onReady) {
                 onReady(sphereRef.current);
@@ -1330,6 +1526,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [pointAlpha, setPointAlpha] = useState(0.4); // Lower alpha for better performance
     const [loadingProgress, setLoadingProgress] = useState<{ loaded: number, total: number } | null>(null);
     
+    // Movement histogram state
+    const [movementData, setMovementData] = useState<Array<{ epoch: string, mean: number, median: number, p90: number, max: number }>>([]);
+    const [showMovementPlot, setShowMovementPlot] = useState(true); // Show by default
+
     // Search state
     const [columnTypes, setColumnTypes] = useState<any>(null);
     const [selectedSearchColumn, setSelectedSearchColumn] = useState<string>('');
@@ -1366,6 +1566,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     
     // Training status state
     const [trainingStatus, setTrainingStatus] = useState<'loading' | 'training' | 'completed' | null>(null);
+    const [loadingStep, setLoadingStep] = useState<string>('Connecting to server...');
+    const [loadingDetail, setLoadingDetail] = useState<string>('');
     const [nextCheckCountdown, setNextCheckCountdown] = useState<number>(30);
 
     // Countdown function for initial pause - using useCallback to ensure stable reference
@@ -1388,7 +1590,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 resume_training_movie(sphereRefForCountdown.current);
                                 setIsPlaying(true);
                             } else {
-                                console.error('❌ No sphere reference available after countdown!');
+                                // No sphere reference available after countdown
                             }
                         }, 800);
                     }, 1000);
@@ -1401,25 +1603,26 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         const loadTrainingData = async () => {
             try {
                 setLoading(true);
-                
-                // TRAINING MOVIE: Load from API - ignore deprecated cluster_pre, use finalClusterResults
-                console.log('Loading training movie from API...');
+                setLoadingStep('Fetching training epochs...');
+                setLoadingDetail('');
 
-                // Use the session ID to fetch training data from API
-                    // Request all points (9500+) - pass limit parameter if API supports it
-                    const apiTrainingData = await fetch_training_metrics(sessionId, apiBaseUrl, 10000);
-                
+                // TRAINING MOVIE: Load from API - ignore deprecated cluster_pre, use finalClusterResults
+                const apiTrainingData = await fetch_training_metrics(sessionId, apiBaseUrl, 10000);
+
                 if (apiTrainingData && apiTrainingData.epoch_projections) {
-                    console.log('Got training movie data from API:', Object.keys(apiTrainingData.epoch_projections).length, 'epochs');
+                    const epochCount = Object.keys(apiTrainingData.epoch_projections).length;
+                    const firstEpochKey = Object.keys(apiTrainingData.epoch_projections)[0];
+                    const pointCount = apiTrainingData.epoch_projections[firstEpochKey]?.coords?.length || 0;
+                    setLoadingStep('Fetching full projections...');
+                    setLoadingDetail(`${epochCount} epochs, ${pointCount} points per epoch`);
 
                     // Try to fetch final projections for cluster results AND full dataset
                     let clusterResults = {};
                     let fullProjectionsCoords: any[] = [];
                     try {
-                        const baseUrl = apiBaseUrl || (window.location.hostname === 'localhost' 
+                        const baseUrl = apiBaseUrl || (window.location.hostname === 'localhost'
                             ? window.location.origin + '/proxy/featrix'
                             : 'https://sphere-api.featrix.com');
-                        // Request all points (9500+) - pass limit parameter if API supports it
                         const projectionsResponse = await fetch(`${baseUrl}/compute/session/${sessionId}/projections?limit=10000`);
                         if (projectionsResponse.ok) {
                             const projectionsData = await projectionsResponse.json();
@@ -1427,15 +1630,16 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 clusterResults = projectionsData.projections.entire_cluster_results;
                                 console.log('Found cluster results in final projections:', Object.keys(clusterResults).length, 'cluster counts');
                             }
-                            // CRITICAL: Get full dataset coords (not just sampled training movie data)
                             if (projectionsData.projections?.coords) {
                                 fullProjectionsCoords = projectionsData.projections.coords;
-                                console.log(`Found full dataset: ${fullProjectionsCoords.length} points`);
                             }
                         }
                     } catch (err) {
-                        console.error('❌ Error fetching full projections (original data unavailable in Data Inspector):', err);
+                        console.error('Error fetching full projections:', err);
                     }
+
+                    setLoadingStep('Processing data...');
+                    setLoadingDetail(`${epochCount} epochs, ${pointCount} points` + (fullProjectionsCoords.length > 0 ? `, ${fullProjectionsCoords.length} full projection rows` : ''));
 
                     setTrainingData(apiTrainingData.epoch_projections);
                     // Use API data for session projections with cluster results AND full dataset coords
@@ -1473,11 +1677,11 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         setLossData(apiTrainingData.training_metrics);
                     }
                 } else {
-                    console.error('❌ No epoch_projections in API response');
+                    console.error('No epoch_projections in API response');
                     throw new Error('No training movie data from API');
                 }
             } catch (err) {
-                console.error('❌ Error loading training movie:', err);
+                console.error('Error loading training movie:', err);
                 setError(err instanceof Error ? err.message : 'Failed to load training movie');
             } finally {
                 setLoading(false);
@@ -1503,7 +1707,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                   sessionStatus.session?.status === 'pending';
                 
                 if (!isTraining) {
-                    console.log('Training complete or not in progress, stopping epoch polling');
+                    // Training complete, stop polling
                     setTrainingStatus('completed');
                     return;
                 }
@@ -1529,7 +1733,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     }));
 
                     if (newMaxEpoch > currentMaxEpoch) {
-                        console.log(`New epoch detected! Current: ${currentMaxEpoch}, New: ${newMaxEpoch}`);
+                        // New epoch detected
 
                         // Find all new epochs
                         const newEpochs: Record<string, any> = {};
@@ -1541,7 +1745,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         });
 
                         if (Object.keys(newEpochs).length > 0) {
-                            console.log(`Adding ${Object.keys(newEpochs).length} new epochs to training movie`);
+                            // Adding new epochs to training movie
 
                             // Merge new epochs into existing training data
                             const updatedTrainingData = {
@@ -1574,7 +1778,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     }
                 }
             } catch (error) {
-                console.warn('Error checking for new epochs:', error);
+                console.error('Error checking for new epochs:', error);
             }
         };
 
@@ -1599,7 +1803,14 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
             clearInterval(countdownInterval);
         };
     }, [sessionId, apiBaseUrl, trainingData, sphereRef]);
-    
+
+    // Compute epoch movement stats whenever training data changes
+    useEffect(() => {
+        if (!trainingData || Object.keys(trainingData).length < 2) return;
+        const stats = compute_epoch_movement_stats(trainingData);
+        setMovementData(stats);
+    }, [trainingData]);
+
     // Set loading status when loading - clear it when loading completes
     useEffect(() => {
         if (loading) {
@@ -1767,7 +1978,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
             }
             return d;
         } catch (error) {
-            console.error("Error getting column types:", error);
+            // Error getting column types
             return {};
         }
     };
@@ -2295,15 +2506,23 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 {trainingStatus === 'loading' && (
                     <>
                         <div style={{ marginBottom: '20px', fontSize: '18px' }}>Loading Training Movie...</div>
-                        <div style={{ 
-                            width: '40px', 
-                            height: '40px', 
-                            border: '3px solid #555', 
+                        <div style={{
+                            width: '40px',
+                            height: '40px',
+                            border: '3px solid #555',
                             borderTop: '3px solid #d0d0d0',
                             borderRadius: '50%',
                             animation: 'spin 1s linear infinite',
                             marginBottom: '15px'
                         }}></div>
+                        <div style={{ fontSize: '14px', color: '#00ccff', marginBottom: '8px' }}>
+                            {loadingStep}
+                        </div>
+                        {loadingDetail && (
+                            <div style={{ fontSize: '13px', color: '#aaa', marginBottom: '8px' }}>
+                                {loadingDetail}
+                            </div>
+                        )}
                         <div style={{ fontSize: '14px', color: '#ccc', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>Session: {isMobile && sessionId.length > 20 ? sessionId.slice(0, 8) + '...' + sessionId.slice(-4) : sessionId}</div>
                         <div style={{ fontSize: '12px', color: '#888', marginTop: '5px' }}>
                             Fetching from {apiBaseUrl || 'default API'}
@@ -2339,15 +2558,23 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 {!trainingStatus && (
                     <>
                         <div style={{ marginBottom: '20px', fontSize: '18px' }}>Loading Training Movie...</div>
-                        <div style={{ 
-                            width: '40px', 
-                            height: '40px', 
-                            border: '3px solid #555', 
+                        <div style={{
+                            width: '40px',
+                            height: '40px',
+                            border: '3px solid #555',
                             borderTop: '3px solid #d0d0d0',
                             borderRadius: '50%',
                             animation: 'spin 1s linear infinite',
                             marginBottom: '15px'
                         }}></div>
+                        <div style={{ fontSize: '14px', color: '#00ccff', marginBottom: '8px' }}>
+                            {loadingStep}
+                        </div>
+                        {loadingDetail && (
+                            <div style={{ fontSize: '13px', color: '#aaa', marginBottom: '8px' }}>
+                                {loadingDetail}
+                            </div>
+                        )}
                         <div style={{ fontSize: '14px', color: '#ccc', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>Session: {isMobile && sessionId.length > 20 ? sessionId.slice(0, 8) + '...' + sessionId.slice(-4) : sessionId}</div>
                         <div style={{ fontSize: '12px', color: '#888', marginTop: '5px' }}>
                             Fetching from {apiBaseUrl || 'default API'}
@@ -2383,8 +2610,11 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     Build: {BUILD_TIMESTAMP.slice(0, 16)}
                 </div>
                 <div style={{ fontSize: '18px', marginBottom: '10px' }}>Error loading training movie</div>
-                <div style={{ fontSize: '14px', marginTop: '10px', textAlign: 'center' }}>{error}</div>
-                <div style={{ fontSize: '12px', color: '#888', marginTop: '10px', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
+                <div style={{ fontSize: '14px', marginTop: '10px', textAlign: 'center', maxWidth: '80vw', wordBreak: 'break-word' as const }}>{error}</div>
+                <div style={{ fontSize: '12px', color: '#888', marginTop: '10px' }}>
+                    Failed during: {loadingStep}
+                </div>
+                <div style={{ fontSize: '12px', color: '#888', marginTop: '5px', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
                     Session: {isMobile && sessionId.length > 20 ? sessionId.slice(0, 8) + '...' + sessionId.slice(-4) : sessionId} | API: {apiBaseUrl || 'default'}
                 </div>
             </div>
@@ -2693,9 +2923,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     height: '100vh',
                     borderLeft: '1px solid #555',
                 }),
-                background: '#3a3a3a',
+                background: '#181818',
                 overflowY: 'auto',
-                padding: '16px',
+                padding: '16px 14px',
                 fontFamily: 'monospace',
                 fontSize: '14px',
                 color: '#d0d0d0',
@@ -2713,88 +2943,59 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     }} />
                 )}
 
-                {/* Build timestamp & frame info */}
-                <div className="build-display" style={{
-                    marginBottom: '16px',
-                    padding: '8px',
-                    background: 'rgba(42, 42, 42, 0.8)',
-                    borderRadius: '6px',
-                    border: '1px solid #666'
-                }}>
-                    <div style={{ color: '#ff0000', fontSize: '12px' }}>v{BUILD_TIMESTAMP.slice(0, 19).replace('T', ' ')}</div>
+                {/* SECTION 1: TRAINING STATUS */}
+                <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', margin: '0 0 8px 0' }}>TRAINING STATUS</div>
+                <div className="build-display" style={{ marginBottom: '16px' }}>
+                    <div style={{ color: '#666', fontSize: '11px' }}>v{BUILD_TIMESTAMP.slice(0, 19).replace('T', ' ')}</div>
                     {/* Training Status */}
                     {trainingStatus === 'training' && (
-                        <div style={{ 
-                            marginTop: '8px', 
-                            padding: '6px', 
-                            background: 'rgba(0, 255, 0, 0.1)', 
-                            borderRadius: '4px',
-                            border: '1px solid rgba(0, 255, 0, 0.3)'
-                        }}>
-                            <div style={{ color: '#00ff00', fontSize: '13px', fontWeight: 'bold' }}>
+                        <div style={{ marginTop: '6px' }}>
+                            <div style={{ color: '#4caf50', fontSize: '12px', fontWeight: 500 }}>
                                 Training in progress
                             </div>
-                            <div style={{ color: '#00ffff', fontSize: '12px', marginTop: '4px' }}>
+                            <div style={{ color: '#cfd8dc', fontSize: '11px', marginTop: '2px' }}>
                                 Checking for new frames in {nextCheckCountdown}s
                             </div>
                         </div>
                     )}
                     {trainingStatus === 'completed' && (
-                        <div style={{ 
-                            marginTop: '8px', 
-                            padding: '6px', 
-                            background: 'rgba(0, 255, 0, 0.1)', 
-                            borderRadius: '4px',
-                            border: '1px solid rgba(0, 255, 0, 0.3)'
-                        }}>
-                            <div style={{ color: '#00ff00', fontSize: '13px', fontWeight: 'bold' }}>
+                        <div style={{ marginTop: '6px' }}>
+                            <div style={{ color: '#4caf50', fontSize: '12px', fontWeight: 500 }}>
                                 Training Completed
                             </div>
                         </div>
                     )}
                     {frameInfo && (
-                        <div style={{ marginTop: '8px' }}>
-                            <div style={{ color: '#00ff00', fontSize: '16px', fontWeight: 'bold' }}>
+                        <div style={{ marginTop: '6px' }}>
+                            <div style={{ color: '#cfd8dc', fontSize: '12px' }}>
                                 Frame {frameInfo.current}/{frameInfo.total} | {frameInfo.visible} clusters
                             </div>
-                            
+
                             {/* Progress Bar */}
-                            <div style={{ 
+                            <div style={{
                                 marginTop: '6px',
-                                background: 'rgba(255,255,255,0.2)',
-                                borderRadius: '6px',
+                                background: '#2a2a2a',
+                                borderRadius: '3px',
                                 overflow: 'hidden',
-                                height: '12px',
-                                width: '100%',
-                                border: '1px solid rgba(0,255,0,0.3)'
+                                height: '4px',
+                                width: '100%'
                             }}>
                                 <div style={{
-                                    background: 'linear-gradient(90deg, #00ff00, #00aa00)',
+                                    background: '#4caf50',
                                     height: '100%',
                                     width: `${(frameInfo.current / frameInfo.total) * 100}%`,
-                                    transition: 'width 0.2s ease',
-                                    borderRadius: '5px',
-                                    boxShadow: '0 0 8px rgba(0,255,0,0.4)'
+                                    transition: 'width 0.2s ease'
                                 }} />
                             </div>
-                            <div style={{ 
-                                color: '#00ff00', 
-                                fontSize: '14px', 
-                                marginTop: '3px',
-                                textAlign: 'center',
-                                fontWeight: 'bold'
-                            }}>
-                                {Math.round((frameInfo.current / frameInfo.total) * 100)}%
-                            </div>
-                            
+
                             {frameInfo.epoch && (
-                                <div style={{ color: '#00ffff', marginTop: '4px', fontSize: '14px', fontWeight: 'bold' }}>
-                                    Epoch {frameInfo.epoch} of 225
+                                <div style={{ color: '#cfd8dc', marginTop: '4px', fontSize: '12px' }}>
+                                    Epoch {frameInfo.epoch}
                                 </div>
                             )}
                             {frameInfo.validationLoss !== undefined && (
-                                <div style={{ color: '#ffff00', marginTop: '4px', fontSize: '13px', fontWeight: 'bold' }}>
-                                    Validation Loss: {frameInfo.validationLoss.toFixed(4)}
+                                <div style={{ color: '#cfd8dc', marginTop: '2px', fontSize: '12px' }}>
+                                    Loss: {frameInfo.validationLoss.toFixed(4)}
                                 </div>
                             )}
                         </div>
@@ -2944,10 +3145,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     
                     return (
                         <div style={{ marginBottom: '16px' }}>
-                            <LossPlotOverlay 
-                                lossData={validationLossData} 
+                            <LossPlotOverlay
+                                lossData={validationLossData}
                                 learningRateData={learningRateData && learningRateData.length > 0 ? learningRateData : undefined}
-                                currentEpoch={frameInfo?.epoch} 
+                                currentEpoch={frameInfo?.epoch}
                                 title="Validation Loss"
                                 style={{
                                     width: '100%',
@@ -2959,15 +3160,25 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     );
                 })()}
 
-                {/* Frame Controls */}
+                {/* Movement Plot - shows point movement per epoch for convergence evaluation */}
+                {showMovementPlot && movementData.length > 0 && (
+                    <div style={{ marginBottom: '16px' }}>
+                        <MovementPlotOverlay
+                            movementData={movementData}
+                            currentEpoch={frameInfo?.epoch}
+                            style={{
+                                width: '100%',
+                                height: '120px',
+                                pointerEvents: 'none'
+                            }}
+                        />
+                    </div>
+                )}
+
+                {/* SECTION 2: NAVIGATION */}
                 {frameInfo && frameInfo.total > 0 && (
-                    <div style={{
-                        background: 'rgba(42, 42, 42, 0.6)',
-                        padding: '12px',
-                        borderRadius: '8px',
-                        border: '1px solid #666',
-                        marginBottom: '16px'
-                    }}>
+                    <div style={{ marginBottom: '16px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', margin: '20px 0 8px 0' }}>NAVIGATION</div>
                         {/* Scrub Slider */}
                         <div 
                             style={{
@@ -3019,92 +3230,48 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             justifyContent: 'center',
                             marginBottom: '12px'
                         }}>
-                            <button onClick={handleStepBackward} style={{ background: '#555', border: '1px solid #666', color: '#d0d0d0', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', flexShrink: 0 }} title="Previous Frame">⏮</button>
-                            <button onClick={handlePlayPause} style={{ background: isPlaying ? '#c44' : '#4c4', border: '1px solid #666', color: '#d0d0d0', padding: '6px 14px', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', minWidth: '50px', fontWeight: 'bold', flexShrink: 0 }} title={isPlaying ? "Pause" : "Play"}>{isPlaying ? '⏸' : '▶'}</button>
-                            <button onClick={handleStepForward} style={{ background: '#555', border: '1px solid #666', color: '#d0d0d0', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', flexShrink: 0 }} title="Next Frame">⏭</button>
-                            <div style={{ margin: '0 4px', color: '#888', flexShrink: 0 }}>|</div>
-                            <input type="number" value={frameInput} onChange={(e) => setFrameInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleGotoFrame()} placeholder="#" style={{ background: '#444', border: '1px solid #666', color: '#d0d0d0', padding: '6px 8px', borderRadius: '4px', width: '60px', fontSize: '14px', flexShrink: 0 }} min="1" max={frameInfo?.total || 1} />
-                            <button onClick={handleGotoFrame} style={{ background: '#555', border: '1px solid #666', color: '#d0d0d0', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', flexShrink: 0 }} title="Go to Frame">✓</button>
-                            <div style={{ margin: '0 4px', color: '#888', flexShrink: 0 }}>|</div>
-                            <button onClick={handleStop} style={{ background: '#633', border: '1px solid #666', color: '#d0d0d0', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', flexShrink: 0 }} title="Stop">⏹</button>
-                            <button onClick={handleReplay} style={{ background: '#555', border: '1px solid #666', color: '#d0d0d0', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', flexShrink: 0 }} title="Replay">↻</button>
+                            <button onClick={handleStepBackward} style={{ background: '#2a2a2a', border: 'none', color: '#e0e0e0', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', flexShrink: 0 }} title="Previous Frame">⏮</button>
+                            <button onClick={handlePlayPause} style={{ background: isPlaying ? '#c44' : '#4c4', border: 'none', color: '#e0e0e0', padding: '6px 14px', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', minWidth: '50px', fontWeight: 'bold', flexShrink: 0 }} title={isPlaying ? "Pause" : "Play"}>{isPlaying ? '⏸' : '▶'}</button>
+                            <button onClick={handleStepForward} style={{ background: '#2a2a2a', border: 'none', color: '#e0e0e0', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', flexShrink: 0 }} title="Next Frame">⏭</button>
+                            <div style={{ margin: '0 4px', color: '#555', flexShrink: 0 }}>|</div>
+                            <input type="number" value={frameInput} onChange={(e) => setFrameInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleGotoFrame()} placeholder="#" style={{ background: '#2a2a2a', border: '1px solid #333', color: '#e0e0e0', padding: '6px 8px', borderRadius: '4px', width: '60px', fontSize: '14px', flexShrink: 0 }} min="1" max={frameInfo?.total || 1} />
+                            <button onClick={handleGotoFrame} style={{ background: '#2a2a2a', border: 'none', color: '#e0e0e0', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', flexShrink: 0 }} title="Go to Frame">✓</button>
+                            <div style={{ margin: '0 4px', color: '#555', flexShrink: 0 }}>|</div>
+                            <button onClick={handleStop} style={{ background: '#2a2a2a', border: 'none', color: '#e0e0e0', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', flexShrink: 0 }} title="Stop">⏹</button>
+                            <button onClick={handleReplay} style={{ background: '#2a2a2a', border: 'none', color: '#e0e0e0', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', flexShrink: 0 }} title="Replay">↻</button>
                         </div>
                     </div>
                 )}
 
-                {/* Search & Bounds Box Controls */}
-                <div style={{ background: 'rgba(42, 42, 42, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #666', marginBottom: '16px' }}>
+                {/* SECTION 3: TOOLS */}
+                <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', margin: '20px 0 8px 0' }}>TOOLS</div>
+                <div style={{ marginBottom: '16px' }}>
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <button onClick={() => setShowSearch(!showSearch)} style={{ background: showSearch ? '#4c4' : '#555', border: '1px solid #666', color: '#d0d0d0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0 }} title="Toggle Search">Search</button>
-                        <button onClick={() => { setShowBoundsBox(!showBoundsBox); if (sphereRef) { toggle_bounds_box(sphereRef, !showBoundsBox); render_sphere(sphereRef); } }} style={{ background: showBoundsBox ? '#4c4' : '#555', border: '1px solid #666', color: '#d0d0d0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0 }} title="Toggle Bounds Box">Bounds</button>
-                        <button onClick={() => { 
-                            if (sphereRef) { 
+                        <button onClick={() => setShowSearch(!showSearch)} style={{ background: showSearch ? '#4c4' : '#2a2a2a', border: 'none', color: '#e0e0e0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0, flex: 1 }} title="Toggle Search">Search</button>
+                        <button onClick={() => { setShowBoundsBox(!showBoundsBox); if (sphereRef) { toggle_bounds_box(sphereRef, !showBoundsBox); render_sphere(sphereRef); } }} style={{ background: showBoundsBox ? '#4c4' : '#2a2a2a', border: 'none', color: '#e0e0e0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0, flex: 1 }} title="Toggle Bounds Box">Bounds</button>
+                        <button onClick={() => {
+                            if (sphereRef) {
                                 toggle_embedding_hull(sphereRef, !sphereRef.showEmbeddingHull);
                                 render_sphere(sphereRef);
                             }
-                        }} style={{ background: sphereRef?.showEmbeddingHull ? '#4c4' : '#555', border: '1px solid #666', color: '#d0d0d0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0 }} title="Toggle Embedding Convex Hull">Hull</button>
-                    </div>
-                    {/* Point Size and Alpha Controls */}
-                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #555' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <label style={{ fontSize: '13px', color: '#d0d0d0', minWidth: '80px' }}>Point Size:</label>
-                                <input 
-                                    type="range" 
-                                    min="0.01" 
-                                    max="0.2" 
-                                    step="0.01" 
-                                    value={pointSize} 
-                                    onChange={(e) => {
-                                        const newSize = parseFloat(e.target.value);
-                                        setPointSize(newSize);
-                                        if (sphereRef) {
-                                            set_visual_options(sphereRef, newSize, pointAlpha);
-                                            render_sphere(sphereRef);
-                                        }
-                                    }}
-                                    style={{ flex: 1, cursor: 'pointer' }}
-                                />
-                                <span style={{ fontSize: '12px', color: '#888', minWidth: '40px', textAlign: 'right' }}>{pointSize.toFixed(2)}</span>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <label style={{ fontSize: '13px', color: '#d0d0d0', minWidth: '80px' }}>Alpha:</label>
-                                <input 
-                                    type="range" 
-                                    min="0" 
-                                    max="1" 
-                                    step="0.01" 
-                                    value={pointAlpha} 
-                                    onChange={(e) => {
-                                        const newAlpha = parseFloat(e.target.value);
-                                        setPointAlpha(newAlpha);
-                                        if (sphereRef) {
-                                            set_visual_options(sphereRef, pointSize, newAlpha);
-                                            render_sphere(sphereRef);
-                                        }
-                                    }}
-                                    style={{ flex: 1, cursor: 'pointer' }}
-                                />
-                                <span style={{ fontSize: '12px', color: '#888', minWidth: '40px', textAlign: 'right' }}>{pointAlpha.toFixed(2)}</span>
-                            </div>
-                        </div>
+                        }} style={{ background: sphereRef?.showEmbeddingHull ? '#4c4' : '#2a2a2a', border: 'none', color: '#e0e0e0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0, flex: 1 }} title="Toggle Embedding Convex Hull">Hull</button>
                     </div>
                     {/* Loading Progress */}
                     {loadingProgress && loadingProgress.loaded < loadingProgress.total && (
-                        <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #555', fontSize: '12px', color: '#4c4' }}>
-                            Loading points: {loadingProgress.loaded} / {loadingProgress.total} ({(loadingProgress.loaded / loadingProgress.total * 100).toFixed(1)}%)
+                        <div style={{ marginTop: '8px', fontSize: '11px', color: '#8a8a8a' }}>
+                            Loading: {loadingProgress.loaded} / {loadingProgress.total} ({(loadingProgress.loaded / loadingProgress.total * 100).toFixed(1)}%)
                         </div>
                     )}
                     {showBoundsBox && sphereRef && sphereRef.boundsBoxVolumeUtilization !== undefined && (
-                        <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #555', fontSize: '13px', color: '#00ff00' }}>
+                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#cfd8dc' }}>
                             Sphere Coverage: <strong>{sphereRef.boundsBoxVolumeUtilization.toFixed(2)}%</strong>
-                            <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
-                                {sphereRef.boundsBoxVolumeUtilization.toFixed(2)}% of unit sphere radius is covered by bounding box
+                            <div style={{ fontSize: '11px', color: '#8a8a8a', marginTop: '2px' }}>
+                                {sphereRef.boundsBoxVolumeUtilization.toFixed(2)}% of unit sphere radius covered
                             </div>
-                            <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <input 
-                                    type="checkbox" 
-                                    checked={showGreatCircles} 
+                            <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={showGreatCircles}
                                     onChange={(e) => {
                                         const enabled = e.target.checked;
                                         setShowGreatCircles(enabled);
@@ -3112,12 +3279,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                             toggle_great_circles(sphereRef, enabled);
                                         }
                                     }}
-                                    style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                                    style={{ cursor: 'pointer', width: '14px', height: '14px' }}
                                     id="show-great-circles-checkbox"
                                 />
-                                <label 
-                                    htmlFor="show-great-circles-checkbox" 
-                                    style={{ fontSize: '12px', color: '#d0d0d0', cursor: 'pointer' }}
+                                <label
+                                    htmlFor="show-great-circles-checkbox"
+                                    style={{ fontSize: '12px', color: '#cfd8dc', cursor: 'pointer' }}
                                 >
                                     Show great circles
                                 </label>
@@ -3125,18 +3292,18 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         </div>
                     )}
                     {sphereRef?.showEmbeddingHull && sphereRef.embeddingHullArea !== undefined && (sphereRef as any).embeddingHullCoverage !== undefined && (
-                        <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #555', fontSize: '13px', color: '#00ffff' }}>
+                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#cfd8dc' }}>
                             Convex Hull Area: <strong>{sphereRef.embeddingHullArea.toFixed(4)}</strong>
-                            <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
+                            <div style={{ fontSize: '11px', color: '#8a8a8a', marginTop: '2px' }}>
                                 Unit sphere area: {(4 * Math.PI).toFixed(4)} | Coverage: <strong>{(sphereRef as any).embeddingHullCoverage.toFixed(2)}%</strong>
                             </div>
                         </div>
                     )}
                 </div>
 
-                {/* Search Panel - Inline in side panel */}
+                {/* Search Panel */}
                 {showSearch && columnTypes && Object.keys(columnTypes).length > 0 && (
-                    <div style={{ background: 'rgba(42, 42, 42, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #666', marginBottom: '16px' }}>
+                    <div style={{ marginBottom: '16px' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                 <label style={{ color: '#d0d0d0', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '14px' }}>
@@ -3461,64 +3628,122 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     </div>
                 )}
 
-                {/* Visual Controls */}
+                {/* SECTION 4: VISUAL CONTROLS */}
                 {frameInfo && (
-                    <div style={{ background: 'rgba(42, 42, 42, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #666', marginBottom: '16px' }}>
-                        <div style={{ color: '#d0d0d0', fontSize: '16px', fontWeight: 'bold', marginBottom: '8px' }}>Visual Controls</div>
+                    <div style={{ marginBottom: '16px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', margin: '20px 0 8px 0' }}>VISUAL CONTROLS</div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            <div style={{ marginBottom: '4px', paddingBottom: '8px', borderBottom: '1px solid #666' }}>
-                                <label style={{ color: '#d0d0d0', fontSize: '14px', display: 'flex', alignItems: 'center' }}>
-                                    Cluster Coloring:
-                                    <select value={clusterColorMode} onChange={(e) => setClusterColorMode(e.target.value as 'final' | 'per-epoch')} style={{ marginLeft: '8px', fontSize: '13px', padding: '4px 6px', backgroundColor: '#555', color: '#d0d0d0', border: '1px solid #666', borderRadius: '3px', cursor: 'pointer', flex: 1 }}>
-                                        <option value="final">Final Frame Clusters</option>
-                                        <option value="per-epoch">Per-Epoch Clusters</option>
-                                    </select>
-                                </label>
-                                <div style={{ fontSize: '11px', color: '#888', marginTop: '4px', paddingLeft: '4px' }}>
-                                    {clusterColorMode === 'final'
-                                        ? 'Colors locked to final-frame neighbors. Watch them converge.'
-                                        : 'Colors from each epoch\'s own clustering. Watch clusters evolve.'}
-                                </div>
-                            </div>
-                            <label style={{ color: frameInfo.visible >= 4 ? '#d0d0d0' : '#888', fontSize: '14px', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                                <input type="checkbox" checked={showDynamicHulls} onChange={(e) => { setShowDynamicHulls(e.target.checked); }} style={{ marginRight: '8px', cursor: 'pointer', width: '16px', height: '16px' }} disabled={frameInfo.visible < 4} />
-                                Show Cluster Spheres
-                                <span style={{ fontSize: '12px', color: '#888', marginLeft: '8px' }}>({frameInfo.visible} clusters - translucent spheres around each cluster)</span>
+                            {/* Dropdowns first */}
+                            <label style={{ color: '#cfd8dc', fontSize: '13px', display: 'flex', alignItems: 'center' }}>
+                                Cluster Coloring:
+                                <select value={clusterColorMode} onChange={(e) => setClusterColorMode(e.target.value as 'final' | 'per-epoch')} style={{ marginLeft: '8px', fontSize: '12px', padding: '4px 6px', backgroundColor: '#2a2a2a', color: '#e0e0e0', border: '1px solid #333', borderRadius: '3px', cursor: 'pointer', flex: 1 }}>
+                                    <option value="final">Final Frame Clusters</option>
+                                    <option value="per-epoch">Per-Epoch Clusters</option>
+                                </select>
                             </label>
-                            <div style={{ marginTop: '8px', borderTop: '1px solid #666', paddingTop: '8px' }}>
-                                <label style={{ color: '#d0d0d0', fontSize: '14px', display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
-                                    Trail Length:
-                                    <input type="range" min="2" max="15" value={trailLength} onChange={(e) => { const newLength = parseInt(e.target.value); setTrailLength(newLength); }} style={{ marginLeft: '8px', marginRight: '8px', cursor: 'pointer', flex: 1 }} />
-                                    <span style={{ fontSize: '14px', color: '#aaa', minWidth: '20px' }}>{trailLength}</span>
-                                </label>
+                            <div style={{ fontSize: '11px', color: '#8a8a8a', paddingLeft: '4px', marginTop: '-4px' }}>
+                                {clusterColorMode === 'final'
+                                    ? 'Colors locked to final-frame neighbors. Watch them converge.'
+                                    : 'Colors from each epoch\'s own clustering. Watch clusters evolve.'}
                             </div>
-                            <div style={{ marginTop: '8px', borderTop: '1px solid #666', paddingTop: '8px' }}>
-                                <label style={{ color: '#d0d0d0', fontSize: '14px', display: 'flex', alignItems: 'center' }}>
-                                    Focus Cluster:
-                                    <select value={spotlightCluster} onChange={(e) => { const cluster = parseInt(e.target.value); setSpotlightCluster(cluster); if (sphereRef) { sphereRef.spotlightCluster = cluster; update_cluster_spotlight(sphereRef); render_sphere(sphereRef); } }} style={{ marginLeft: '8px', fontSize: '13px', padding: '4px 6px', backgroundColor: '#555', color: '#d0d0d0', border: '1px solid #666', borderRadius: '3px', cursor: 'pointer', flex: 1 }}>
-                                        <option value={-1}>Off</option>
-                                        {frameInfo.visible > 0 && Array.from({length: frameInfo.visible}, (_, i) => (<option key={i} value={i}>C{i}</option>))}
-                                    </select>
-                                </label>
+                            <label style={{ color: '#cfd8dc', fontSize: '13px', display: 'flex', alignItems: 'center' }}>
+                                Focus Cluster:
+                                <select value={spotlightCluster} onChange={(e) => { const cluster = parseInt(e.target.value); setSpotlightCluster(cluster); if (sphereRef) { sphereRef.spotlightCluster = cluster; update_cluster_spotlight(sphereRef); render_sphere(sphereRef); } }} style={{ marginLeft: '8px', fontSize: '12px', padding: '4px 6px', backgroundColor: '#2a2a2a', color: '#e0e0e0', border: '1px solid #333', borderRadius: '3px', cursor: 'pointer', flex: 1 }}>
+                                    <option value={-1}>Off</option>
+                                    {frameInfo.visible > 0 && Array.from({length: frameInfo.visible}, (_, i) => (<option key={i} value={i}>C{i}</option>))}
+                                </select>
+                            </label>
+
+                            {/* Toggles second */}
+                            <div style={{ height: '1px', background: '#2a2a2a', margin: '4px 0' }} />
+                            <label style={{ color: frameInfo.visible >= 4 ? '#cfd8dc' : '#555', fontSize: '13px', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                                <input type="checkbox" checked={showDynamicHulls} onChange={(e) => { setShowDynamicHulls(e.target.checked); }} style={{ marginRight: '8px', cursor: 'pointer', width: '14px', height: '14px' }} disabled={frameInfo.visible < 4} />
+                                Show Cluster Spheres
+                                <span style={{ fontSize: '11px', color: '#8a8a8a', marginLeft: '8px' }}>({frameInfo.visible})</span>
+                            </label>
+
+                            {/* Sliders last */}
+                            <div style={{ height: '1px', background: '#2a2a2a', margin: '4px 0' }} />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <label style={{ fontSize: '13px', color: '#cfd8dc', minWidth: '80px' }}>Point Size:</label>
+                                <input
+                                    type="range"
+                                    min="0.01"
+                                    max="0.2"
+                                    step="0.01"
+                                    value={pointSize}
+                                    onChange={(e) => {
+                                        const newSize = parseFloat(e.target.value);
+                                        setPointSize(newSize);
+                                        if (sphereRef) {
+                                            set_visual_options(sphereRef, newSize, pointAlpha);
+                                            render_sphere(sphereRef);
+                                        }
+                                    }}
+                                    style={{ flex: 1, cursor: 'pointer' }}
+                                />
+                                <span style={{ fontSize: '11px', color: '#8a8a8a', minWidth: '35px', textAlign: 'right' }}>{pointSize.toFixed(2)}</span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <label style={{ fontSize: '13px', color: '#cfd8dc', minWidth: '80px' }}>Alpha:</label>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.01"
+                                    value={pointAlpha}
+                                    onChange={(e) => {
+                                        const newAlpha = parseFloat(e.target.value);
+                                        setPointAlpha(newAlpha);
+                                        if (sphereRef) {
+                                            set_visual_options(sphereRef, pointSize, newAlpha);
+                                            render_sphere(sphereRef);
+                                        }
+                                    }}
+                                    style={{ flex: 1, cursor: 'pointer' }}
+                                />
+                                <span style={{ fontSize: '11px', color: '#8a8a8a', minWidth: '35px', textAlign: 'right' }}>{pointAlpha.toFixed(2)}</span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <label style={{ fontSize: '13px', color: '#cfd8dc', minWidth: '80px' }}>Trail Length:</label>
+                                <input type="range" min="2" max="15" value={trailLength} onChange={(e) => { const newLength = parseInt(e.target.value); setTrailLength(newLength); }} style={{ flex: 1, cursor: 'pointer' }} />
+                                <span style={{ fontSize: '11px', color: '#8a8a8a', minWidth: '35px', textAlign: 'right' }}>{trailLength}</span>
                             </div>
                         </div>
                     </div>
                 )}
 
-                {/* Other Controls */}
-                <div style={{ background: 'rgba(42, 42, 42, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #666', marginBottom: '16px' }}>
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                        <button onClick={() => setShowClusterDebug(!showClusterDebug)} style={{ background: showClusterDebug ? '#4c4' : '#555', border: '1px solid #666', color: '#d0d0d0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }} title="Toggle Cluster Inspector">Debug</button>
-                        <button onClick={() => setShowColorLegend(!showColorLegend)} style={{ background: showColorLegend ? '#4c4' : '#555', border: '1px solid #666', color: '#d0d0d0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }} title="Toggle Color Legend">Colors</button>
-                        {!isMobile && <button onClick={toggleFullscreen} style={{ background: isFullscreen ? '#4c4' : '#555', border: '1px solid #666', color: '#d0d0d0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }} title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}>{isFullscreen ? 'Exit' : 'Full'}</button>}
-                        <button onClick={() => setRotationEnabled(!rotationEnabled)} style={{ background: rotationEnabled ? '#4c4' : '#c44', border: '1px solid #666', color: '#d0d0d0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }} title={rotationEnabled ? "Disable Rotation" : "Enable Rotation"}>{rotationEnabled ? 'On' : 'Off'}</button>
+                {/* SECTION 5: SYSTEM */}
+                <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', margin: '28px 0 8px 0' }}>SYSTEM</div>
+                <div style={{ marginBottom: '16px', fontSize: '11px', color: '#8a8a8a' }}>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        <button onClick={() => setShowMovementPlot(!showMovementPlot)} style={{ background: showMovementPlot ? '#4c4' : '#2a2a2a', border: 'none', color: '#8a8a8a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title="Toggle Movement Histogram">Move</button>
+                        <button onClick={() => setShowClusterDebug(!showClusterDebug)} style={{ background: showClusterDebug ? '#4c4' : '#2a2a2a', border: 'none', color: '#8a8a8a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title="Toggle Cluster Inspector">Debug</button>
+                        <button onClick={() => setShowColorLegend(!showColorLegend)} style={{ background: showColorLegend ? '#4c4' : '#2a2a2a', border: 'none', color: '#8a8a8a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title="Toggle Color Legend">Colors</button>
+                        {!isMobile && <button onClick={toggleFullscreen} style={{ background: isFullscreen ? '#4c4' : '#2a2a2a', border: 'none', color: '#8a8a8a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}>{isFullscreen ? 'Exit' : 'Full'}</button>}
+                        <button onClick={() => setRotationEnabled(!rotationEnabled)} style={{ background: rotationEnabled ? '#4c4' : '#c44', border: 'none', color: '#8a8a8a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title={rotationEnabled ? "Disable Rotation" : "Enable Rotation"}>{rotationEnabled ? 'On' : 'Off'}</button>
                     </div>
+                    {/* Session info merged into System */}
+                    {lossData && (
+                        <div style={{ marginTop: '10px', color: '#666', fontSize: '10px', fontFamily: 'monospace' }}>
+                            <div style={{ marginBottom: '2px' }}>Session: {sessionId}</div>
+                            {lossData.training_info && lossData.training_info.featrix_version && (
+                                <div style={{ marginBottom: '2px' }}>Featrix: {lossData.training_info.featrix_version}</div>
+                            )}
+                            {lossData.training_info && lossData.training_info.software_version && (
+                                <div style={{ marginBottom: '2px' }}>Software: {lossData.training_info.software_version}</div>
+                            )}
+                            {frameInfo && (
+                                <div>Epochs: {frameInfo.total}</div>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 {/* Color Legend - Inline in side panel */}
                 {showColorLegend && frameInfo && (
-                    <div style={{ background: 'rgba(42, 42, 42, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #666', marginBottom: '16px' }}>
-                        <div style={{ color: '#4c4', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center', fontSize: '16px' }}>Cluster Colors</div>
+                    <div style={{ marginBottom: '16px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', marginBottom: '8px' }}>CLUSTER COLORS</div>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
                             {frameInfo.visible > 0 && Array.from({length: frameInfo.visible}, (_, i) => {
                                 // Clusters are 0-based, so cluster 0 uses color index 0
@@ -3567,15 +3792,15 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 }
                             }}
                             style={{ 
-                                marginTop: '8px', 
-                                width: '100%', 
-                                background: '#633', 
-                                border: '1px solid #666', 
-                                color: '#d0d0d0', 
-                                padding: '6px', 
-                                borderRadius: '3px', 
-                                cursor: 'pointer', 
-                                fontSize: '12px' 
+                                marginTop: '8px',
+                                width: '100%',
+                                background: '#2a2a2a',
+                                border: 'none',
+                                color: '#8a8a8a',
+                                padding: '6px',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '11px'
                             }}
                         >
                             Reset to Default Colors
@@ -3585,8 +3810,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
 
                 {/* Cluster Debug Panel - Inline in side panel */}
                 {showClusterDebug && (
-                    <div style={{ background: 'rgba(42, 42, 42, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #666', marginBottom: '16px' }}>
-                        <div style={{ color: '#4c4', fontWeight: 'bold', marginBottom: '8px', fontSize: '16px' }}>Cluster Inspector</div>
+                    <div style={{ marginBottom: '16px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', marginBottom: '8px' }}>CLUSTER INSPECTOR</div>
                         {frameInfo && (<div style={{ marginBottom: '8px', fontSize: '14px' }}><div>Frame: {frameInfo.current}/{frameInfo.total}</div><div>Visible Clusters: {frameInfo.visible}</div><div>Epoch: {frameInfo.epoch || 'unknown'}</div></div>)}
 
                         {/* Cluster member counts */}
@@ -3665,23 +3890,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     </div>
                 )}
 
-                {/* Session Metadata */}
-                {lossData && (
-                    <div style={{ background: 'rgba(42, 42, 42, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #666', marginTop: '16px' }}>
-                        <div style={{ color: '#aaa', fontSize: '11px', fontFamily: 'monospace' }}>
-                            <div style={{ marginBottom: '4px' }}><strong>Session:</strong> {sessionId}</div>
-                            {lossData.training_info && lossData.training_info.featrix_version && (
-                                <div style={{ marginBottom: '4px' }}><strong>Featrix Version:</strong> {lossData.training_info.featrix_version}</div>
-                            )}
-                            {lossData.training_info && lossData.training_info.software_version && (
-                                <div style={{ marginBottom: '4px' }}><strong>Software Version:</strong> {lossData.training_info.software_version}</div>
-                            )}
-                            {frameInfo && (
-                                <div><strong>Epochs:</strong> {frameInfo.total}</div>
-                            )}
-                        </div>
-                    </div>
-                )}
             </div>
             )}
 
@@ -3959,7 +4167,7 @@ const FinalSphereView: React.FC<{
             }
             return d;
         } catch (error) {
-            console.error("Error getting column types:", error);
+            // Error getting column types
             return null;
         }
     };
