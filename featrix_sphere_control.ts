@@ -96,7 +96,11 @@ export interface SphereData {
     pointOpacity: number;
 
     finalClusterResults?: any;
-    
+
+    // Cluster color mode: 'final' uses session-level cluster assignments for all frames,
+    // 'per-epoch' uses each epoch's own cluster_results for that frame
+    clusterColorMode: 'final' | 'per-epoch';
+
     // Embedding convex hull
     embeddingHull?: THREE.Mesh;
     embeddingHullArea?: number;
@@ -137,7 +141,7 @@ function create_new_sphere(container: HTMLElement): SphereData {
     const init_height = 500;
     const init_width = 500;
     const init_aspect_ratio = init_width / init_height;
-    const camera = new THREE.PerspectiveCamera(75, init_aspect_ratio, 0.1, 1000);
+    const camera = new THREE.PerspectiveCamera(60, init_aspect_ratio, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ alpha: true});
 
     const raycaster = new THREE.Raycaster();
@@ -151,8 +155,8 @@ function create_new_sphere(container: HTMLElement): SphereData {
     const cubeSize = dataRange * 1;
     const sceneCenter = new THREE.Vector3(0, 0, 0);
 
-    // Zoom in closer - reduce orbitRadius to make sphere fill more of viewport
-    let orbitRadius = cubeSize * 1.0;
+    // Camera distance from center - sphere has radius 1, so this puts camera close
+    let orbitRadius = cubeSize * 0.85;
 
     const prevPos = { x: 0, y: 0 };
 
@@ -204,6 +208,7 @@ function create_new_sphere(container: HTMLElement): SphereData {
         movieAnimationRef: 0,
 
         finalClusterResults: undefined,
+        clusterColorMode: 'final',
         embeddingHull: undefined,
         embeddingHullArea: undefined,
         showEmbeddingHull: false,
@@ -244,6 +249,38 @@ function attach_sphere_to_container(sphere: SphereData) {
     sphere.container.appendChild(sphere.renderer.domElement);
 }
 
+/**
+ * Update point opacity based on depth relative to camera.
+ * Points on the back of the sphere get lower opacity for better depth perception.
+ */
+function updatePointDepthOpacity(sphere: SphereData) {
+    // Calculate camera direction (normalized vector from center to camera)
+    const cameraDir = new THREE.Vector3();
+    cameraDir.subVectors(sphere.camera.position, sphere.sceneCenter).normalize();
+
+    // Iterate through all point meshes and adjust opacity based on depth
+    sphere.pointObjectsByRecordID.forEach((pointMesh) => {
+        // Get point position relative to sphere center
+        const pointPos = new THREE.Vector3();
+        pointMesh.getWorldPosition(pointPos);
+        pointPos.sub(sphere.sceneCenter).normalize();
+
+        // Calculate dot product: 1.0 = facing camera, -1.0 = away from camera
+        const dotProduct = pointPos.dot(cameraDir);
+
+        // Map dot product to opacity range
+        // Front of sphere (dotProduct = 1.0) -> full opacity (sphere.pointOpacity)
+        // Back of sphere (dotProduct = -1.0) -> reduced opacity (30% of base opacity)
+        const minOpacityFactor = 0.3; // Back points are 30% as opaque
+        const opacityFactor = minOpacityFactor + ((dotProduct + 1.0) / 2.0) * (1.0 - minOpacityFactor);
+
+        // Apply depth-based opacity
+        const baseOpacity = sphere.pointOpacity;
+        pointMesh.material.opacity = baseOpacity * opacityFactor;
+        pointMesh.material.transparent = true;
+    });
+}
+
 export function render_sphere(sphere: SphereData) {
     const beforeWidth = sphere.container.clientWidth;
     const beforeHeight = sphere.container.clientHeight;
@@ -256,11 +293,7 @@ export function render_sphere(sphere: SphereData) {
     // Log size issues only once to avoid spam
     if (afterCanvasHeight === 0 || beforeHeight === 0) {
         if (!sphere.hasLoggedSizeIssue) {
-            console.log('🔧 Render sphere sizing issue:', {
-                containerBefore: { width: beforeWidth, height: beforeHeight },
-                canvasAfter: { width: afterCanvasWidth, height: afterCanvasHeight },
-                rendererSize: sphere.renderer.getSize(new THREE.Vector2())
-            });
+            console.warn('Render sphere sizing issue: container height=', beforeHeight, 'canvas height=', afterCanvasHeight);
             sphere.hasLoggedSizeIssue = true;
         }
     }
@@ -269,6 +302,10 @@ export function render_sphere(sphere: SphereData) {
     sphere.camera.position.y = sphere.orbitRadius * Math.sin(sphere.verticalAngle);
     sphere.camera.position.z = sphere.orbitRadius * Math.cos(sphere.angle) * Math.cos(sphere.verticalAngle);
     sphere.camera.lookAt(sphere.sceneCenter);
+
+    // Update point opacity based on depth (distance from camera)
+    // Points on the back of the sphere should be lighter/more transparent
+    updatePointDepthOpacity(sphere);
 
     sphere.renderer.render(sphere.scene, sphere.camera);
 }
@@ -305,6 +342,20 @@ const kColorTable = [
     0xffcccc,
 ];
 
+/**
+ * Get color for a cluster based on cluster ID
+ * Uses the color table with wrapping for cluster IDs beyond the table size
+ */
+export function get_cluster_color(sphere: SphereData, clusterId: number): number {
+    // Check if there's a custom color for this cluster
+    if (sphere.customClusterColors && sphere.customClusterColors.has(clusterId)) {
+        return sphere.customClusterColors.get(clusterId)!;
+    }
+
+    // Use color table with wrapping
+    return kColorTable[clusterId % kColorTable.length];
+}
+
 let getColorCallCount = 0;
 const getColor = (record: SphereRecord) => {
     try {
@@ -325,14 +376,7 @@ const getColor = (record: SphereRecord) => {
                 isBadAccount = record.original[badAccountKey];
             }
         }
-        
-        // DEBUG: Log first few calls to see what data we have
-        getColorCallCount++;
-        if (getColorCallCount <= 5) {
-            console.log(`🎨 getColor call ${getColorCallCount}: is_bad_account=`, isBadAccount, 
-                'type:', typeof isBadAccount, 'original keys:', record?.original ? Object.keys(record.original).slice(0, 10) : 'no original');
-        }
-        
+
         // Handle different value types: 0/1, true/false, null/NaN/undefined
         if (isBadAccount === 0 || isBadAccount === false || isBadAccount === "0" || isBadAccount === "false") {
             // Good account (0/false) -> Green
@@ -386,7 +430,6 @@ function add_point_to_sphere(sphere: SphereData, record: SphereRecord) {
 
 function add_points_to_sphere(sphere: SphereData, recordList: SphereRecord[], batchSize: number = 100, onProgress?: (loaded: number, total: number) => void) {
     
-    console.log("recordIndex:", recordList);
 
     // Figure out the set of all fields in the records.
     const fieldsSet = new Set<string>();
@@ -431,13 +474,13 @@ function add_points_to_sphere(sphere: SphereData, recordList: SphereRecord[], ba
             // Use requestAnimationFrame for smooth UI updates
             requestAnimationFrame(processBatch);
         } else {
-            console.log(`✅ Batched loading complete: ${total} points loaded`);
+            console.log(`Batched loading complete: ${total} points loaded`);
             render_sphere(sphere);
         }
     };
-    
+
     // Start processing batches
-    console.log(`🔄 Starting batched loading: ${total} points in batches of ${batchSize}`);
+    console.log(`Starting batched loading: ${total} points in batches of ${batchSize}`);
     processBatch();
 }
 
@@ -588,8 +631,6 @@ export function clear_cluster_colors(sphere: SphereData) {
 export function change_cluster_count(sphere: SphereData, jsonData: any, new_cluster_selection: any) {
     const new_cluster_labels_by_row_offset = jsonData?.entire_cluster_results[new_cluster_selection]?.cluster_labels;
 
-    console.log("new cluster_selection:", new_cluster_selection)
-    console.log("new_cluster_labels_by_row_offset:", new_cluster_labels_by_row_offset)
 
     if (!new_cluster_labels_by_row_offset) {
         return;
@@ -618,17 +659,114 @@ export function change_cluster_count(sphere: SphereData, jsonData: any, new_clus
     }
 }
 
+export function set_cluster_color_mode(sphere: SphereData, mode: 'final' | 'per-epoch') {
+    sphere.clusterColorMode = mode;
 
-function zoom_sphere(sphere: SphereData, zoom_in: boolean) {
-    
-    // Adjust zoom speed and prevent excessive zoom
-    const zoomFactor = 1.01;
+    // Re-apply colors for the current frame using the new mode
+    if (sphere.trainingMovieData) {
+        const epochKeys = Object.keys(sphere.trainingMovieData).sort((a: string, b: string) => {
+            const epochA = parseInt(a.replace('epoch_', ''));
+            const epochB = parseInt(b.replace('epoch_', ''));
+            return epochA - epochB;
+        });
+        const currentEpochKey = epochKeys[sphere.currentEpoch];
+        if (currentEpochKey) {
+            recolor_points_for_mode(sphere, currentEpochKey);
+        }
+    }
+
+    // Update convex hulls if visible
+    if (sphere.showConvexHulls) {
+        compute_cluster_convex_hulls(sphere);
+    }
+
+    render_sphere(sphere);
+}
+
+function get_cluster_assignment_for_point(
+    sphere: SphereData,
+    record: SphereRecord,
+    epochKey?: string
+): number {
+    const activeClusterKey = get_active_cluster_count_key(sphere);
+    const rowOffset = record.featrix_meta?.__featrix_row_offset;
+
+    if (rowOffset === null || rowOffset === undefined) {
+        return -1;
+    }
+
+    const mode = sphere.clusterColorMode || 'final';
+
+    if (mode === 'per-epoch' && epochKey) {
+        // Use this epoch's own cluster_results
+        const epochData = sphere.trainingMovieData?.[epochKey];
+        if (epochData?.entire_cluster_results) {
+            if (activeClusterKey !== null && epochData.entire_cluster_results[activeClusterKey]?.cluster_labels) {
+                if (rowOffset < epochData.entire_cluster_results[activeClusterKey].cluster_labels.length) {
+                    return epochData.entire_cluster_results[activeClusterKey].cluster_labels[rowOffset];
+                }
+            }
+        }
+
+        // Fallback to cluster_pre from epoch coord data
+        if (epochData?.coords && rowOffset < epochData.coords.length) {
+            const coord = epochData.coords[rowOffset];
+            if (coord && coord.cluster_pre !== undefined && coord.cluster_pre !== null) {
+                return coord.cluster_pre;
+            }
+        }
+    }
+
+    // 'final' mode or fallback: use session-level finalClusterResults
+    if (activeClusterKey !== null && sphere.finalClusterResults?.[activeClusterKey]?.cluster_labels) {
+        if (rowOffset < sphere.finalClusterResults[activeClusterKey].cluster_labels.length) {
+            return sphere.finalClusterResults[activeClusterKey].cluster_labels[rowOffset];
+        }
+    }
+
+    return -1;
+}
+
+function recolor_points_for_mode(sphere: SphereData, epochKey: string) {
+    sphere.pointObjectsByRecordID.forEach((mesh: any, recordId: string) => {
+        // Skip manually selected records
+        if (sphere.selectedRecords && sphere.selectedRecords.has(recordId)) {
+            return;
+        }
+
+        const record = sphere.pointRecordsByID.get(recordId);
+        if (!record) return;
+
+        const clusterAssignment = get_cluster_assignment_for_point(sphere, record, epochKey);
+
+        let newColor: number;
+        if (clusterAssignment >= 0) {
+            newColor = get_cluster_color(sphere, clusterAssignment);
+        } else {
+            newColor = 0x999999;
+        }
+
+        if (mesh.material && 'color' in mesh.material) {
+            mesh.material.color.setHex(newColor);
+            mesh.material.needsUpdate = true;
+        }
+    });
+}
+
+
+function zoom_sphere(sphere: SphereData, zoom_in: boolean, delta?: number) {
+
+    // Use proportional zoom when delta is provided (pinch), otherwise fixed factor (wheel)
+    const zoomFactor = delta ? (1 + Math.abs(delta) * 0.002) : 1.05;
 
     if (zoom_in) {
         sphere.orbitRadius /= zoomFactor;
     } else {
         sphere.orbitRadius *= zoomFactor;
     }
+
+    // Clamp orbit radius to prevent going inside the sphere or too far out
+    sphere.orbitRadius = Math.max(0.2, Math.min(sphere.orbitRadius, sphere.cubeSize * 5));
 }
 
 
@@ -638,6 +776,9 @@ export function initialize_sphere(container: HTMLElement, recordList: SphereReco
 
     fit_sphere_to_container(sphere);
     attach_sphere_to_container(sphere);
+
+    // Prevent browser default touch gestures (pinch-to-zoom, scroll) on the canvas
+    container.style.touchAction = 'none';
 
     add_floor_and_grid(sphere);
     add_points_to_sphere(sphere, recordList, batchSize, onProgress);
@@ -650,9 +791,9 @@ export function initialize_sphere(container: HTMLElement, recordList: SphereReco
     container.addEventListener("mouseup", (event) => onMouseUp(sphere, event));
     container.addEventListener("mouseleave", (event) => onMouseUp(sphere, event));
 
-    container.addEventListener("touchstart", (event) => onTouchStart(sphere, event));
-    container.addEventListener("touchmove", (event) => onTouchMove(sphere, event));
-    container.addEventListener("touchend", (event) => onTouchEnd(sphere, event));
+    container.addEventListener("touchstart", (event) => onTouchStart(sphere, event), { passive: false });
+    container.addEventListener("touchmove", (event) => onTouchMove(sphere, event), { passive: false });
+    container.addEventListener("touchend", (event) => onTouchEnd(sphere, event), { passive: false });
     
     container.addEventListener("wheel", (event) => onScroll(sphere, event));
     window.addEventListener("resize", () => onResize(sphere));
@@ -777,34 +918,14 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any, 
     // GET FINAL CLUSTER RESULTS from session data for convergence visualization
     sphere.finalClusterResults = null;
     try {
-        console.log('🔍 Looking for final cluster results in session data...');
-        console.log('🔍 sphere.jsonData type:', typeof sphere.jsonData);
-        console.log('🔍 sphere.jsonData keys:', sphere.jsonData ? Object.keys(sphere.jsonData) : 'NULL');
-        
-        if (sphere.jsonData) {
-            console.log('🔍 sphere.jsonData structure:');
-            console.log('  - coords:', sphere.jsonData.coords ? `${sphere.jsonData.coords.length} items` : 'MISSING');
-            console.log('  - entire_cluster_results:', sphere.jsonData.entire_cluster_results ? Object.keys(sphere.jsonData.entire_cluster_results) : 'MISSING');
-            console.log('  - metadata:', sphere.jsonData.metadata ? 'present' : 'MISSING');
-            console.log('  - session:', sphere.jsonData.session ? 'present' : 'MISSING');
-            console.log('  - all keys:', Object.keys(sphere.jsonData));
-            
-            // DEEP INSPECTION: What's actually in sphere.jsonData?
-            console.log('🔍 DEEP INSPECT sphere.jsonData:', JSON.stringify(sphere.jsonData, null, 2).substring(0, 500) + '...');
-        } else {
-            console.error('❌ sphere.jsonData is completely NULL/undefined');
-            console.log('🔍 sphere object keys:', Object.keys(sphere));
-            console.log('🔍 sphere object sample:', { 
-                pointObjectsByRecordID: sphere.pointObjectsByRecordID?.size || 'undefined',
-                trainingMovieData: sphere.trainingMovieData ? 'present' : 'missing',
-                jsonData: sphere.jsonData
-            });
+        if (!sphere.jsonData) {
+            console.error('❌ sphere.jsonData is NULL/undefined');
         }
         
         // Check if we have completed session data with clustering results
         if (sphere.jsonData && sphere.jsonData.entire_cluster_results) {
             sphere.finalClusterResults = sphere.jsonData.entire_cluster_results;
-            console.log('✅ Found final cluster results:', Object.keys(sphere.finalClusterResults));
+            console.log('Found final cluster results:', Object.keys(sphere.finalClusterResults));
         } else {
             console.error('❌ CRITICAL: No final cluster results available in session data');
             console.error('❌ Cannot show cluster convergence without real cluster data');
@@ -835,19 +956,17 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any, 
         console.error('❌ No coords found in first epoch data');
         return;
     }
-    
-    console.log(`🎬 Initializing sphere with ${firstEpochData.coords.length} points from ${firstEpochKey}`);
-    
+
+    console.log(`Initializing sphere with ${firstEpochData.coords.length} points from ${firstEpochKey}`);
+
     // Get original data from session projections (jsonData) if available
     // This contains the full original data columns like is_bad_account
     // CRITICAL: Use fullSessionData if provided (contains all rows), otherwise fall back to sphere.jsonData?.coords (sampled)
     const sessionCoords = fullSessionData?.coords || sphere.jsonData?.coords || [];
     const originalDataByRowOffset = new Map<number, any>();
-    
-    console.log(`📊 Using ${fullSessionData ? 'FULL SESSION DATA' : 'SAMPLED DATA'} for original data lookup: ${sessionCoords.length} entries`);
-    console.log(`📊 DEBUG: fullSessionData provided: ${!!fullSessionData}, has coords: ${!!fullSessionData?.coords}, coords length: ${fullSessionData?.coords?.length || 0}`);
-    console.log(`📊 DEBUG: sphere.jsonData has coords: ${!!sphere.jsonData?.coords}, coords length: ${sphere.jsonData?.coords?.length || 0}`);
-    
+
+    console.log(`Using ${fullSessionData ? 'full session data' : 'sampled data'} for original data lookup: ${sessionCoords.length} entries`);
+
     // Build a map of original data by row_offset AND row_id for quick lookup
     // Some datasets use row_offset, others use row_id, so we need to support both
     sessionCoords.forEach((coord: any) => {
@@ -869,68 +988,14 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any, 
             originalDataByRowOffset.set(rowId, originalData);
         }
     });
-    
-    // DEBUG: Check what rowOffset values exist in the full dataset
-    if (sessionCoords.length > 0 && sessionCoords.length <= 10) {
-        console.log('📊 Sample rowOffset values in full dataset:', sessionCoords.slice(0, 5).map((c: any) => ({
-            rowOffset: c.__featrix_row_offset,
-            rowId: c.__featrix_row_id,
-            hasIsBadAccount: !!(c.scalar_columns?.is_bad_account !== undefined || c.set_columns?.is_bad_account !== undefined || c.string_columns?.is_bad_account !== undefined)
-        })));
-    } else if (sessionCoords.length > 10) {
-        const sampleOffsets = sessionCoords.slice(0, 5).map((c: any) => c.__featrix_row_offset);
-        const sampleIds = sessionCoords.slice(0, 5).map((c: any) => c.__featrix_row_id);
-        console.log('📊 Sample rowOffset values in full dataset (first 5):', sampleOffsets);
-        console.log('📊 Sample rowId values in full dataset (first 5):', sampleIds);
-    }
-    
-    console.log(`📊 Built original data map with ${originalDataByRowOffset.size} entries`);
-    if (originalDataByRowOffset.size > 0) {
-        const firstEntry = originalDataByRowOffset.values().next().value;
-        const allKeys = Object.keys(firstEntry);
-        console.log(`📊 Sample original data keys (${allKeys.length} total):`, allKeys);
-        
-        // Check specifically for is_bad_account variations
-        const badAccountKeys = allKeys.filter(k => 
-            k.toLowerCase().includes('bad') || 
-            k.toLowerCase().includes('account') ||
-            k === 'is_bad_account' ||
-            k === 'isBadAccount'
-        );
-        if (badAccountKeys.length > 0) {
-            console.log(`✅ Found potential is_bad_account fields:`, badAccountKeys);
-            const sampleValues = Array.from(originalDataByRowOffset.values()).slice(0, 20).map(e => e[badAccountKeys[0]]);
-            console.log(`📊 Sample values for ${badAccountKeys[0]}:`, sampleValues);
-            
-            // Count distribution in the source data
-            let zeroCount = 0;
-            let oneCount = 0;
-            let nullCount = 0;
-            let undefinedCount = 0;
-            originalDataByRowOffset.forEach((data: any) => {
-                const val = data[badAccountKeys[0]];
-                if (val === 0 || val === false || val === "0" || val === "false") {
-                    zeroCount++;
-                } else if (val === 1 || val === true || val === "1" || val === "true") {
-                    oneCount++;
-                } else if (val === null) {
-                    nullCount++;
-                } else if (val === undefined) {
-                    undefinedCount++;
-                }
-            });
-            console.log(`📊 Source data distribution: 0s=${zeroCount}, 1s=${oneCount}, nulls=${nullCount}, undefined=${undefinedCount}, total=${originalDataByRowOffset.size}`);
-        } else {
-            console.warn(`⚠️ No is_bad_account field found. Available fields:`, allKeys.slice(0, 20));
-        }
-    }
-    
+
+    console.log(`Built original data map with ${originalDataByRowOffset.size} entries`);
+
     // Convert first epoch coords to sphere records
     const recordList: SphereRecord[] = firstEpochData.coords.map((entry: any, index: number) => {
         // Use helper function to extract coordinates from any format
         const extractedCoords = extractCoordinates(entry);
         if (!extractedCoords) {
-            console.warn(`⚠️ Record ${index}: Failed to extract coordinates from entry:`, entry);
             // Use default coords as fallback
             return {
                 coords: { x: 0, y: 0, z: 0 },
@@ -968,68 +1033,16 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any, 
         
         // Merge: epoch entry data takes priority (has important columns), full dataset supplements missing fields
         const originalData = {
-            ...(fullDatasetData || {}),  // Full dataset as base (has all 57 fields)
-            ...epochEntryData            // Epoch entry OVERRIDES (has important columns like is_bad_account)
+            ...(fullDatasetData || {}),  // Full dataset as base
+            ...epochEntryData            // Epoch entry OVERRIDES
         };
-        
-        // DEBUG: Check what we got
-        if (index < 5) {
-            const hasEpochIsBadAccount = epochEntryData.is_bad_account !== undefined;
-            const hasFullIsBadAccount = fullDatasetData?.is_bad_account !== undefined;
-            const epochKeys = Object.keys(epochEntryData);
-            const epochHasBadAccountInKeys = epochKeys.some(k => k.toLowerCase().includes('bad') && k.toLowerCase().includes('account'));
-            const epochValue = epochEntryData.is_bad_account;
-            const fullValue = fullDatasetData?.is_bad_account;
-            console.log(`🔍 Record ${index}: rowOffset=${rowOffset}, epoch keys=${epochKeys.length}, epoch is_bad_account=${epochValue} (type: ${typeof epochValue}), full is_bad_account=${fullValue} (type: ${typeof fullValue}), merged=${originalData.is_bad_account}`);
-            
-            // Also check raw entry structure - log expanded to see actual values
-            if (index === 0) {
-                const sampleEntries = firstEpochData.coords.slice(0, 20).map((e: any) => ({
-                    rowOffset: e.__featrix_row_offset,
-                    scalarIsBadAccount: e.scalar_columns?.is_bad_account,
-                    setIsBadAccount: e.set_columns?.is_bad_account,
-                    stringIsBadAccount: e.string_columns?.is_bad_account
-                }));
-                
-                console.log(`🔍 DEBUG: entry structure for record 0:`);
-                console.log(`  - hasSetColumns:`, !!entry.set_columns);
-                console.log(`  - hasScalarColumns:`, !!entry.scalar_columns);
-                console.log(`  - hasStringColumns:`, !!entry.string_columns);
-                console.log(`  - scalarColumnsKeys (first 10):`, entry.scalar_columns ? Object.keys(entry.scalar_columns).slice(0, 10) : []);
-                console.log(`  - scalarHasIsBadAccount:`, entry.scalar_columns?.is_bad_account !== undefined);
-                console.log(`  - scalarIsBadAccountValue:`, entry.scalar_columns?.is_bad_account);
-                console.log(`  - scalarIsBadAccountType:`, typeof entry.scalar_columns?.is_bad_account);
-                console.log(`  - setHasIsBadAccount:`, entry.set_columns?.is_bad_account !== undefined);
-                console.log(`  - stringHasIsBadAccount:`, entry.string_columns?.is_bad_account !== undefined);
-                console.log(`  - Sample entries (first 20) is_bad_account values:`);
-                sampleEntries.forEach((e, i) => {
-                    const val = e.setIsBadAccount ?? e.scalarIsBadAccount ?? e.stringIsBadAccount;
-                    console.log(`    Entry ${i}: rowOffset=${e.rowOffset}, is_bad_account=${val} (from set=${e.setIsBadAccount}, scalar=${e.scalarIsBadAccount}, string=${e.stringIsBadAccount})`);
-                });
-                
-                // Count non-null values in sample (values that are not null and not undefined)
-                const nonNullCount = sampleEntries.filter(e => {
-                    const scalarVal = e.scalarIsBadAccount;
-                    const setVal = e.setIsBadAccount;
-                    const stringVal = e.stringIsBadAccount;
-                    return (scalarVal !== null && scalarVal !== undefined) ||
-                           (setVal !== null && setVal !== undefined) ||
-                           (stringVal !== null && stringVal !== undefined);
-                }).length;
-                console.log(`  - Non-null is_bad_account values in first 20 entries:`, nonNullCount);
-            }
-        }
-        
-        // DEBUG: Log first few records to verify original data
-        if (index < 5) {
-            console.log(`📝 Record ${index}: rowOffset=${rowOffset}, original keys:`, Object.keys(originalData).length, 
-                'is_bad_account=', originalData.is_bad_account);
-        }
 
-        // CRITICAL: Create a deep copy of originalData to prevent it from being modified
+        // Create a deep copy of originalData to prevent it from being modified
         // This ensures the full 57 keys are preserved even if the source data changes
         const originalDataCopy = originalData ? JSON.parse(JSON.stringify(originalData)) : {};
-        
+
+        // Debug: Log first few records to see what data we have
+
         return {
             coords: { x, y, z },
             id: String(index),
@@ -1052,8 +1065,8 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any, 
     
     // Force initial render
     render_sphere(sphere);
-    
-    console.log(`✅ Sphere initialized with ${recordList.length} points`);
+
+    console.log(`Sphere initialized with ${recordList.length} points`);
 }
 
 export function play_training_movie(sphere: SphereData, durationSeconds: number = 10) {
@@ -1102,7 +1115,6 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
                 // Update frame
                 update_training_movie_frame(sphere, currentEpochKey);
             } else {
-                console.warn(`⚠️ Skipping problematic epoch ${currentEpochKey} (frame ${sphere.currentEpoch})`);
             }
         } else {
             // Rotation phase - 0.5 degrees per frame at 30fps
@@ -1117,10 +1129,6 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
             // Update camera angle smoothly
             sphere.angle = (sphere.rotationStartAngle || 0) + currentAngle;
             
-            // Minimal rotation logging every 10 seconds
-            if (Math.floor(elapsed / 10000) !== Math.floor((elapsed - 33) / 10000)) {
-                console.log(`🔄 ROTATION: ${(currentAngle * 180 / Math.PI).toFixed(0)}°`);
-            }
             
             render_sphere(sphere);
             
@@ -1238,9 +1246,9 @@ export function step_training_movie_frame(sphere: SphereData, direction: 'forwar
     
     sphere.currentEpoch = newIndex;
     const epochKey = epochKeys[newIndex];
-    
-    console.log(`🎮 Step ${direction}: frame ${currentIndex} → ${newIndex} (epoch ${epochKey})`);
-    
+
+    console.log(`Step ${direction}: frame ${currentIndex} → ${newIndex} (epoch ${epochKey})`);
+
     update_training_movie_frame(sphere, epochKey);
 }
 
@@ -1270,9 +1278,9 @@ export function goto_training_movie_frame(sphere: SphereData, frameNumber: numbe
     
     sphere.currentEpoch = targetIndex;
     const epochKey = epochKeys[targetIndex];
-    
-    console.log(`🎯 Goto frame: ${frameNumber} → index ${targetIndex} (epoch ${epochKey})`);
-    
+
+    console.log(`Goto frame: ${frameNumber} → index ${targetIndex} (epoch ${epochKey})`);
+
     update_training_movie_frame(sphere, epochKey);
 }
 
@@ -1394,12 +1402,10 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
     const epochData = sphere.trainingMovieData?.[epochKey];
     
     if (!epochData || !epochData.coords) {
-        console.warn(`⚠️ Missing epoch data for ${epochKey}, skipping frame`);
         return;
     }
     
     if (epochData.coords.length === 0) {
-        console.warn(`⚠️ Empty coords for epoch ${epochKey}, skipping frame`);
         return;
     }
     
@@ -1425,30 +1431,7 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
     const progressRatio = totalFrames > 1 ? currentFrameIndex / (totalFrames - 1) : 0;
     const visibleClusters = forceFinalState ? maxClusters : Math.ceil(2 + (progressRatio * (maxClusters - 2)));
     
-    // DEBUG: Log cluster calculation for debugging
-    console.log(`📊 Frame ${currentFrameIndex}/${totalFrames-1}: progress ${progressRatio.toFixed(3)} -> ${visibleClusters} visible clusters (maxClusters: ${maxClusters})`);
     
-    // Sample a few cluster assignments to verify they're being read correctly
-    if (sphere.pointObjectsByRecordID.size > 0) {
-        const sampleSize = Math.min(5, sphere.pointObjectsByRecordID.size);
-        let sampleCount = 0;
-        const activeClusterKey = get_active_cluster_count_key(sphere);
-        if (activeClusterKey !== null && sphere.finalClusterResults[activeClusterKey]?.cluster_labels) {
-            sphere.pointObjectsByRecordID.forEach((mesh, recordId) => {
-                if (sampleCount < sampleSize) {
-                    const record = sphere.pointRecordsByID.get(recordId);
-                    if (record) {
-                        const rowOffset = record.featrix_meta?.__featrix_row_offset;
-                        if (rowOffset !== undefined && rowOffset < sphere.finalClusterResults[activeClusterKey].cluster_labels.length) {
-                            const clusterAssignment = sphere.finalClusterResults[activeClusterKey].cluster_labels[rowOffset];
-                            console.log(`  Sample point ${sampleCount}: rowOffset=${rowOffset}, cluster=${clusterAssignment}`);
-                            sampleCount++;
-                        }
-                    }
-                }
-            });
-        }
-    }
     
     // Progressive cluster reveal calculation
     
@@ -1495,12 +1478,7 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
     sphere.pointObjectsByRecordID.forEach((mesh: any, recordId: string) => {
         totalPoints++;
         const rowOffset = parseInt(recordId); // We used index as record ID
-        
-        // DEBUG: Show rowOffset calculation for first few points
-        if (totalPoints <= 10) {
-            console.log(`🔢 Point ${totalPoints-1}: recordId="${recordId}" -> rowOffset=${rowOffset} (type: ${typeof rowOffset})`);
-        }
-        
+
         if (rowOffset < epochData.coords.length) {
             const newCoords = epochData.coords[rowOffset];
 
@@ -1514,128 +1492,28 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
                 targetPositions.set(recordId, new THREE.Vector3(x, y, z));
                 validPoints++;
                 
-                // TRAINING MOVIE: Use direct lookup from finalClusterResults, fallback to cluster_pre from epoch data
+                // Color based on cluster mode (final-frame or per-epoch)
                 const record = sphere.pointRecordsByID.get(recordId);
-                let clusterAssignment = -1;
-                
-                // First try to use finalClusterResults if available
-                const activeClusterKey = get_active_cluster_count_key(sphere);
-                if (activeClusterKey !== null && sphere.finalClusterResults?.[activeClusterKey]?.cluster_labels) {
-                    const recordRowOffset = record?.featrix_meta?.__featrix_row_offset;
-                    if (recordRowOffset !== undefined && recordRowOffset < sphere.finalClusterResults[activeClusterKey].cluster_labels.length) {
-                        clusterAssignment = sphere.finalClusterResults[activeClusterKey].cluster_labels[recordRowOffset];
-                    }
-                }
-                
-                // Fallback: Use cluster_pre from the current epoch's coord data if finalClusterResults not available
-                if (clusterAssignment === -1 && epochData.coords) {
-                    const coordIndex = epochData.coords.findIndex((c: any) => {
-                        const coordRowOffset = c.__featrix_row_offset;
-                        const recordRowOffset = record?.featrix_meta?.__featrix_row_offset;
-                        return coordRowOffset !== undefined && coordRowOffset === recordRowOffset;
-                    });
-                    if (coordIndex >= 0 && epochData.coords[coordIndex].cluster_pre !== undefined) {
-                        clusterAssignment = epochData.coords[coordIndex].cluster_pre;
-                    }
-                }
-                
+
                 // Check if this record is manually selected (e.g., by search) - preserve its color
                 if (sphere.selectedRecords && sphere.selectedRecords.has(recordId)) {
                     // Skip color update for manually selected records - preserve search/selection colors
-                    // Only update position, not color
-                } else {
-                    // Color based on is_bad_account value instead of cluster assignments
+                } else if (record) {
+                    const clusterAssignment = get_cluster_assignment_for_point(sphere, record, epochKey);
+
                     let newColor;
-                    
-                    // Get is_bad_account from record's original data
-                    // Try multiple field name variations (case-insensitive)
-                    let isBadAccount = record?.original?.is_bad_account;
-                    if (isBadAccount === undefined) {
-                        isBadAccount = record?.original?.isBadAccount;
-                    }
-                    if (isBadAccount === undefined) {
-                        // Try case-insensitive search
-                        const originalKeys = record?.original ? Object.keys(record.original) : [];
-                        const badAccountKey = originalKeys.find(k => 
-                            k.toLowerCase() === 'is_bad_account' || 
-                            k.toLowerCase() === 'isbadaccount'
-                        );
-                        if (badAccountKey) {
-                            isBadAccount = record?.original[badAccountKey];
-                        }
-                    }
-                    
-                    // STATS: Count colors for first frame only (to see distribution)
-                    if (totalPoints === 1 && epochKey === Object.keys(sphere.trainingMovieData || {}).sort((a, b) => {
-                        const epochA = parseInt(a.replace('epoch_', ''));
-                        const epochB = parseInt(b.replace('epoch_', ''));
-                        return epochA - epochB;
-                    })[0]) {
-                        // First point of first frame - count all colors
-                        let greenCount = 0;
-                        let redCount = 0;
-                        let grayCount = 0;
-                        let nullCount = 0;
-                        let zeroCount = 0;
-                        let oneCount = 0;
-                        let undefinedCount = 0;
-                        let sampleValues: any[] = [];
-                        sphere.pointRecordsByID.forEach((r: any, rid: string) => {
-                            const iba = r?.original?.is_bad_account;
-                            if (sampleValues.length < 10) {
-                                sampleValues.push({ id: rid, rowOffset: r?.featrix_meta?.__featrix_row_offset, value: iba, type: typeof iba });
-                            }
-                            if (iba === 0 || iba === false || iba === "0" || iba === "false") {
-                                greenCount++;
-                                zeroCount++;
-                            } else if (iba === 1 || iba === true || iba === "1" || iba === "true") {
-                                redCount++;
-                                oneCount++;
-                            } else if (iba === null) {
-                                nullCount++;
-                                grayCount++;
-                            } else if (iba === undefined) {
-                                undefinedCount++;
-                                grayCount++;
-                            } else {
-                                grayCount++;
-                            }
-                        });
-                        console.log(`📊 COLOR STATS: Green=${greenCount} (0s=${zeroCount}), Red=${redCount} (1s=${oneCount}), Gray=${grayCount} (nulls=${nullCount}, undefined=${undefinedCount}), Total=${sphere.pointRecordsByID.size}`);
-                        console.log(`📊 Sample is_bad_account values:`, sampleValues);
-                    }
-                    
-                    // DEBUG: Log first few records to see what data we have
-                    if (totalPoints <= 5) {
-                        console.log(`🎨 Point ${totalPoints-1}: recordId="${recordId}", rowOffset=${record?.featrix_meta?.__featrix_row_offset}, is_bad_account=`, isBadAccount, 
-                            'type:', typeof isBadAccount, 'original keys:', record?.original ? Object.keys(record.original).length + ' keys' : 'no original');
-                    }
-                    
-                    // Handle different value types: 0/1, true/false, null/NaN/undefined
-                    if (isBadAccount === 0 || isBadAccount === false || isBadAccount === "0" || isBadAccount === "false") {
-                        // Good account (0/false) -> Green
-                        newColor = 0x00ff00; // Green
-                    } else if (isBadAccount === 1 || isBadAccount === true || isBadAccount === "1" || isBadAccount === "true") {
-                        // Bad account (1/true) -> Red
-                        newColor = 0xff0000; // Red
-                    } else if (isBadAccount === null || isBadAccount === undefined || (typeof isBadAccount === 'number' && isNaN(isBadAccount))) {
-                        // Null/NaN/undefined -> Gray
-                        newColor = 0x999999; // Gray
+                    if (clusterAssignment >= 0) {
+                        newColor = get_cluster_color(sphere, clusterAssignment);
                     } else {
-                        // Unknown value -> Gray
                         newColor = 0x999999; // Gray
                     }
-                    
-                    // Apply the color to the mesh
+
                     if (mesh.material instanceof THREE.MeshBasicMaterial) {
                         mesh.material.color.setHex(newColor);
                         mesh.material.needsUpdate = true;
-                    } else {
-                        // If material is not MeshBasicMaterial, try to update it anyway
-                        if (mesh.material && 'color' in mesh.material) {
-                            (mesh.material as any).color.setHex(newColor);
-                            (mesh.material as any).needsUpdate = true;
-                        }
+                    } else if (mesh.material && 'color' in mesh.material) {
+                        (mesh.material as any).color.setHex(newColor);
+                        (mesh.material as any).needsUpdate = true;
                     }
                 }
             } else {
@@ -1670,20 +1548,13 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
                                  else if (isNaN(newCoords.z)) issues.push(`z is NaN`);
                              }
                          }
-                         console.warn(`⚠️ BAD FRAME DATA - Point ${rowOffset} in epoch ${epochKey}: ${issues.join(', ')}. Full object:`, newCoords);
                       }
                       invalidPoints++;
                   }
              }
          });
     
-    // Report frame data quality statistics
-    const invalidPercentage = ((invalidPoints / totalPoints) * 100).toFixed(1);
-    if (invalidPoints > 0) {
-        console.warn(`📊 Frame ${epochKey} DATA QUALITY: ${validPoints}/${totalPoints} valid points (${invalidPercentage}% invalid)`);
-    } else {
-    
-    }
+    // Report frame data quality statistics (removed verbose logging)
     
     // Update positions with smooth interpolation for fluid movement
     if (targetPositions.size > 0) {
@@ -1768,8 +1639,6 @@ export function notify_highlights_changed(sphere: SphereData) {
 
 
 export function clear_colors(sphere: SphereData) {
-    console.log("got here! clearing colors...")   
-
     for (const record_id of sphere.pointRecordsByID.keys()) {
         change_object_color(sphere, record_id, GRAY);
     }
@@ -1850,7 +1719,7 @@ export function update_memory_trails(sphere: SphereData) {
     if (pointCount > 1000) {
         // Too many points - trails will kill performance
         if (sphere.memoryTrailsGroup.visible) {
-            console.warn(`⚠️ Disabling trails - too many points (${pointCount}) for trail rendering`);
+            console.warn(`Disabling trails - too many points (${pointCount}) for trail rendering`);
             sphere.memoryTrailsGroup.visible = false;
         }
         return;
@@ -2257,12 +2126,11 @@ const onTouchMove = (sphere: SphereData, event: TouchEvent) => {
             event.touches[0].clientY - event.touches[1].clientY
         );
 
-        if (pinchDistance > sphere.prevPinchDistance) {
-            zoom_sphere(sphere, true);
-        } else {
-            zoom_sphere(sphere, false);
+        const pinchDelta = pinchDistance - sphere.prevPinchDistance;
+        if (Math.abs(pinchDelta) > 1) { // Dead zone to prevent jitter
+            zoom_sphere(sphere, pinchDelta > 0, Math.abs(pinchDelta));
         }
-        
+
         sphere.prevPinchDistance = pinchDistance;
     }
 
@@ -2437,20 +2305,19 @@ function handle_mouse_highlight(sphere: SphereData) {
         // Check if the object corresponds to a data record.
         const record_id = closestObject.userData.record_id;
         if (record_id === undefined) {
-            console.log("Selected object has no record_id.");
             return;
         }
 
         // Send point inspection event with detailed info
         const record = sphere.pointRecordsByID.get(record_id);
-        const pointInfo = {
+        const pointInfo: any = {
             recordId: record_id,
             rowOffset: record?.featrix_meta?.__featrix_row_offset || 'unknown',
             clusterId: 'unknown',
             color: `#${closestObject.material?.color?.getHex()?.toString(16).padStart(6, '0') || '000000'}`,
             position: `(${closestObject.position.x.toFixed(2)}, ${closestObject.position.y.toFixed(2)}, ${closestObject.position.z.toFixed(2)})`
         };
-        
+
         // Get cluster assignment from final results if available
         const activeClusterKey = get_active_cluster_count_key(sphere);
         if (activeClusterKey !== null && sphere.finalClusterResults[activeClusterKey]?.cluster_labels) {
@@ -2459,7 +2326,12 @@ function handle_mouse_highlight(sphere: SphereData) {
                 pointInfo.clusterId = sphere.finalClusterResults[activeClusterKey].cluster_labels[rowOffset];
             }
         }
-        
+
+        // Include the actual original data for this point
+        if (record?.original) {
+            pointInfo.data = record.original;
+        }
+
         send_event(sphere, 'pointInspected', { detail: pointInfo });
 
         const object_is_selected = sphere.selectedRecords.has(record_id);
@@ -2820,17 +2692,14 @@ function create_spherical_hull_geometry(hullPoints: THREE.Vector3[]): THREE.Buff
 
 export function show_convex_hulls(sphere: SphereData) {
     if (!sphere) {
-        console.warn('🔗 show_convex_hulls: No sphere provided');
+        console.warn('show_convex_hulls: No sphere provided');
         return;
     }
-    
-    console.log('🔗 show_convex_hulls called - points:', sphere.pointObjectsByRecordID?.size || 0);
     
     // Create convex hulls group if it doesn't exist
     if (!sphere.convexHullsGroup) {
         sphere.convexHullsGroup = new THREE.Group();
         sphere.scene.add(sphere.convexHullsGroup);
-        console.log('🔗 Created convex hulls group');
     }
     
     // Set flag and compute hulls
@@ -2912,7 +2781,6 @@ export function toggle_bounds_box(sphere: SphereData, show: boolean) {
             });
             
             if (points.length === 0) {
-                console.warn('📦 No points available for bounds box');
                 return;
             }
             
@@ -2933,8 +2801,6 @@ export function toggle_bounds_box(sphere: SphereData, show: boolean) {
             
             sphere.boundsBox = boxLines;
             sphere.scene.add(boxLines);
-            
-            console.log('📦 Bounds box created:', { size: boxSize, center: boxCenter });
         } else {
             // Show existing bounds box
             if (sphere.boundsBox.parent === null) {
@@ -2962,8 +2828,6 @@ export function toggle_bounds_box(sphere: SphereData, show: boolean) {
             
             sphere.unitSphereCube = cubeLines;
             sphere.scene.add(cubeLines);
-            
-            console.log('📦 Unit sphere cube created (2x2x2)');
         } else {
             // Show existing unit sphere cube
             if (sphere.unitSphereCube.parent === null) {
@@ -3002,8 +2866,6 @@ export function create_unit_sphere(sphere: SphereData) {
     
     sphere.unitSphere = sphereLines;
     sphere.scene.add(sphereLines);
-    
-    console.log('🌐 Unit sphere bounds created (always visible, alpha 0.05)');
 }
 
 export function compute_cluster_convex_hulls(sphere: SphereData) {
@@ -3011,16 +2873,12 @@ export function compute_cluster_convex_hulls(sphere: SphereData) {
     const hasHullFeature = sphere.showDynamicHulls;
     
     if (!hasPointFeature && !hasHullFeature) {
-        console.log('🔗 Dynamic features: Both disabled');
         return;
     }
-    
+
     if (!sphere.pointPositionHistory) {
-        console.log('🔗 No position history available for dynamic features');
         return;
     }
-    
-    console.log(`🔗 Computing dynamic features: Points=${hasPointFeature}, Hulls=${hasHullFeature}`);
     
     // Update individual point sizes if enabled, otherwise reset to default
     if (hasPointFeature) {
@@ -3070,8 +2928,6 @@ function update_dynamic_point_sizes(sphere: SphereData) {
         
         pointsResized++;
     });
-    
-    console.log('🔹 Resized', pointsResized, 'points with dynamic size + opacity');
 }
 
 function reset_point_sizes_to_default(sphere: SphereData) {
@@ -3086,8 +2942,6 @@ function reset_point_sizes_to_default(sphere: SphereData) {
         }
         pointsReset++;
     });
-    
-    console.log('🔹 Reset', pointsReset, 'points to default size + opacity');
 }
 
 function create_dynamic_cluster_hulls(sphere: SphereData) {
@@ -3107,11 +2961,41 @@ function create_dynamic_cluster_hulls(sphere: SphereData) {
         movementEnvelope: number
     }> = new Map();
     
+    let pointsWithoutClusters = 0;
     sphere.pointObjectsByRecordID.forEach((pointMesh, recordId) => {
         const record = sphere.pointRecordsByID.get(recordId);
-        if (!record || record.featrix_meta.cluster_pre === null) return;
-        
-        const cluster = record.featrix_meta.cluster_pre;
+        if (!record) return;
+
+        // Get cluster assignment - try finalClusterResults first, then fall back to color inference
+        let cluster = -1;
+        const activeClusterKey = get_active_cluster_count_key(sphere);
+        if (activeClusterKey !== null && sphere.finalClusterResults?.[activeClusterKey]?.cluster_labels) {
+            const rowOffset = record.featrix_meta?.__featrix_row_offset;
+            if (rowOffset !== undefined && rowOffset < sphere.finalClusterResults[activeClusterKey].cluster_labels.length) {
+                cluster = sphere.finalClusterResults[activeClusterKey].cluster_labels[rowOffset];
+            }
+        }
+
+        // Fallback: infer cluster from point color by finding closest color in color table
+        if (cluster === -1) {
+            const pointColor = pointMesh.material.color.getHex();
+            // Find which color table entry this is closest to
+            let minDist = Infinity;
+            let bestCluster = 0;
+            kColorTable.forEach((tableColor, idx) => {
+                const dist = Math.abs(pointColor - tableColor);
+                if (dist < minDist) {
+                    minDist = dist;
+                    bestCluster = idx;
+                }
+            });
+            cluster = bestCluster;
+        }
+
+        if (cluster === -1) {
+            pointsWithoutClusters++;
+            return;
+        }
         // Normalize point to sphere surface BEFORE adding to cluster
         const currentPos = normalize_to_sphere_surface(pointMesh.position);
         const color = pointMesh.material.color.clone();
@@ -3133,8 +3017,7 @@ function create_dynamic_cluster_hulls(sphere: SphereData) {
         // Use average movement of points in cluster
         clusterInfo.movementEnvelope = Math.max(clusterInfo.movementEnvelope, pointMovement);
     });
-    
-    console.log('🔷 Found', clusterData.size, 'clusters for dynamic hulls');
+
     
     // Create spherical convex hulls for each cluster (on sphere surface)
     let hullsCreated = 0;
@@ -3149,7 +3032,6 @@ function create_dynamic_cluster_hulls(sphere: SphereData) {
         }
     });
     
-    console.log('🔷 Created', hullsCreated, 'SPHERICAL convex hulls on sphere surface');
 }
 
 function create_dynamic_sphere_hull(sphere: SphereData, hullPoints: THREE.Vector3[], clusterColor: THREE.Color, cluster: number, scale: number, opacity: number) {
@@ -3181,8 +3063,6 @@ function create_dynamic_sphere_hull(sphere: SphereData, hullPoints: THREE.Vector
             sphereMesh.position.copy(boundingSphere.center);
             
             sphere.convexHullsGroup.add(sphereMesh);
-            
-            console.log(`🔮 Created DYNAMIC sphere for cluster ${cluster}: radius=${(boundingSphere.radius * scale).toFixed(3)}, opacity=${opacity.toFixed(2)}`);
         }
     } catch (error) {
         console.warn(`Failed to create dynamic sphere for cluster ${cluster}:`, error);
@@ -3223,17 +3103,11 @@ export function update_cluster_spotlight(sphere: SphereData) {
     
     // If spotlight is off (-1) or no cluster selected, return
     if (spotlightCluster === undefined || spotlightCluster < 0) {
-        console.log('🎯 Cluster spotlight: OFF');
         return;
     }
-    
-    console.log('🎯 Creating cluster spotlight for cluster:', spotlightCluster);
-    
+
     // Find the active cluster count key from finalClusterResults
     const activeClusterCountKey = get_active_cluster_count_key(sphere);
-    if (activeClusterCountKey !== null) {
-        console.log(`🎯 Using cluster count key: ${activeClusterCountKey}`);
-    }
     
     // Create spotlight group
     sphere.clusterSpotlightGroup = new THREE.Group();
@@ -3296,11 +3170,8 @@ export function update_cluster_spotlight(sphere: SphereData) {
     });
     
     if (clusterPoints.length === 0) {
-        console.log('🎯 No points found for cluster:', spotlightCluster);
         return;
     }
-    
-    console.log(`🎯 Found ${clusterPoints.length} points in cluster ${spotlightCluster}`);
     
     // Calculate cluster centroid
     const centroid = new THREE.Vector3();
@@ -3344,8 +3215,6 @@ export function update_cluster_spotlight(sphere: SphereData) {
     
     const centroidLine = new THREE.Line(centroidLineGeometry, centroidLineMaterial);
     sphere.clusterSpotlightGroup.add(centroidLine);
-    
-    console.log(`🎯 Created ${clusterPoints.length + 1} spotlight lines for cluster ${spotlightCluster}`);
 }
 
 function calculateBoundingSphereRadius(positions: THREE.Vector3[]): number {
@@ -3414,9 +3283,6 @@ function create_spherical_convex_hull_mesh(sphere: SphereData, hullPoints: THREE
             sphere.convexHullsGroup.add(filledMesh);
             sphere.convexHullsGroup.add(wireframeMesh);
             
-            console.log(`✨ Created SPHERICAL convex hull on sphere surface for cluster ${cluster} with ${hullPoints.length} vertices`);
-        } else {
-            console.warn(`⚠️ Failed to create spherical geometry for cluster ${cluster}`);
         }
         
     } catch (error) {
@@ -3541,7 +3407,7 @@ function calculateSurfaceArea(geometry: THREE.BufferGeometry): number {
 
 export function compute_embedding_convex_hull(sphere: SphereData) {
     if (!sphere || !sphere.pointObjectsByRecordID || sphere.pointObjectsByRecordID.size === 0) {
-        console.warn('📦 No points available for embedding convex hull');
+        console.warn('No points available for embedding convex hull');
         return;
     }
     
@@ -3553,7 +3419,7 @@ export function compute_embedding_convex_hull(sphere: SphereData) {
     });
     
     if (allPoints.length < 3) {
-        console.warn('📦 Need at least 3 points for convex hull');
+        console.warn('Need at least 3 points for convex hull');
         return;
     }
     
@@ -3564,7 +3430,7 @@ export function compute_embedding_convex_hull(sphere: SphereData) {
     const geometry = create_spherical_hull_geometry(hullPoints);
     
     if (!geometry) {
-        console.warn('📦 Failed to create embedding hull geometry');
+        console.warn('Failed to create embedding hull geometry');
         return;
     }
     
@@ -3575,8 +3441,6 @@ export function compute_embedding_convex_hull(sphere: SphereData) {
     // Unit sphere surface area = 4πr² = 4π (for r=1)
     const unitSphereArea = 4 * Math.PI;
     const coveragePercent = (hullArea / unitSphereArea) * 100;
-    
-    console.log(`📦 Embedding convex hull (on sphere surface): area=${hullArea.toFixed(4)}, unit sphere area=${unitSphereArea.toFixed(4)}, coverage=${coveragePercent.toFixed(2)}%`);
     
     // Remove old hull if exists
     if (sphere.embeddingHull) {
@@ -3628,7 +3492,7 @@ export function compute_embedding_convex_hull(sphere: SphereData) {
  */
 export function toggle_great_circles(sphere: SphereData, show: boolean) {
     if (!sphere) {
-        console.warn('🔗 toggle_great_circles: No sphere provided');
+        console.warn('toggle_great_circles: No sphere provided');
         return;
     }
     
@@ -3718,7 +3582,6 @@ export function toggle_great_circles(sphere: SphereData, show: boolean) {
             sphere.unitSphere.visible = false;
         }
         
-        console.log(`🌐 Great circles mode enabled: ${sphere.greatCirclesGroup.children.length} circles created, point size reduced to 0.01`);
     } else {
         // Hide great circles
         if (sphere.greatCirclesGroup) {
@@ -3743,9 +3606,8 @@ export function toggle_great_circles(sphere: SphereData, show: boolean) {
             sphere.unitSphere.visible = true;
         }
         
-        console.log('🌐 Great circles mode disabled');
     }
-    
+
     render_sphere(sphere);
 }
 

@@ -12,12 +12,12 @@ import React, { Suspense, useEffect, useRef, useState, useCallback } from "react
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
 import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch } from './embed-data-access';
-import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles } from '../featrix_sphere_control';
+import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles, register_event_listener, set_cluster_color_mode } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 
 // Build timestamp for cache busting verification - set at module load time
 const BUILD_TIMESTAMP = new Date().toISOString();
-console.log('🔨 BUILD TIMESTAMP:', BUILD_TIMESTAMP);
+console.log('BUILD TIMESTAMP:', BUILD_TIMESTAMP);
 
 // Loss Plot Screen Overlay Component - MUCH BETTER VERSION with Dual Y-Axis Support and Zoom
 const LossPlotOverlay: React.FC<{
@@ -1099,18 +1099,17 @@ const TrainingMovieSphere: React.FC<{
         if (!sphereRef.current && trainingData && sessionProjections) {
             
             // Initialize sphere for training movie (as it was working)
-            console.time('🌐 SPHERE_INITIALIZATION');
-            
+
             // Get training movie record IDs from first epoch
             const firstEpoch = Object.keys(trainingData)[0];
             const firstEpochData = trainingData[firstEpoch];
             const trainingRecordIds = new Set(firstEpochData.coords.map((c: any) => c.__featrix_row_id || c.__featrix_row_offset));
-            console.log('🎬 Training movie contains', trainingRecordIds.size, 'unique records');
-            
+            console.log('Training movie contains', trainingRecordIds.size, 'unique records');
+
             // Extract cluster results from first epoch (each epoch has its own cluster results)
             const clusterResults = firstEpochData.entire_cluster_results || sessionProjections.entire_cluster_results || {};
-            console.log('🎬 Cluster results available:', Object.keys(clusterResults).length > 0 ? `Yes (${Object.keys(clusterResults).length} cluster counts)` : 'No');
-            
+            console.log('Cluster results available:', Object.keys(clusterResults).length > 0 ? `Yes (${Object.keys(clusterResults).length} cluster counts)` : 'No');
+
             // Use the first epoch's coords as the base data structure
             // The training movie will update these coords over time
             const filteredSessionData = {
@@ -1118,12 +1117,10 @@ const TrainingMovieSphere: React.FC<{
                 coords: firstEpochData.coords || [],
                 entire_cluster_results: clusterResults
             };
-            console.log('🎬 Using first epoch data with', filteredSessionData.coords.length, 'records for training movie');
-            console.log('📊 Total points loaded:', filteredSessionData.coords.length);
             
             // Initialize sphere with filtered records that match training movie
             const recordList = create_record_list(filteredSessionData);
-            console.log('🌐 Created record list with', recordList.length, 'points for training movie');
+            console.log('Created record list with', recordList.length, 'points for training movie');
             // Use batched loading for large datasets (batchSize = 200 points per frame)
             const batchSize = recordList.length > 500 ? 200 : 0; // 0 = no batching for small datasets
             sphereRef.current = initialize_sphere(actualContainerRef.current, recordList, batchSize, onLoadingProgress || undefined);
@@ -1137,20 +1134,17 @@ const TrainingMovieSphere: React.FC<{
                 ...filteredSessionData,
                 entire_cluster_results: clusterResults
             };
-            console.log('✅ Set session projections data for training movie with cluster results');
-            
-            console.log('🌐 SPHERE_CREATED:', performance.now() + 'ms');
             
             // Set frame update callback
             if (onFrameUpdate) {
                 sphereRef.current.frameUpdateCallback = onFrameUpdate;
             }
             
-            // Set point inspection callback
+            // Set point inspection callback using register_event_listener
             if (onPointInspected) {
-                sphereRef.current.event_listeners.pointInspected = (event: any) => {
+                register_event_listener(sphereRef.current, 'pointInspected', (event: any) => {
                     onPointInspected(event.detail);
-                };
+                });
             }
             
             // Set up training movie visual options
@@ -1192,13 +1186,9 @@ const TrainingMovieSphere: React.FC<{
             }
             
             // Start playing the training movie
-            console.log('🎬 TRAINING_MOVIE_START:', performance.now() + 'ms');
             play_training_movie(sphereRef.current, 10);
-            console.timeEnd('🌐 SPHERE_INITIALIZATION');
-            
-            // Training movie ready
-            console.log('🎉 TRAINING_MOVIE_READY:', performance.now() + 'ms');
-            
+            console.log('Training movie started');
+
             // Notify parent that sphere is ready
             if (onReady) {
                 onReady(sphereRef.current);
@@ -1256,7 +1246,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const componentStartTime = useRef(performance.now());
     const hasLoggedInit = useRef(false);
     if (!hasLoggedInit.current) {
-        console.log('🎬 COMPONENT_INIT_START:', componentStartTime.current + 'ms');
         hasLoggedInit.current = true;
     }
     const [sphereRef, setSphereRef] = useState<any>(null);
@@ -1267,17 +1256,72 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [showDynamicHulls, setShowDynamicHulls] = useState(false);
     const [trailLength, setTrailLength] = useState(12); // Default 12 epochs
     const [spotlightCluster, setSpotlightCluster] = useState<number>(-1); // -1 = off, 0+ = cluster number
+    const [clusterColorMode, setClusterColorMode] = useState<'final' | 'per-epoch'>('final');
     const [showCountdown, setShowCountdown] = useState(false);
     const [countdownText, setCountdownText] = useState('');
     const sphereRefForCountdown = useRef<any>(null); // Add ref to store sphere for countdown
+    const [showGestureHints, setShowGestureHints] = useState(false);
+    const gestureHintsShown = useRef(false);
     
     // Cluster debugging state
     const [showClusterDebug, setShowClusterDebug] = useState(false);
     const [selectedPointInfo, setSelectedPointInfo] = useState<any>(null);
     const [showColorLegend, setShowColorLegend] = useState(false);
+
+    // Data inspector state
+    const [selectedPoints, setSelectedPoints] = useState<any[]>([]);
+    const [showDataInspector, setShowDataInspector] = useState(false);
+    const [hideNulls, setHideNulls] = useState(false);
+    const [inspectorPosition, setInspectorPosition] = useState({ x: 100, y: 100 });
+    const [isDraggingInspector, setIsDraggingInspector] = useState(false);
+    const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
     const [isFullscreen, setIsFullscreen] = useState(false);
+
+    // Handle dragging the data inspector
+    useEffect(() => {
+        if (!isDraggingInspector) return;
+
+        const handleMouseMove = (e: MouseEvent) => {
+            setInspectorPosition({
+                x: e.clientX - dragOffset.x,
+                y: e.clientY - dragOffset.y
+            });
+        };
+
+        const handleMouseUp = () => {
+            setIsDraggingInspector(false);
+        };
+
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+
+        return () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [isDraggingInspector, dragOffset]);
     const [showSidePanelInFullscreen, setShowSidePanelInFullscreen] = useState(false);
-    
+
+    // Mobile detection
+    const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
+    const [showMobilePanel, setShowMobilePanel] = useState(false);
+
+    useEffect(() => {
+        const handleResize = () => setIsMobile(window.innerWidth < 768);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
+    // Show gesture hints on first mobile load
+    useEffect(() => {
+        if (isMobile && !loading && trainingData && !gestureHintsShown.current) {
+            gestureHintsShown.current = true;
+            setShowGestureHints(true);
+            const timer = setTimeout(() => setShowGestureHints(false), 4000);
+            return () => clearTimeout(timer);
+        }
+    }, [isMobile, loading, trainingData]);
+
     // Rotation control state
     const [rotationEnabled, setRotationEnabled] = useState(true); // Default enabled
     
@@ -1326,7 +1370,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
 
     // Countdown function for initial pause - using useCallback to ensure stable reference
     const startCountdown = useCallback(() => {
-        console.log('🎯 Starting countdown sequence');
         setShowCountdown(true);
         setCountdownText('Ready!');
         
@@ -1341,7 +1384,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         setTimeout(() => {
                             setShowCountdown(false);
                             // Start the training movie using the ref
-                            console.log('🎬 Countdown complete, starting movie with sphere:', sphereRefForCountdown.current);
                             if (sphereRefForCountdown.current) {
                                 resume_training_movie(sphereRefForCountdown.current);
                                 setIsPlaying(true);
@@ -1361,16 +1403,15 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 setLoading(true);
                 
                 // TRAINING MOVIE: Load from API - ignore deprecated cluster_pre, use finalClusterResults
-                console.log('🔗 Loading training movie from API (cluster_pre ignored - using finalClusterResults)');
-                
+                console.log('Loading training movie from API...');
+
                 // Use the session ID to fetch training data from API
                     // Request all points (9500+) - pass limit parameter if API supports it
                     const apiTrainingData = await fetch_training_metrics(sessionId, apiBaseUrl, 10000);
                 
                 if (apiTrainingData && apiTrainingData.epoch_projections) {
-                    console.log('✅ Got training movie data from API:', Object.keys(apiTrainingData.epoch_projections).length, 'epochs');
-                    console.log('✅ Using finalClusterResults for cluster assignments, ignoring deprecated cluster_pre');
-                    
+                    console.log('Got training movie data from API:', Object.keys(apiTrainingData.epoch_projections).length, 'epochs');
+
                     // Try to fetch final projections for cluster results AND full dataset
                     let clusterResults = {};
                     let fullProjectionsCoords: any[] = [];
@@ -1384,33 +1425,26 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             const projectionsData = await projectionsResponse.json();
                             if (projectionsData.projections?.entire_cluster_results) {
                                 clusterResults = projectionsData.projections.entire_cluster_results;
-                                console.log('✅ Found cluster results in final projections:', Object.keys(clusterResults).length, 'cluster counts');
+                                console.log('Found cluster results in final projections:', Object.keys(clusterResults).length, 'cluster counts');
                             }
                             // CRITICAL: Get full dataset coords (not just sampled training movie data)
-                            console.log('🔍 DEBUG: projectionsData structure:', {
-                                hasProjections: !!projectionsData.projections,
-                                projectionsKeys: projectionsData.projections ? Object.keys(projectionsData.projections) : [],
-                                hasCoords: !!projectionsData.projections?.coords,
-                                coordsLength: projectionsData.projections?.coords?.length || 0
-                            });
                             if (projectionsData.projections?.coords) {
                                 fullProjectionsCoords = projectionsData.projections.coords;
-                                console.log(`✅ Found full dataset: ${fullProjectionsCoords.length} points (vs ${apiTrainingData.epoch_projections[Object.keys(apiTrainingData.epoch_projections)[0]].coords.length} sampled)`);
-                            } else {
-                                console.warn('⚠️ Full dataset coords not found in projections response. Response structure:', Object.keys(projectionsData));
+                                console.log(`Found full dataset: ${fullProjectionsCoords.length} points`);
                             }
                         }
                     } catch (err) {
-                        console.warn('⚠️ Could not fetch final projections for cluster results:', err);
+                        console.error('❌ Error fetching full projections (original data unavailable in Data Inspector):', err);
                     }
-                    
+
                     setTrainingData(apiTrainingData.epoch_projections);
                     // Use API data for session projections with cluster results AND full dataset coords
+                    const usingFullProjections = fullProjectionsCoords.length > 0;
                     const sessionData = {
                         ...apiTrainingData,
                         entire_cluster_results: clusterResults,
                         // CRITICAL: Use full dataset coords if available, otherwise fall back to sampled
-                        coords: fullProjectionsCoords.length > 0 ? fullProjectionsCoords : (apiTrainingData.epoch_projections[Object.keys(apiTrainingData.epoch_projections)[0]]?.coords || [])
+                        coords: usingFullProjections ? fullProjectionsCoords : (apiTrainingData.epoch_projections[Object.keys(apiTrainingData.epoch_projections)[0]]?.coords || [])
                     };
                     setSessionProjections(sessionData);
                     
@@ -1418,7 +1452,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     const firstEpochKey = Object.keys(apiTrainingData.epoch_projections)[0];
                     const firstEpoch = apiTrainingData.epoch_projections[firstEpochKey];
                     if (firstEpoch && firstEpoch.coords) {
-                        console.log(`📊 First epoch (${firstEpochKey}) contains ${firstEpoch.coords.length} points`);
                         // Log total points across all epochs
                         let totalPointsAcrossEpochs = 0;
                         Object.keys(apiTrainingData.epoch_projections).forEach(epochKey => {
@@ -1427,8 +1460,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 totalPointsAcrossEpochs += epoch.coords.length;
                             }
                         });
-                        console.log(`📊 Total points across all epochs: ${totalPointsAcrossEpochs}`);
-                        const types = getColumnTypes({ coords: firstEpoch.coords });
+                        // Use sessionData.coords (which has full projections with actual columns) instead of epoch coords (which have synthetic training columns)
+                        const types = getColumnTypes({ coords: sessionData.coords });
                         setColumnTypes(types);
                         if (Object.keys(types).length > 0) {
                             setSelectedSearchColumn(Object.keys(types)[0]);
@@ -1470,7 +1503,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                   sessionStatus.session?.status === 'pending';
                 
                 if (!isTraining) {
-                    console.log('✅ Training complete or not in progress, stopping epoch polling');
+                    console.log('Training complete or not in progress, stopping epoch polling');
                     setTrainingStatus('completed');
                     return;
                 }
@@ -1496,8 +1529,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     }));
 
                     if (newMaxEpoch > currentMaxEpoch) {
-                        console.log(`🆕 New epoch detected! Current: ${currentMaxEpoch}, New: ${newMaxEpoch}`);
-                        
+                        console.log(`New epoch detected! Current: ${currentMaxEpoch}, New: ${newMaxEpoch}`);
+
                         // Find all new epochs
                         const newEpochs: Record<string, any> = {};
                         newEpochKeys.forEach(epochKey => {
@@ -1508,8 +1541,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         });
 
                         if (Object.keys(newEpochs).length > 0) {
-                            console.log(`📥 Adding ${Object.keys(newEpochs).length} new epochs to training movie`);
-                            
+                            console.log(`Adding ${Object.keys(newEpochs).length} new epochs to training movie`);
+
                             // Merge new epochs into existing training data
                             const updatedTrainingData = {
                                 ...trainingData,
@@ -1531,7 +1564,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 setIsPlaying(true);
                                 play_training_movie(sphereRef);
                                 
-                                console.log('🔄 Reloaded and restarted training movie with new epochs');
                             }
 
                             // Update loss data if available
@@ -1542,7 +1574,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     }
                 }
             } catch (error) {
-                console.warn('⚠️ Error checking for new epochs:', error);
+                console.warn('Error checking for new epochs:', error);
             }
         };
 
@@ -1580,10 +1612,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
 
     // Handle dynamic visualization feature changes
     useEffect(() => {
-        console.log('🔮 Visual features effect triggered:', { showDynamicHulls, trailLength, spotlightCluster, hasSphereRef: !!sphereRef });
-
         if (!sphereRef) {
-            console.warn('🔮 No sphereRef available');
             return;
         }
 
@@ -1591,21 +1620,23 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         sphereRefForCountdown.current = sphereRef;
 
         // Update sphere settings based on features
-        console.log('🔮 Setting sphere visual options:', { showDynamicHulls, trailLength, spotlightCluster });
         sphereRef.showDynamicPoints = false; // Always disabled - not useful
         sphereRef.showDynamicHulls = showDynamicHulls;
         sphereRef.memoryTrailLength = trailLength;
         sphereRef.spotlightCluster = spotlightCluster;
 
         // Call the unified compute function with all settings
-        console.log('🔮 Calling compute_cluster_convex_hulls');
         compute_cluster_convex_hulls(sphereRef);
-        console.log('🔮 Calling update_cluster_spotlight');
         update_cluster_spotlight(sphereRef);
-        console.log('🔮 Rendering sphere');
         render_sphere(sphereRef);
 
     }, [showDynamicHulls, trailLength, spotlightCluster, sphereRef]);
+
+    // Sync cluster color mode to sphere
+    useEffect(() => {
+        if (!sphereRef) return;
+        set_cluster_color_mode(sphereRef, clusterColorMode);
+    }, [clusterColorMode, sphereRef]);
 
     // Frame control functions
     const handlePlayPause = () => {
@@ -1765,11 +1796,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     // Filter record list for search with improved boolean handling
     const filter_record_list = (queryColumnType: any, queryColumn: any, queryValue: any) => {
         if (!sphereRef || !sphereRef.current || !sphereRef.current.pointRecordsByID) {
-            console.warn('🔍 Search: No sphereRef or pointRecordsByID', { 
-                hasSphereRef: !!sphereRef, 
-                hasCurrent: !!sphereRef?.current,
-                hasPointRecordsByID: !!sphereRef?.current?.pointRecordsByID 
-            });
             return [];
         }
         
@@ -1933,7 +1959,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 results.push(record);
             }
         }
-        console.log(`🔍 Search: Checked ${checked} records, found ${results.length} matches for "${queryValue}" in column "${queryColumn}" (type: ${queryColumnType})`);
         return results;
     };
     
@@ -1985,54 +2010,28 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     
     // Extract search submit logic to reusable function
     const handleSearchSubmit = () => {
-        console.log('🔍🔍🔍 handleSearchSubmit CALLED!', { 
-            sphereRef: !!sphereRef, 
-            sphereRefCurrent: !!sphereRef?.current,
-            sphereRefType: typeof sphereRef,
-            columnTypes: !!columnTypes,
-            columnTypesKeys: columnTypes ? Object.keys(columnTypes) : null,
-            selectedSearchColumn, 
-            searchQuery: searchQuery,
-            searchQueryTrimmed: searchQuery.trim(),
-            searchQueryLength: searchQuery.trim().length
-        });
-        
         if (!sphereRef || !sphereRef.current) {
-            console.error('🔍❌ Missing sphereRef or sphereRef.current', { 
-                hasSphereRef: !!sphereRef,
-                hasCurrent: !!sphereRef?.current 
-            });
             return;
         }
         
         if (!columnTypes) {
-            console.error('🔍❌ Missing columnTypes');
             return;
         }
-        
+
         if (!selectedSearchColumn) {
-            console.error('🔍❌ Missing selectedSearchColumn');
             return;
         }
-        
+
         if (!searchQuery.trim()) {
-            console.error('🔍❌ Empty search query');
             return;
         }
-        
-        console.log('🔍✅ All requirements met, proceeding with search...');
-        
+
         // Filter results
         const queryColumnType = columnTypes[selectedSearchColumn];
-        console.log('🔍 Query column type:', queryColumnType, 'for column:', selectedSearchColumn);
         
         const theRecords = filter_record_list(queryColumnType, selectedSearchColumn, searchQuery.trim());
         
-        console.log(`🔍 Found ${theRecords.length} records for query "${searchQuery.trim()}"`);
-        console.log('🔍 First 5 records:', theRecords.slice(0, 5).map(r => ({ id: r.id, value: r.original[selectedSearchColumn] })));
-        
         if (theRecords.length === 0) {
-            console.warn('🔍⚠️ No results found for search query');
             alert(`No results found for "${searchQuery.trim()}" in column "${selectedSearchColumn}"`);
             return;
         }
@@ -2050,12 +2049,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
             recordIds: theRecords.map(r => r.id)
         };
         
-        console.log(`🎨 Creating color rule:`, newRule);
-        
         // Add to color rules
         setColorRules(prev => {
             const updated = [...prev, newRule];
-            console.log(`🎨 Color rules updated: ${updated.length} rules`);
             return updated;
         });
         
@@ -2063,7 +2059,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         setSearchQuery('');
         setSearchResultStats(null);
         
-        console.log(`✅ Color rule created: "${newRule.query}" in column "${newRule.column}" with color ${newRule.color} for ${newRule.recordIds.length} records`);
     };
     
     // Handle Enter key to create color rule
@@ -2071,7 +2066,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         if (e.key === 'Enter') {
             e.preventDefault();
             e.stopPropagation();
-            console.log('🔍 Enter key pressed, calling handleSearchSubmit');
             handleSearchSubmit();
         }
     };
@@ -2082,12 +2076,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         setSearchQuery(inputValue);
         
         if (!sphereRef) {
-            console.warn('🔍 Search: No sphereRef available');
             return;
         }
-        
+
         if (!columnTypes || !selectedSearchColumn) {
-            console.warn('🔍 Search: No columnTypes or selectedSearchColumn');
             return;
         }
         
@@ -2283,16 +2275,15 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                height: '770px',
+                height: '100vh',
                 background: '#2a2a2a',
                 color: '#d0d0d0',
                 position: 'relative'
             }}>
                 <div style={{
                     position: 'absolute',
-                    top: '10px',
-                    right: '10px',
-                    fontSize: '12px',
+                    ...(isMobile ? { bottom: '10px', left: '10px' } : { top: '10px', right: '10px' }),
+                    fontSize: isMobile ? '10px' : '12px',
                     color: '#ff6b6b',
                     fontFamily: 'monospace',
                     background: 'rgba(255, 107, 107, 0.1)',
@@ -2313,7 +2304,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             animation: 'spin 1s linear infinite',
                             marginBottom: '15px'
                         }}></div>
-                        <div style={{ fontSize: '14px', color: '#ccc' }}>Session: {sessionId}</div>
+                        <div style={{ fontSize: '14px', color: '#ccc', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>Session: {isMobile && sessionId.length > 20 ? sessionId.slice(0, 8) + '...' + sessionId.slice(-4) : sessionId}</div>
                         <div style={{ fontSize: '12px', color: '#888', marginTop: '5px' }}>
                             Fetching from {apiBaseUrl || 'default API'}
                         </div>
@@ -2327,8 +2318,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         <div style={{ fontSize: '14px', color: '#00ffff', marginBottom: '10px' }}>
                             Will check for new frames in {nextCheckCountdown} seconds
                         </div>
-                        <div style={{ fontSize: '12px', color: '#888', marginTop: '5px' }}>
-                            Session: {sessionId}
+                        <div style={{ fontSize: '12px', color: '#888', marginTop: '5px', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
+                            Session: {isMobile && sessionId.length > 20 ? sessionId.slice(0, 8) + '...' + sessionId.slice(-4) : sessionId}
                         </div>
                     </>
                 )}
@@ -2340,8 +2331,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         <div style={{ fontSize: '14px', color: '#ccc', marginBottom: '10px' }}>
                             All epochs loaded
                         </div>
-                        <div style={{ fontSize: '12px', color: '#888', marginTop: '5px' }}>
-                            Session: {sessionId}
+                        <div style={{ fontSize: '12px', color: '#888', marginTop: '5px', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
+                            Session: {isMobile && sessionId.length > 20 ? sessionId.slice(0, 8) + '...' + sessionId.slice(-4) : sessionId}
                         </div>
                     </>
                 )}
@@ -2357,7 +2348,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             animation: 'spin 1s linear infinite',
                             marginBottom: '15px'
                         }}></div>
-                        <div style={{ fontSize: '14px', color: '#ccc' }}>Session: {sessionId}</div>
+                        <div style={{ fontSize: '14px', color: '#ccc', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>Session: {isMobile && sessionId.length > 20 ? sessionId.slice(0, 8) + '...' + sessionId.slice(-4) : sessionId}</div>
                         <div style={{ fontSize: '12px', color: '#888', marginTop: '5px' }}>
                             Fetching from {apiBaseUrl || 'default API'}
                         </div>
@@ -2374,16 +2365,15 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                height: '770px',
+                height: '100vh',
                 background: '#2a2a2a',
                 color: '#ff4444',
                 position: 'relative'
             }}>
                 <div style={{
                     position: 'absolute',
-                    top: '10px',
-                    right: '10px',
-                    fontSize: '12px',
+                    ...(isMobile ? { bottom: '10px', left: '10px' } : { top: '10px', right: '10px' }),
+                    fontSize: isMobile ? '10px' : '12px',
                     color: '#ff6b6b',
                     fontFamily: 'monospace',
                     background: 'rgba(255, 107, 107, 0.1)',
@@ -2394,8 +2384,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 </div>
                 <div style={{ fontSize: '18px', marginBottom: '10px' }}>Error loading training movie</div>
                 <div style={{ fontSize: '14px', marginTop: '10px', textAlign: 'center' }}>{error}</div>
-                <div style={{ fontSize: '12px', color: '#888', marginTop: '10px' }}>
-                    Session: {sessionId} | API: {apiBaseUrl || 'default'}
+                <div style={{ fontSize: '12px', color: '#888', marginTop: '10px', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
+                    Session: {isMobile && sessionId.length > 20 ? sessionId.slice(0, 8) + '...' + sessionId.slice(-4) : sessionId} | API: {apiBaseUrl || 'default'}
                 </div>
             </div>
         );
@@ -2407,7 +2397,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                height: '770px',
+                height: '100vh',
                 background: '#2a2a2a',
                 color: '#d0d0d0'
             }}>
@@ -2419,9 +2409,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     return (
         <div className="training-progress-display" style={{
             display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
             width: '100%',
             height: '100vh',
-            minHeight: '800px',
+            minHeight: isMobile ? '0' : '800px',
             background: '#2a2a2a',
             color: '#d0d0d0',
             overflow: 'hidden'
@@ -2430,10 +2421,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
             
             {/* Sphere Container - ALWAYS FILLS AVAILABLE SPACE */}
             <div style={{
-                flex: isFullscreen && !showSidePanelInFullscreen ? '1 1 100%' : '1 1 75%',
-                width: isFullscreen && !showSidePanelInFullscreen ? '100%' : '75%',
+                flex: (isMobile || (isFullscreen && !showSidePanelInFullscreen)) ? '1 1 100%' : '1 1 75%',
+                width: (isMobile || (isFullscreen && !showSidePanelInFullscreen)) ? '100%' : '75%',
                 height: '100%',
-                minHeight: '100vh',
+                minHeight: isMobile ? '100vh' : '100vh',
                 position: 'relative',
                 background: '#2a2a2a',
                 display: 'flex',
@@ -2488,6 +2479,46 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     </div>
                 )}
                 
+                {/* Gesture hints overlay for mobile */}
+                {showGestureHints && isMobile && (
+                    <div
+                        onClick={() => setShowGestureHints(false)}
+                        style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            background: 'rgba(0, 0, 0, 0.6)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '28px',
+                            zIndex: 1500,
+                            color: '#fff',
+                            fontFamily: 'system-ui, sans-serif',
+                            fontSize: '16px',
+                        }}
+                    >
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: '28px', marginBottom: '4px' }}>&#9757; Drag</div>
+                            <div style={{ color: '#aaa' }}>Rotate sphere</div>
+                        </div>
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: '28px', marginBottom: '4px' }}>&#128076; Pinch</div>
+                            <div style={{ color: '#aaa' }}>Zoom in / out</div>
+                        </div>
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: '28px', marginBottom: '4px' }}>&#128073; Tap</div>
+                            <div style={{ color: '#aaa' }}>Select point</div>
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#888', marginTop: '8px' }}>
+                            Tap to dismiss
+                        </div>
+                    </div>
+                )}
+
                 {/* ACTUAL 3D SPHERE VIEWER - WebGL container ALWAYS FILLS AVAILABLE SPACE */}
                 <div 
                     id="training-movie-3d-container" 
@@ -2528,7 +2559,22 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         trainingData={trainingData}
                         sessionProjections={sessionProjections}
                         lossData={lossData}
-                        onPointInspected={setSelectedPointInfo}
+                        onPointInspected={(pointInfo: any) => {
+                            setSelectedPointInfo(pointInfo);
+                            // Add to selected points list (or toggle if already selected)
+                            setSelectedPoints(prev => {
+                                const exists = prev.find(p => p.recordId === pointInfo.recordId);
+                                if (exists) {
+                                    // Remove if already selected
+                                    return prev.filter(p => p.recordId !== pointInfo.recordId);
+                                } else {
+                                    // Add to selection
+                                    return [...prev, pointInfo];
+                                }
+                            });
+                            // Auto-show data inspector when points are selected
+                            setShowDataInspector(true);
+                        }}
                         rotationEnabled={rotationEnabled}
                         containerRef={containerRef}
                         onReady={(sphere: any) => {
@@ -2544,7 +2590,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 pause_training_movie(sphere);
                             }
                             
-                            console.log('🎮 Sphere ready - starting countdown sequence');
                             
                             // Start countdown after a brief delay
                             setTimeout(() => {
@@ -2572,7 +2617,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             // Detect restart (frame went back to 1 from higher number)
                             const prevFrame = frameInfo?.current || 0;
                             if (prevFrame > 1 && info.current === 1 && typeof startCountdown === 'function') {
-                                console.log('🔄 Training movie restarted - showing countdown');
                                 setTimeout(() => {
                                     try {
                                         startCountdown();
@@ -2605,14 +2649,51 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 </div>
             </div>
             
-            {/* Controls Side Panel - Right side, hugging the edge, hidden in fullscreen unless toggled */}
-            {(!isFullscreen || showSidePanelInFullscreen) && (
+            {/* Mobile Controls Toggle Button */}
+            {isMobile && (
+                <button
+                    onClick={() => setShowMobilePanel(!showMobilePanel)}
+                    style={{
+                        position: 'fixed',
+                        bottom: showMobilePanel ? 'calc(60vh + 8px)' : '16px',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        zIndex: 10001,
+                        background: 'rgba(42, 42, 42, 0.9)',
+                        border: '1px solid #666',
+                        color: '#d0d0d0',
+                        padding: '10px 24px',
+                        borderRadius: '20px',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        transition: 'bottom 0.3s ease',
+                        boxShadow: '0 2px 10px rgba(0,0,0,0.5)'
+                    }}
+                >
+                    {showMobilePanel ? '▼ Hide Controls' : '▲ Controls'}
+                </button>
+            )}
+
+            {/* Controls Side Panel - Right side on desktop, bottom sheet on mobile */}
+            {(isMobile ? showMobilePanel : (!isFullscreen || showSidePanelInFullscreen)) && (
             <div style={{
-                flex: '0 0 25%',
-                width: '25%',
-                height: '100vh',
+                ...(isMobile ? {
+                    position: 'fixed' as const,
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    height: '60vh',
+                    zIndex: 10000,
+                    borderTop: '2px solid #666',
+                    borderRadius: '16px 16px 0 0',
+                } : {
+                    flex: '0 0 25%',
+                    width: '25%',
+                    height: '100vh',
+                    borderLeft: '1px solid #555',
+                }),
                 background: '#3a3a3a',
-                borderLeft: '1px solid #555',
                 overflowY: 'auto',
                 padding: '16px',
                 fontFamily: 'monospace',
@@ -2621,6 +2702,17 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 transition: isFullscreen ? 'transform 0.3s ease' : 'none',
                 transform: isFullscreen && !showSidePanelInFullscreen ? 'translateX(100%)' : 'translateX(0)'
             }}>
+                {/* Mobile drag handle */}
+                {isMobile && (
+                    <div style={{
+                        width: '40px',
+                        height: '4px',
+                        background: '#888',
+                        borderRadius: '2px',
+                        margin: '0 auto 12px',
+                    }} />
+                )}
+
                 {/* Build timestamp & frame info */}
                 <div className="build-display" style={{
                     marginBottom: '16px',
@@ -2711,11 +2803,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
 
                 {/* Loss Plot with Dual Y-Axis (Validation Loss + Learning Rate) */}
                 {lossData && (() => {
-                    // Debug: log lossData structure
-                    if (lossData && !lossData.validation_loss) {
-                        console.log('🔍 Loss plot debug - lossData structure:', Object.keys(lossData));
-                        console.log('🔍 Loss plot debug - lossData:', lossData);
-                    }
                     
                     // Try different possible structures for validation loss
                     let validationLossData = null;
@@ -2739,25 +2826,14 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     // Extract learning rate data for dual Y-axis - COMPREHENSIVE EXTRACTION
                     let learningRateData = null;
                     
-                    // Debug: log what we have (only once, use a ref to track)
-                    const logKey = `lr_extract_${JSON.stringify(Object.keys(lossData).sort())}`;
-                    if (!(window as any)._lrLogged || (window as any)._lrLogKey !== logKey) {
-                        console.log('🔍 Learning rate extraction - lossData keys:', Object.keys(lossData));
-                        console.log('🔍 Learning rate extraction - lossData:', lossData);
-                        (window as any)._lrLogged = true;
-                        (window as any)._lrLogKey = logKey;
-                    }
                     
                     // Try ALL possible structures from API
                     if (lossData.learning_rate && Array.isArray(lossData.learning_rate)) {
                         learningRateData = lossData.learning_rate;
-                        console.log('✅ Found learning_rate array:', learningRateData.length);
                     } else if (lossData.training_info) {
                         // Check training_info.loss_history
                         if (lossData.training_info.loss_history && Array.isArray(lossData.training_info.loss_history)) {
                             const lossHistory = lossData.training_info.loss_history;
-                            console.log('🔍 Found loss_history with', lossHistory.length, 'items');
-                            console.log('🔍 First item sample:', lossHistory[0]);
                             
                             learningRateData = lossHistory
                                 .filter((item: any) => 
@@ -2769,7 +2845,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     epoch: item.epoch || item.epoch_number || item.epoch_num || 0,
                                     value: item.current_learning_rate || item.learning_rate || item.lr || 0
                                 }));
-                            console.log('✅ Extracted learning rate from loss_history:', learningRateData.length, 'points');
                         }
                         
                         // Also check training_info.learning_rate_schedule
@@ -2780,7 +2855,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     epoch: item.epoch || item.epoch_number || 0,
                                     value: item.value || item.lr || item.learning_rate || 0
                                 }));
-                                console.log('✅ Extracted learning rate from learning_rate_schedule:', learningRateData.length, 'points');
                             }
                         }
                     } else if (Array.isArray(lossData) && lossData.length > 0) {
@@ -2797,7 +2871,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     epoch: item.epoch || item.epoch_number || item.epoch_num || 0,
                                     value: item.current_learning_rate || item.learning_rate || item.lr || 0
                                 }));
-                            console.log('✅ Extracted learning rate from array:', learningRateData.length, 'points');
                         }
                     }
                     
@@ -2806,7 +2879,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         // Try direct access - lossData might BE training_metrics
                         if (lossData.learning_rate && Array.isArray(lossData.learning_rate)) {
                             learningRateData = lossData.learning_rate;
-                            console.log('✅ Found learning_rate directly in lossData:', learningRateData.length);
                         }
                         
                         // Check nested training_metrics
@@ -2814,7 +2886,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             const tm = lossData.training_metrics;
                             if (tm.learning_rate && Array.isArray(tm.learning_rate)) {
                                 learningRateData = tm.learning_rate;
-                                console.log('✅ Found learning_rate in training_metrics:', learningRateData.length);
                             } else if (tm.training_info && tm.training_info.loss_history) {
                                 const lossHistory = tm.training_info.loss_history;
                                 learningRateData = lossHistory
@@ -2827,7 +2898,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                         epoch: item.epoch || item.epoch_number || 0,
                                         value: item.current_learning_rate || item.learning_rate || item.lr || 0
                                     }));
-                                console.log('✅ Extracted learning rate from training_metrics.training_info.loss_history:', learningRateData.length, 'points');
                             }
                         }
                         
@@ -2868,15 +2938,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             const deepResult = deepSearch(lossData);
                             if (deepResult && deepResult.length > 0) {
                                 learningRateData = deepResult;
-                                console.log('✅ Found learning rate via deep search:', learningRateData.length, 'points');
                             }
                         }
-                    }
-                    
-                    if (learningRateData && learningRateData.length > 0) {
-                        console.log('✅ Rendering dual Y-axis plot with validation loss and learning rate');
-                    } else {
-                        console.warn('⚠️ No learning rate data found - showing only validation loss');
                     }
                     
                     return (
@@ -3121,7 +3184,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                             />
                                             <button 
                                                 onClick={() => {
-                                                    console.log('🔍🔍🔍 GO BUTTON CLICKED!', { searchQuery, selectedSearchColumn });
                                                     handleSearchSubmit();
                                                 }}
                                                 disabled={!searchQuery.trim()}
@@ -3404,22 +3466,36 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     <div style={{ background: 'rgba(42, 42, 42, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #666', marginBottom: '16px' }}>
                         <div style={{ color: '#d0d0d0', fontSize: '16px', fontWeight: 'bold', marginBottom: '8px' }}>Visual Controls</div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ marginBottom: '4px', paddingBottom: '8px', borderBottom: '1px solid #666' }}>
+                                <label style={{ color: '#d0d0d0', fontSize: '14px', display: 'flex', alignItems: 'center' }}>
+                                    Cluster Coloring:
+                                    <select value={clusterColorMode} onChange={(e) => setClusterColorMode(e.target.value as 'final' | 'per-epoch')} style={{ marginLeft: '8px', fontSize: '13px', padding: '4px 6px', backgroundColor: '#555', color: '#d0d0d0', border: '1px solid #666', borderRadius: '3px', cursor: 'pointer', flex: 1 }}>
+                                        <option value="final">Final Frame Clusters</option>
+                                        <option value="per-epoch">Per-Epoch Clusters</option>
+                                    </select>
+                                </label>
+                                <div style={{ fontSize: '11px', color: '#888', marginTop: '4px', paddingLeft: '4px' }}>
+                                    {clusterColorMode === 'final'
+                                        ? 'Colors locked to final-frame neighbors. Watch them converge.'
+                                        : 'Colors from each epoch\'s own clustering. Watch clusters evolve.'}
+                                </div>
+                            </div>
                             <label style={{ color: frameInfo.visible >= 4 ? '#d0d0d0' : '#888', fontSize: '14px', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                                <input type="checkbox" checked={showDynamicHulls} onChange={(e) => { console.log('🔮 Cluster spheres toggled:', e.target.checked, 'clusters:', frameInfo.visible); setShowDynamicHulls(e.target.checked); }} style={{ marginRight: '8px', cursor: 'pointer', width: '16px', height: '16px' }} disabled={frameInfo.visible < 4} />
+                                <input type="checkbox" checked={showDynamicHulls} onChange={(e) => { setShowDynamicHulls(e.target.checked); }} style={{ marginRight: '8px', cursor: 'pointer', width: '16px', height: '16px' }} disabled={frameInfo.visible < 4} />
                                 Show Cluster Spheres
                                 <span style={{ fontSize: '12px', color: '#888', marginLeft: '8px' }}>({frameInfo.visible} clusters - translucent spheres around each cluster)</span>
                             </label>
                             <div style={{ marginTop: '8px', borderTop: '1px solid #666', paddingTop: '8px' }}>
                                 <label style={{ color: '#d0d0d0', fontSize: '14px', display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
                                     Trail Length:
-                                    <input type="range" min="2" max="15" value={trailLength} onChange={(e) => { const newLength = parseInt(e.target.value); console.log('🛤️ Trail length changed:', newLength); setTrailLength(newLength); }} style={{ marginLeft: '8px', marginRight: '8px', cursor: 'pointer', flex: 1 }} />
+                                    <input type="range" min="2" max="15" value={trailLength} onChange={(e) => { const newLength = parseInt(e.target.value); setTrailLength(newLength); }} style={{ marginLeft: '8px', marginRight: '8px', cursor: 'pointer', flex: 1 }} />
                                     <span style={{ fontSize: '14px', color: '#aaa', minWidth: '20px' }}>{trailLength}</span>
                                 </label>
                             </div>
                             <div style={{ marginTop: '8px', borderTop: '1px solid #666', paddingTop: '8px' }}>
                                 <label style={{ color: '#d0d0d0', fontSize: '14px', display: 'flex', alignItems: 'center' }}>
                                     Focus Cluster:
-                                    <select value={spotlightCluster} onChange={(e) => { const cluster = parseInt(e.target.value); console.log('🎯 Spotlight cluster changed:', cluster); setSpotlightCluster(cluster); if (sphereRef) { sphereRef.spotlightCluster = cluster; update_cluster_spotlight(sphereRef); render_sphere(sphereRef); } }} style={{ marginLeft: '8px', fontSize: '13px', padding: '4px 6px', backgroundColor: '#555', color: '#d0d0d0', border: '1px solid #666', borderRadius: '3px', cursor: 'pointer', flex: 1 }}>
+                                    <select value={spotlightCluster} onChange={(e) => { const cluster = parseInt(e.target.value); setSpotlightCluster(cluster); if (sphereRef) { sphereRef.spotlightCluster = cluster; update_cluster_spotlight(sphereRef); render_sphere(sphereRef); } }} style={{ marginLeft: '8px', fontSize: '13px', padding: '4px 6px', backgroundColor: '#555', color: '#d0d0d0', border: '1px solid #666', borderRadius: '3px', cursor: 'pointer', flex: 1 }}>
                                         <option value={-1}>Off</option>
                                         {frameInfo.visible > 0 && Array.from({length: frameInfo.visible}, (_, i) => (<option key={i} value={i}>C{i}</option>))}
                                     </select>
@@ -3434,7 +3510,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                         <button onClick={() => setShowClusterDebug(!showClusterDebug)} style={{ background: showClusterDebug ? '#4c4' : '#555', border: '1px solid #666', color: '#d0d0d0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }} title="Toggle Cluster Inspector">Debug</button>
                         <button onClick={() => setShowColorLegend(!showColorLegend)} style={{ background: showColorLegend ? '#4c4' : '#555', border: '1px solid #666', color: '#d0d0d0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }} title="Toggle Color Legend">Colors</button>
-                        <button onClick={toggleFullscreen} style={{ background: isFullscreen ? '#4c4' : '#555', border: '1px solid #666', color: '#d0d0d0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }} title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}>{isFullscreen ? 'Exit' : 'Full'}</button>
+                        {!isMobile && <button onClick={toggleFullscreen} style={{ background: isFullscreen ? '#4c4' : '#555', border: '1px solid #666', color: '#d0d0d0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }} title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}>{isFullscreen ? 'Exit' : 'Full'}</button>}
                         <button onClick={() => setRotationEnabled(!rotationEnabled)} style={{ background: rotationEnabled ? '#4c4' : '#c44', border: '1px solid #666', color: '#d0d0d0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }} title={rotationEnabled ? "Disable Rotation" : "Enable Rotation"}>{rotationEnabled ? 'On' : 'Off'}</button>
                     </div>
                 </div>
@@ -3459,16 +3535,13 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                             type="color"
                                             value={color}
                                             onChange={(e) => {
-                                                console.log('🎨 Color picker changed for cluster', i, 'to', e.target.value);
                                                 if (sphereRef && sphereRef.current) {
                                                     const newColor = e.target.value;
-                                                    console.log('🎨 Calling set_cluster_color with:', { sphereRef: sphereRef.current, clusterId: i, color: newColor });
                                                     set_cluster_color(sphereRef.current, i, newColor);
                                                     render_sphere(sphereRef.current);
                                                     // Force component re-render
                                                     setShowColorLegend(prev => prev);
                                                 } else {
-                                                    console.warn('🎨 sphereRef not available:', { hasSphereRef: !!sphereRef, hasCurrent: !!sphereRef?.current });
                                                 }
                                             }}
                                             style={{ 
@@ -3487,9 +3560,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         </div>
                         <button
                             onClick={() => {
-                                console.log('🎨 Reset colors button clicked');
                                 if (sphereRef && sphereRef.current) {
-                                    console.log('🎨 Calling clear_cluster_colors');
                                     clear_cluster_colors(sphereRef.current);
                                     render_sphere(sphereRef.current);
                                     setShowColorLegend(prev => prev);
@@ -3517,7 +3588,79 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     <div style={{ background: 'rgba(42, 42, 42, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid #666', marginBottom: '16px' }}>
                         <div style={{ color: '#4c4', fontWeight: 'bold', marginBottom: '8px', fontSize: '16px' }}>Cluster Inspector</div>
                         {frameInfo && (<div style={{ marginBottom: '8px', fontSize: '14px' }}><div>Frame: {frameInfo.current}/{frameInfo.total}</div><div>Visible Clusters: {frameInfo.visible}</div><div>Epoch: {frameInfo.epoch || 'unknown'}</div></div>)}
-                        {selectedPointInfo && (<div style={{ marginTop: '8px', borderTop: '1px solid #444', paddingTop: '8px', fontSize: '13px' }}><div style={{ color: '#ff4', fontWeight: 'bold' }}>Selected Point:</div><div>Record ID: {selectedPointInfo.recordId}</div><div>Row Offset: {selectedPointInfo.rowOffset}</div><div>Cluster ID: {selectedPointInfo.clusterId}</div><div>Color: <span style={{ background: selectedPointInfo.color, padding: '2px 6px', borderRadius: '2px' }}>{selectedPointInfo.color}</span></div><div>Position: {selectedPointInfo.position}</div></div>)}
+
+                        {/* Cluster member counts */}
+                        {sphereRef && (() => {
+                            // Count points per cluster
+                            const clusterCounts = new Map<number, number>();
+                            let pointsWithoutCluster = 0;
+                            let totalPoints = 0;
+
+                            if (sphereRef.pointObjectsByRecordID && sphereRef.pointRecordsByID) {
+                                sphereRef.pointObjectsByRecordID.forEach((mesh: any, recordId: string) => {
+                                    totalPoints++;
+                                    const record = sphereRef.pointRecordsByID.get(recordId);
+
+                                    // Try to get cluster from finalClusterResults
+                                    let cluster = -1;
+                                    const activeClusterKey = get_active_cluster_count_key(sphereRef);
+                                    if (activeClusterKey !== null && sphereRef.finalClusterResults?.[activeClusterKey]?.cluster_labels) {
+                                        const rowOffset = record?.featrix_meta?.__featrix_row_offset;
+                                        if (rowOffset !== undefined && rowOffset < sphereRef.finalClusterResults[activeClusterKey].cluster_labels.length) {
+                                            cluster = sphereRef.finalClusterResults[activeClusterKey].cluster_labels[rowOffset];
+                                        }
+                                    }
+
+                                    if (cluster === -1) {
+                                        pointsWithoutCluster++;
+                                    } else {
+                                        clusterCounts.set(cluster, (clusterCounts.get(cluster) || 0) + 1);
+                                    }
+                                });
+                            }
+
+                            if (clusterCounts.size === 0) {
+                                return (<div style={{ fontSize: '12px', color: '#c44', marginTop: '8px' }}>⚠️ No cluster data available ({totalPoints} points)</div>);
+                            }
+
+                            return (
+                                <div style={{ marginTop: '8px', borderTop: '1px solid #444', paddingTop: '8px' }}>
+                                    <div style={{ color: '#4cf', fontWeight: 'bold', marginBottom: '4px', fontSize: '13px' }}>Cluster Members:</div>
+                                    <div style={{ fontSize: '11px', fontFamily: 'monospace', maxHeight: '150px', overflowY: 'auto' }}>
+                                        {Array.from(clusterCounts.entries()).sort((a, b) => a[0] - b[0]).map(([cluster, count]) => (
+                                            <div key={cluster} style={{ marginBottom: '2px' }}>
+                                                <span style={{ color: '#888' }}>C{cluster}:</span> <span style={{ color: '#ddd' }}>{count} points</span>
+                                            </div>
+                                        ))}
+                                        {pointsWithoutCluster > 0 && (
+                                            <div style={{ marginTop: '4px', color: '#c44' }}>⚠️ {pointsWithoutCluster} points without cluster</div>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })()}
+                        {selectedPointInfo && (
+                            <div style={{ marginTop: '8px', borderTop: '1px solid #444', paddingTop: '8px', fontSize: '13px' }}>
+                                <div style={{ color: '#ff4', fontWeight: 'bold', marginBottom: '6px' }}>Selected Point:</div>
+                                <div>Record ID: {selectedPointInfo.recordId}</div>
+                                <div>Row Offset: {selectedPointInfo.rowOffset}</div>
+                                <div>Cluster ID: {selectedPointInfo.clusterId}</div>
+                                <div>Color: <span style={{ background: selectedPointInfo.color, padding: '2px 6px', borderRadius: '2px' }}>{selectedPointInfo.color}</span></div>
+                                <div>Position: {selectedPointInfo.position}</div>
+                                {selectedPointInfo.data && (
+                                    <div style={{ marginTop: '8px', borderTop: '1px solid #333', paddingTop: '8px' }}>
+                                        <div style={{ color: '#4cf', fontWeight: 'bold', marginBottom: '4px' }}>Data:</div>
+                                        <div style={{ maxHeight: '200px', overflowY: 'auto', fontSize: '12px', fontFamily: 'monospace' }}>
+                                            {Object.entries(selectedPointInfo.data).map(([key, value]) => (
+                                                <div key={key} style={{ marginBottom: '2px' }}>
+                                                    <span style={{ color: '#888' }}>{key}:</span> <span style={{ color: '#ddd' }}>{String(value)}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                         <div style={{ marginTop: '8px', fontSize: '13px', color: '#888' }}>Click points on sphere to inspect</div>
                     </div>
                 )}
@@ -3540,6 +3683,182 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     </div>
                 )}
             </div>
+            )}
+
+            {/* Floating Data Inspector */}
+            {showDataInspector && selectedPoints.length > 0 && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        left: `${inspectorPosition.x}px`,
+                        top: `${inspectorPosition.y}px`,
+                        background: 'rgba(20, 20, 20, 0.95)',
+                        border: '2px solid #4c4',
+                        borderRadius: '8px',
+                        padding: '12px',
+                        minWidth: '400px',
+                        maxWidth: '800px',
+                        maxHeight: '80vh',
+                        zIndex: 20000,
+                        boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        cursor: isDraggingInspector ? 'grabbing' : 'default'
+                    }}
+                >
+                    {/* Header with drag handle */}
+                    <div
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            marginBottom: '8px',
+                            paddingBottom: '8px',
+                            borderBottom: '1px solid #444',
+                            cursor: 'grab',
+                            userSelect: 'none'
+                        }}
+                        onMouseDown={(e) => {
+                            setIsDraggingInspector(true);
+                            setDragOffset({
+                                x: e.clientX - inspectorPosition.x,
+                                y: e.clientY - inspectorPosition.y
+                            });
+                        }}
+                    >
+                        <div style={{ color: '#4c4', fontWeight: 'bold', fontSize: '16px' }}>
+                            Data Inspector ({selectedPoints.length} point{selectedPoints.length !== 1 ? 's' : ''})
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <label style={{ fontSize: '12px', color: '#888', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={hideNulls}
+                                    onChange={(e) => setHideNulls(e.target.checked)}
+                                />
+                                Hide nulls
+                            </label>
+                            <button
+                                onClick={() => setSelectedPoints([])}
+                                style={{
+                                    background: '#c44',
+                                    border: 'none',
+                                    color: 'white',
+                                    padding: '4px 8px',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontSize: '12px'
+                                }}
+                                title="Clear all selected points"
+                            >
+                                Clear
+                            </button>
+                            <button
+                                onClick={() => setShowDataInspector(false)}
+                                style={{
+                                    background: '#555',
+                                    border: 'none',
+                                    color: 'white',
+                                    padding: '4px 8px',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontSize: '12px'
+                                }}
+                            >
+                                ×
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Data table */}
+                    <div style={{ overflowY: 'auto', flex: 1 }}>
+                        <table style={{
+                            width: '100%',
+                            borderCollapse: 'collapse',
+                            fontSize: '12px',
+                            fontFamily: 'monospace'
+                        }}>
+                            <thead style={{ position: 'sticky', top: 0, background: '#1a1a1a', zIndex: 1 }}>
+                                <tr>
+                                    <th style={{
+                                        padding: '6px 8px',
+                                        textAlign: 'left',
+                                        borderBottom: '2px solid #444',
+                                        color: '#4cf',
+                                        fontWeight: 'bold'
+                                    }}>Field</th>
+                                    {selectedPoints.map((point, idx) => (
+                                        <th key={point.recordId} style={{
+                                            padding: '6px 8px',
+                                            textAlign: 'left',
+                                            borderBottom: '2px solid #444',
+                                            borderLeft: '1px solid #333',
+                                            color: point.color || '#ff4',
+                                            fontWeight: 'bold',
+                                            minWidth: '120px'
+                                        }}>
+                                            <div>Point {idx + 1}</div>
+                                            <div style={{ fontSize: '10px', color: '#888' }}>Row {point.rowOffset}</div>
+                                            <div style={{ fontSize: '10px', color: '#888' }}>Cluster {point.clusterId}</div>
+                                        </th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {(() => {
+                                    // Get all unique field names from all selected points
+                                    const allFields = new Set<string>();
+                                    selectedPoints.forEach(point => {
+                                        if (point.data) {
+                                            Object.keys(point.data).forEach(field => allFields.add(field));
+                                        }
+                                    });
+
+                                    const sortedFields = Array.from(allFields).sort();
+
+                                    return sortedFields.map(field => {
+                                        // Check if all values are null
+                                        const allNull = selectedPoints.every(point => {
+                                            const val = point.data?.[field];
+                                            return val === null || val === undefined || val === '';
+                                        });
+
+                                        // Skip if hiding nulls and all values are null
+                                        if (hideNulls && allNull) return null;
+
+                                        return (
+                                            <tr key={field} style={{ borderBottom: '1px solid #333' }}>
+                                                <td style={{
+                                                    padding: '6px 8px',
+                                                    color: '#888',
+                                                    fontWeight: 'bold',
+                                                    verticalAlign: 'top'
+                                                }}>{field}</td>
+                                                {selectedPoints.map(point => {
+                                                    const value = point.data?.[field];
+                                                    const displayValue = value === null || value === undefined ? 'null' : String(value);
+                                                    const isNull = value === null || value === undefined;
+
+                                                    return (
+                                                        <td key={point.recordId} style={{
+                                                            padding: '6px 8px',
+                                                            color: isNull ? '#666' : '#ddd',
+                                                            borderLeft: '1px solid #333',
+                                                            verticalAlign: 'top',
+                                                            wordBreak: 'break-word'
+                                                        }}>
+                                                            {displayValue}
+                                                        </td>
+                                                    );
+                                                })}
+                                            </tr>
+                                        );
+                                    }).filter(Boolean);
+                                })()}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             )}
         </div>
     );
@@ -3603,11 +3922,8 @@ const FinalSphereView: React.FC<{
         
         // Set jsonData
         setJsonData(data);
-        
-        console.log('✅ Final sphere data processed:', {
-            points: records.length,
-            clusters: Object.keys(data.entire_cluster_results || {}).length
-        });
+
+        console.log('Final sphere data processed:', records.length, 'points,', Object.keys(data.entire_cluster_results || {}).length, 'cluster counts');
     }, [data]);
     
     // Get column types helper

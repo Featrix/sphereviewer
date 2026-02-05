@@ -17,7 +17,10 @@
     "build:embed": "webpack --mode production && cp dist/sphere-viewer.js sphere-viewer.js && echo '🔥 CACHE BUSTING: Copied fresh build to root'",
     "prepublishOnly": "npm run build:embed",
     "deploy": "./deploy-to-bits.sh",
-    "deploy:full": "npm run build:embed && npm run deploy"
+    "deploy:full": "npm run build:embed && npm run deploy",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed"
   },
   "keywords": [
     "react",
@@ -53,6 +56,7 @@
     "uuid": "^11.0.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.57.0",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
@@ -60,6 +64,7 @@
     "css-loader": "^6.11.0",
     "eslint": "^8",
     "eslint-config-next": "15.0.3",
+    "playwright": "^1.57.0",
     "postcss": "^8",
     "postcss-loader": "^7.3.3",
     "style-loader": "^3.3.4",
