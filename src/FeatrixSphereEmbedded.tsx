@@ -1530,6 +1530,54 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [movementData, setMovementData] = useState<Array<{ epoch: string, mean: number, median: number, p90: number, max: number }>>([]);
     const [showMovementPlot, setShowMovementPlot] = useState(true); // Show by default
 
+    // Playback overlay visibility state
+    const [overlayVisible, setOverlayVisible] = useState(false);
+    const overlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const overlayInteractingRef = useRef(false);
+
+    const showOverlay = useCallback(() => {
+        setOverlayVisible(true);
+        if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
+        if (!overlayInteractingRef.current) {
+            overlayTimerRef.current = setTimeout(() => {
+                if (!overlayInteractingRef.current) {
+                    setOverlayVisible(false);
+                }
+            }, 2000);
+        }
+    }, []);
+
+    const handleCanvasMouseMove = useCallback(() => {
+        showOverlay();
+    }, [showOverlay]);
+
+    const handleCanvasMouseLeave = useCallback(() => {
+        if (!overlayInteractingRef.current) {
+            if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
+            overlayTimerRef.current = setTimeout(() => {
+                if (!overlayInteractingRef.current) {
+                    setOverlayVisible(false);
+                }
+            }, 500);
+        }
+    }, []);
+
+    const handleOverlayInteractionStart = useCallback(() => {
+        overlayInteractingRef.current = true;
+        if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
+        setOverlayVisible(true);
+    }, []);
+
+    const handleOverlayInteractionEnd = useCallback(() => {
+        overlayInteractingRef.current = false;
+        if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
+        overlayTimerRef.current = setTimeout(() => {
+            if (!overlayInteractingRef.current) {
+                setOverlayVisible(false);
+            }
+        }, 2000);
+    }, []);
+
     // Search state
     const [columnTypes, setColumnTypes] = useState<any>(null);
     const [selectedSearchColumn, setSelectedSearchColumn] = useState<string>('');
@@ -1653,7 +1701,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     setSessionProjections(sessionData);
                     
                     // Extract column types from first epoch for search functionality
-                    const firstEpochKey = Object.keys(apiTrainingData.epoch_projections)[0];
                     const firstEpoch = apiTrainingData.epoch_projections[firstEpochKey];
                     if (firstEpoch && firstEpoch.coords) {
                         // Log total points across all epochs
@@ -2750,8 +2797,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 )}
 
                 {/* ACTUAL 3D SPHERE VIEWER - WebGL container ALWAYS FILLS AVAILABLE SPACE */}
-                <div 
-                    id="training-movie-3d-container" 
+                <div
+                    id="training-movie-3d-container"
+                    onMouseMove={handleCanvasMouseMove}
+                    onMouseLeave={handleCanvasMouseLeave}
                     style={{
                         width: '100%',
                         height: '100%',
@@ -2874,6 +2923,87 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         background: '#2a2a2a'
                     }}>
                         Initializing 3D sphere...
+                    </div>
+                )}
+
+                {/* Playback Overlay - YouTube/QuickTime style floating controls */}
+                {frameInfo && frameInfo.total > 0 && (
+                    <div
+                        onMouseEnter={handleOverlayInteractionStart}
+                        onMouseLeave={handleOverlayInteractionEnd}
+                        style={{
+                            position: 'absolute',
+                            bottom: '24px',
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            zIndex: 100,
+                            opacity: overlayVisible ? 1 : 0,
+                            pointerEvents: overlayVisible ? 'auto' : 'none',
+                            transition: 'opacity 200ms ease',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            gap: '6px',
+                            width: 'min(90%, 600px)',
+                            background: 'rgba(0, 0, 0, 0.55)',
+                            backdropFilter: 'blur(8px)',
+                            borderRadius: '10px',
+                            padding: '12px 16px 8px',
+                        }}
+                    >
+                        {/* Scrub slider */}
+                        <div
+                            style={{
+                                width: '100%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                            }}
+                            onWheel={(e) => {
+                                if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+                                    e.preventDefault();
+                                    const delta = e.deltaX > 0 ? 1 : -1;
+                                    const newFrame = Math.max(1, Math.min(frameInfo.total, frameInfo.current + delta));
+                                    if (newFrame !== frameInfo.current && sphereRef) {
+                                        goto_training_movie_frame(sphereRef, newFrame);
+                                        setIsPlaying(false);
+                                        setFrameInput(newFrame.toString());
+                                    }
+                                }
+                            }}
+                        >
+                            <input
+                                type="range"
+                                min="1"
+                                max={frameInfo.total}
+                                value={frameInfo.current}
+                                onChange={handleScrub}
+                                style={{
+                                    flex: 1,
+                                    cursor: 'pointer',
+                                    height: '4px',
+                                    accentColor: '#00ccff',
+                                }}
+                            />
+                        </div>
+
+                        {/* Transport buttons + frame counter */}
+                        <div
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                            }}
+                        >
+                            <button onClick={() => { if (sphereRef) { goto_training_movie_frame(sphereRef, 1); setIsPlaying(false); setFrameInput('1'); } }} style={{ background: 'none', border: 'none', color: '#d0d0d0', fontSize: '16px', cursor: 'pointer', padding: '4px 6px', lineHeight: 1 }} title="First Frame">⏮</button>
+                            <button onClick={handleStepBackward} style={{ background: 'none', border: 'none', color: '#d0d0d0', fontSize: '16px', cursor: 'pointer', padding: '4px 6px', lineHeight: 1 }} title="Previous Frame">⏪</button>
+                            <button onClick={handlePlayPause} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '20px', cursor: 'pointer', padding: '4px 10px', lineHeight: 1 }} title={isPlaying ? 'Pause' : 'Play'}>{isPlaying ? '⏸' : '▶'}</button>
+                            <button onClick={handleStepForward} style={{ background: 'none', border: 'none', color: '#d0d0d0', fontSize: '16px', cursor: 'pointer', padding: '4px 6px', lineHeight: 1 }} title="Next Frame">⏩</button>
+                            <button onClick={() => { if (sphereRef && frameInfo) { goto_training_movie_frame(sphereRef, frameInfo.total); setIsPlaying(false); setFrameInput(frameInfo.total.toString()); } }} style={{ background: 'none', border: 'none', color: '#d0d0d0', fontSize: '16px', cursor: 'pointer', padding: '4px 6px', lineHeight: 1 }} title="Last Frame">⏭</button>
+                            <span style={{ color: '#9aa0a6', fontSize: '12px', marginLeft: '12px', fontFamily: 'monospace', whiteSpace: 'nowrap' as const }}>
+                                {frameInfo.current} / {frameInfo.total}
+                            </span>
+                        </div>
                     </div>
                 )}
                 </div>
@@ -3175,75 +3305,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     </div>
                 )}
 
-                {/* SECTION 2: NAVIGATION */}
-                {frameInfo && frameInfo.total > 0 && (
-                    <div style={{ marginBottom: '16px' }}>
-                        <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', margin: '20px 0 8px 0' }}>NAVIGATION</div>
-                        {/* Scrub Slider */}
-                        <div 
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                width: '100%',
-                                marginBottom: '12px'
-                            }}
-                            onWheel={(e) => {
-                                // Handle horizontal trackpad scrolling
-                                if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-                                    e.preventDefault();
-                                    const delta = e.deltaX > 0 ? 1 : -1;
-                                    const newFrame = Math.max(1, Math.min(frameInfo.total, frameInfo.current + delta));
-                                    if (newFrame !== frameInfo.current && sphereRef) {
-                                        goto_training_movie_frame(sphereRef, newFrame);
-                                        setIsPlaying(false);
-                                        setFrameInput(newFrame.toString());
-                                    }
-                                }
-                            }}
-                        >
-                            <span style={{ color: '#d0d0d0', fontSize: '14px', minWidth: '45px', flexShrink: 0 }}>Frame:</span>
-                            <input
-                                type="range"
-                                min="1"
-                                max={frameInfo.total}
-                                value={frameInfo.current}
-                                onChange={handleScrub}
-                                style={{
-                                    flex: 1,
-                                    cursor: 'pointer',
-                                    height: '6px',
-                                    minWidth: 0
-                                }}
-                            />
-                            <span style={{ color: '#d0d0d0', fontSize: '14px', minWidth: '60px', textAlign: 'right', flexShrink: 0 }}>
-                                {frameInfo.current} / {frameInfo.total}
-                            </span>
-                        </div>
-                        
-                        {/* Control Buttons */}
-                        <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            flexWrap: 'wrap',
-                            justifyContent: 'center',
-                            marginBottom: '12px'
-                        }}>
-                            <button onClick={handleStepBackward} style={{ background: '#2a2a2a', border: 'none', color: '#e0e0e0', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', flexShrink: 0 }} title="Previous Frame">⏮</button>
-                            <button onClick={handlePlayPause} style={{ background: isPlaying ? '#c44' : '#4c4', border: 'none', color: '#e0e0e0', padding: '6px 14px', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', minWidth: '50px', fontWeight: 'bold', flexShrink: 0 }} title={isPlaying ? "Pause" : "Play"}>{isPlaying ? '⏸' : '▶'}</button>
-                            <button onClick={handleStepForward} style={{ background: '#2a2a2a', border: 'none', color: '#e0e0e0', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', flexShrink: 0 }} title="Next Frame">⏭</button>
-                            <div style={{ margin: '0 4px', color: '#555', flexShrink: 0 }}>|</div>
-                            <input type="number" value={frameInput} onChange={(e) => setFrameInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleGotoFrame()} placeholder="#" style={{ background: '#2a2a2a', border: '1px solid #333', color: '#e0e0e0', padding: '6px 8px', borderRadius: '4px', width: '60px', fontSize: '14px', flexShrink: 0 }} min="1" max={frameInfo?.total || 1} />
-                            <button onClick={handleGotoFrame} style={{ background: '#2a2a2a', border: 'none', color: '#e0e0e0', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', flexShrink: 0 }} title="Go to Frame">✓</button>
-                            <div style={{ margin: '0 4px', color: '#555', flexShrink: 0 }}>|</div>
-                            <button onClick={handleStop} style={{ background: '#2a2a2a', border: 'none', color: '#e0e0e0', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', flexShrink: 0 }} title="Stop">⏹</button>
-                            <button onClick={handleReplay} style={{ background: '#2a2a2a', border: 'none', color: '#e0e0e0', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', flexShrink: 0 }} title="Replay">↻</button>
-                        </div>
-                    </div>
-                )}
-
-                {/* SECTION 3: TOOLS */}
+                {/* SECTION 2: TOOLS */}
                 <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', margin: '20px 0 8px 0' }}>TOOLS</div>
                 <div style={{ marginBottom: '16px' }}>
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
