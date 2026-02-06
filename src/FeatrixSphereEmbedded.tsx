@@ -8,1377 +8,17 @@
  * This file contains the main React component for embedded sphere visualization.
  */
 
-import React, { Suspense, useEffect, useRef, useState, useCallback } from "react";
+import React, { Suspense, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
 import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch, setRetryStatusCallback } from './embed-data-access';
-import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles, register_event_listener, set_cluster_color_mode, compute_epoch_movement_stats } from '../featrix_sphere_control';
+import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, set_wireframe_opacity, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles, register_event_listener, set_cluster_color_mode, compute_epoch_movement_stats } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 import CollapsibleSection from './components/CollapsibleSection';
+import { LossPlotOverlay, MovementPlotOverlay } from './components/Charts';
 
 // Build timestamp for cache busting verification - set at module load time
 const BUILD_TIMESTAMP = new Date().toISOString();
-
-// Loss Plot Screen Overlay Component - MUCH BETTER VERSION with Dual Y-Axis Support and Zoom
-const LossPlotOverlay: React.FC<{
-    lossData: Array<{ epoch: number | string, value: number }>,
-    learningRateData?: Array<{ epoch: number | string, value: number }>,
-    currentEpoch?: string,
-    title?: string,
-    style?: React.CSSProperties
-}> = ({ lossData, learningRateData, currentEpoch, title = 'Validation Loss', style }) => {
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const modalCanvasRef = useRef<HTMLCanvasElement>(null);
-    const containerRef = useRef<HTMLDivElement>(null);
-    const [showModal, setShowModal] = useState(false);
-
-    // Hover state for tooltip
-    const [hoverInfo, setHoverInfo] = useState<{
-        x: number;
-        y: number;
-        epoch: number;
-        loss: number;
-        lr?: number;
-    } | null>(null);
-    
-    // Zoom and pan state
-    const [zoomState, setZoomState] = useState({
-        epochMin: 0,
-        epochMax: 0,
-        lossMin: 0,
-        lossMax: 0,
-        lrMin: 0,
-        lrMax: 0,
-        isZoomed: false
-    });
-    
-    const [isDragging, setIsDragging] = useState(false);
-    const [dragStart, setDragStart] = useState<{ x: number, y: number } | null>(null);
-    const [dragEnd, setDragEnd] = useState<{ x: number, y: number } | null>(null);
-    
-    // Initialize zoom state with full data range
-    useEffect(() => {
-        if (!lossData || lossData.length === 0) return;
-        
-        const epochs = lossData.map(d => typeof d.epoch === 'string' ? parseInt(d.epoch) : d.epoch);
-        const losses = lossData.map(d => d.value);
-        const minEpoch = Math.min(...epochs);
-        const maxEpoch = Math.max(...epochs);
-        let minLoss = Math.min(...losses);
-        let maxLoss = Math.max(...losses);
-        
-        const lossRange = maxLoss - minLoss;
-        if (lossRange < 0.01) {
-            minLoss -= 0.001;
-            maxLoss += 0.001;
-        } else {
-            minLoss -= lossRange * 0.05;
-            maxLoss += lossRange * 0.05;
-        }
-        
-        let minLR = 0;
-        let maxLR = 1;
-        if (learningRateData && learningRateData.length > 0) {
-            const lrValues = learningRateData.map(d => d.value);
-            minLR = Math.min(...lrValues);
-            maxLR = Math.max(...lrValues);
-            const lrRange = maxLR - minLR;
-            if (lrRange < 0.0001) {
-                minLR -= 0.00001;
-                maxLR += 0.00001;
-            } else {
-                minLR -= lrRange * 0.05;
-                maxLR += lrRange * 0.05;
-            }
-        }
-        
-        setZoomState(prev => {
-            if (!prev.isZoomed) {
-                return {
-                    epochMin: minEpoch,
-                    epochMax: maxEpoch,
-                    lossMin: minLoss,
-                    lossMax: maxLoss,
-                    lrMin: minLR,
-                    lrMax: maxLR,
-                    isZoomed: false
-                };
-            }
-            return prev;
-        });
-    }, [lossData, learningRateData]);
-    
-    // Handle mouse wheel zoom
-    const handleWheel = (e: React.WheelEvent) => {
-        e.preventDefault();
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        
-        const rect = canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        
-        const leftPadding = 70;
-        const rightPadding = learningRateData && learningRateData.length > 0 ? 70 : 20;
-        const topPadding = 35;
-        const bottomPadding = 35;
-        const plotWidth = canvas.width - leftPadding - rightPadding;
-        const plotHeight = canvas.height - topPadding - bottomPadding;
-        
-        // Check if mouse is over plot area
-        if (x < leftPadding || x > leftPadding + plotWidth || y < topPadding || y > topPadding + plotHeight) {
-            return;
-        }
-        
-        const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9;
-        
-        setZoomState(prev => {
-            if (!prev.isZoomed) {
-                // Initialize from full range
-                const epochs = lossData.map(d => typeof d.epoch === 'string' ? parseInt(d.epoch) : d.epoch);
-                const losses = lossData.map(d => d.value);
-                const minEpoch = Math.min(...epochs);
-                const maxEpoch = Math.max(...epochs);
-                let minLoss = Math.min(...losses);
-                let maxLoss = Math.max(...losses);
-                const lossRange = maxLoss - minLoss;
-                if (lossRange < 0.01) {
-                    minLoss -= 0.001;
-                    maxLoss += 0.001;
-                } else {
-                    minLoss -= lossRange * 0.05;
-                    maxLoss += lossRange * 0.05;
-                }
-                
-                let minLR = 0, maxLR = 1;
-                if (learningRateData && learningRateData.length > 0) {
-                    const lrValues = learningRateData.map(d => d.value);
-                    minLR = Math.min(...lrValues);
-                    maxLR = Math.max(...lrValues);
-                    const lrRange = maxLR - minLR;
-                    if (lrRange < 0.0001) {
-                        minLR -= 0.00001;
-                        maxLR += 0.00001;
-                    } else {
-                        minLR -= lrRange * 0.05;
-                        maxLR += lrRange * 0.05;
-                    }
-                }
-                
-                prev = {
-                    epochMin: minEpoch,
-                    epochMax: maxEpoch,
-                    lossMin: minLoss,
-                    lossMax: maxLoss,
-                    lrMin: minLR,
-                    lrMax: maxLR,
-                    isZoomed: false
-                };
-            }
-            
-            // Calculate mouse position in data coordinates
-            const epochAtMouse = prev.epochMin + ((x - leftPadding) / plotWidth) * (prev.epochMax - prev.epochMin);
-            const lossAtMouse = prev.lossMax - ((y - topPadding) / plotHeight) * (prev.lossMax - prev.lossMin);
-            
-            // Zoom around mouse position
-            const epochRange = prev.epochMax - prev.epochMin;
-            const lossRange = prev.lossMax - prev.lossMin;
-            const newEpochRange = epochRange / zoomFactor;
-            const newLossRange = lossRange / zoomFactor;
-            
-            const epochCenter = epochAtMouse;
-            const lossCenter = lossAtMouse;
-            
-            return {
-                epochMin: epochCenter - newEpochRange / 2,
-                epochMax: epochCenter + newEpochRange / 2,
-                lossMin: lossCenter - newLossRange / 2,
-                lossMax: lossCenter + newLossRange / 2,
-                lrMin: prev.lrMin,
-                lrMax: prev.lrMax,
-                isZoomed: true
-            };
-        });
-    };
-    
-    // Handle mouse down for drag selection
-    const handleMouseDown = (e: React.MouseEvent) => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        
-        const rect = canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        
-        const leftPadding = 70;
-        const rightPadding = learningRateData && learningRateData.length > 0 ? 70 : 20;
-        const topPadding = 35;
-        const plotWidth = canvas.width - leftPadding - rightPadding;
-        const plotHeight = canvas.height - topPadding - 35;
-        
-        // Check if mouse is over plot area
-        if (x >= leftPadding && x <= leftPadding + plotWidth && y >= topPadding && y <= topPadding + plotHeight) {
-            setIsDragging(true);
-            setDragStart({ x, y });
-            setDragEnd(null);
-        }
-    };
-    
-    // Handle mouse move for drag selection
-    const handleMouseMove = (e: React.MouseEvent) => {
-        if (!isDragging || !dragStart) return;
-        
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        
-        const rect = canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        
-        setDragEnd({ x, y });
-    };
-    
-    // Handle mouse up to complete zoom selection
-    const handleMouseUp = () => {
-        if (!isDragging || !dragStart || !dragEnd) {
-            setIsDragging(false);
-            setDragStart(null);
-            setDragEnd(null);
-            return;
-        }
-        
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        
-        const leftPadding = 70;
-        const rightPadding = learningRateData && learningRateData.length > 0 ? 70 : 20;
-        const topPadding = 35;
-        const bottomPadding = 35;
-        const plotWidth = canvas.width - leftPadding - rightPadding;
-        const plotHeight = canvas.height - topPadding - bottomPadding;
-        
-        // Convert drag coordinates to data coordinates
-        const x1 = Math.max(leftPadding, Math.min(leftPadding + plotWidth, dragStart.x));
-        const y1 = Math.max(topPadding, Math.min(topPadding + plotHeight, dragStart.y));
-        const x2 = Math.max(leftPadding, Math.min(leftPadding + plotWidth, dragEnd.x));
-        const y2 = Math.max(topPadding, Math.min(topPadding + plotHeight, dragEnd.y));
-        
-        const width = Math.abs(x2 - x1);
-        const height = Math.abs(y2 - y1);
-        
-        // Only zoom if selection is large enough
-        if (width > 20 && height > 20) {
-            setZoomState(prev => {
-                const epochMin = prev.epochMin + ((Math.min(x1, x2) - leftPadding) / plotWidth) * (prev.epochMax - prev.epochMin);
-                const epochMax = prev.epochMin + ((Math.max(x1, x2) - leftPadding) / plotWidth) * (prev.epochMax - prev.epochMin);
-                const lossMax = prev.lossMax - ((Math.min(y1, y2) - topPadding) / plotHeight) * (prev.lossMax - prev.lossMin);
-                const lossMin = prev.lossMax - ((Math.max(y1, y2) - topPadding) / plotHeight) * (prev.lossMax - prev.lossMin);
-                
-                return {
-                    epochMin,
-                    epochMax,
-                    lossMin,
-                    lossMax,
-                    lrMin: prev.lrMin,
-                    lrMax: prev.lrMax,
-                    isZoomed: true
-                };
-            });
-        }
-        
-        setIsDragging(false);
-        setDragStart(null);
-        setDragEnd(null);
-    };
-    
-    // Reset zoom
-    const handleResetZoom = () => {
-        const epochs = lossData.map(d => typeof d.epoch === 'string' ? parseInt(d.epoch) : d.epoch);
-        const losses = lossData.map(d => d.value);
-        const minEpoch = Math.min(...epochs);
-        const maxEpoch = Math.max(...epochs);
-        let minLoss = Math.min(...losses);
-        let maxLoss = Math.max(...losses);
-        
-        const lossRange = maxLoss - minLoss;
-        if (lossRange < 0.01) {
-            minLoss -= 0.001;
-            maxLoss += 0.001;
-        } else {
-            minLoss -= lossRange * 0.05;
-            maxLoss += lossRange * 0.05;
-        }
-        
-        let minLR = 0;
-        let maxLR = 1;
-        if (learningRateData && learningRateData.length > 0) {
-            const lrValues = learningRateData.map(d => d.value);
-            minLR = Math.min(...lrValues);
-            maxLR = Math.max(...lrValues);
-            const lrRange = maxLR - minLR;
-            if (lrRange < 0.0001) {
-                minLR -= 0.00001;
-                maxLR += 0.00001;
-            } else {
-                minLR -= lrRange * 0.05;
-                maxLR += lrRange * 0.05;
-            }
-        }
-        
-        setZoomState({
-            epochMin: minEpoch,
-            epochMax: maxEpoch,
-            lossMin: minLoss,
-            lossMax: maxLoss,
-            lrMin: minLR,
-            lrMax: maxLR,
-            isZoomed: false
-        });
-    };
-    
-    // Helper function to draw graph to any canvas - use useCallback to memoize
-    const drawGraph = useCallback((canvas: HTMLCanvasElement, isModal: boolean = false) => {
-        if (!canvas || !lossData || lossData.length === 0) return;
-        
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        
-        const { width, height } = canvas;
-        // Scale padding for modal
-        const scale = isModal ? 1.5 : 1;
-        const leftPadding = Math.round(70 * scale);   // More space for left Y-axis labels
-        const rightPadding = learningRateData && learningRateData.length > 0 ? Math.round(70 * scale) : Math.round(20 * scale); // Space for right Y-axis if needed
-        const topPadding = Math.round(35 * scale);    // Space for title
-        const bottomPadding = Math.round(35 * scale); // Space for X-axis labels
-        const plotWidth = width - leftPadding - rightPadding;
-        const plotHeight = height - topPadding - bottomPadding;
-        
-        // Enable anti-aliasing for smooth lines
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        
-        // Clear canvas with proper background
-        ctx.clearRect(0, 0, width, height);
-        ctx.fillStyle = 'rgba(0,0,0,0.9)';
-        ctx.fillRect(0, 0, width, height);
-        
-        // Find min/max values for validation loss
-        const epochs = lossData.map(d => typeof d.epoch === 'string' ? parseInt(d.epoch) : d.epoch);
-        const losses = lossData.map(d => d.value);
-        const minEpoch = Math.min(...epochs);
-        const maxEpoch = Math.max(...epochs);
-        let minLoss = Math.min(...losses);
-        let maxLoss = Math.max(...losses);
-        
-        // Add reasonable padding to Y-axis - use smart scaling
-        const lossRange = maxLoss - minLoss;
-        if (lossRange < 0.01) {
-            // Very small range, use fixed padding
-            minLoss -= 0.001;
-            maxLoss += 0.001;
-        } else {
-            minLoss -= lossRange * 0.05;
-            maxLoss += lossRange * 0.05;
-        }
-        
-        // Find min/max values for learning rate if provided
-        let minLR = 0;
-        let maxLR = 1;
-        if (learningRateData && learningRateData.length > 0) {
-            const lrValues = learningRateData.map(d => d.value);
-            minLR = Math.min(...lrValues);
-            maxLR = Math.max(...lrValues);
-            const lrRange = maxLR - minLR;
-            if (lrRange < 0.0001) {
-                minLR -= 0.00001;
-                maxLR += 0.00001;
-            } else {
-                minLR -= lrRange * 0.05;
-                maxLR += lrRange * 0.05;
-            }
-        }
-        
-        // Draw background grid with proper coordinates
-        ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-        ctx.lineWidth = 1;
-        
-        // Horizontal grid lines (5 lines)
-        for (let i = 0; i <= 4; i++) {
-            const y = topPadding + (i / 4) * plotHeight;
-            ctx.beginPath();
-            ctx.moveTo(leftPadding, y);
-            ctx.lineTo(leftPadding + plotWidth, y);
-            ctx.stroke();
-        }
-        
-        // Vertical grid lines (6 lines)  
-        for (let i = 0; i <= 5; i++) {
-            const x = leftPadding + (i / 5) * plotWidth;
-            ctx.beginPath();
-            ctx.moveTo(x, topPadding);
-            ctx.lineTo(x, topPadding + plotHeight);
-            ctx.stroke();
-        }
-        
-        // Draw axes with proper coordinates
-        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        // X-axis (bottom)
-        ctx.moveTo(leftPadding, topPadding + plotHeight);
-        ctx.lineTo(leftPadding + plotWidth, topPadding + plotHeight);
-        // Y-axis (left) - Validation Loss
-        ctx.moveTo(leftPadding, topPadding);
-        ctx.lineTo(leftPadding, topPadding + plotHeight);
-        // Y-axis (right) - Learning Rate
-        if (learningRateData && learningRateData.length > 0) {
-            ctx.moveTo(leftPadding + plotWidth, topPadding);
-            ctx.lineTo(leftPadding + plotWidth, topPadding + plotHeight);
-        }
-        ctx.stroke();
-        
-        // CRITICAL FIX: Sort loss data by epoch number before plotting!
-        const sortedLossData = [...lossData].sort((a, b) => {
-            const epochA = typeof a.epoch === 'string' ? parseInt(a.epoch) : a.epoch;
-            const epochB = typeof b.epoch === 'string' ? parseInt(b.epoch) : b.epoch;
-            return epochA - epochB;
-        });
-        
-        // Sort learning rate data if provided
-        let sortedLRData: Array<{ epoch: number | string, value: number }> = [];
-        if (learningRateData && learningRateData.length > 0) {
-            sortedLRData = [...learningRateData].sort((a, b) => {
-                const epochA = typeof a.epoch === 'string' ? parseInt(a.epoch) : a.epoch;
-                const epochB = typeof b.epoch === 'string' ? parseInt(b.epoch) : b.epoch;
-                return epochA - epochB;
-            });
-        }
-        
-        // Draw smooth validation loss curve with gradient
-        const gradient = ctx.createLinearGradient(0, topPadding, 0, topPadding + plotHeight);
-        gradient.addColorStop(0, '#00ff88');
-        gradient.addColorStop(1, '#00aa55');
-        
-        ctx.strokeStyle = gradient;
-        ctx.lineWidth = 3;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.beginPath();
-        
-        sortedLossData.forEach((point, i) => {
-            const epoch = typeof point.epoch === 'string' ? parseInt(point.epoch) : point.epoch;
-            const x = leftPadding + ((epoch - minEpoch) / (maxEpoch - minEpoch)) * plotWidth;
-            const y = topPadding + (1 - (point.value - minLoss) / (maxLoss - minLoss)) * plotHeight;
-            
-            if (i === 0) {
-                ctx.moveTo(x, y);
-            } else {
-                ctx.lineTo(x, y);
-            }
-        });
-        ctx.stroke();
-        
-        // Draw learning rate curve if provided (using right Y-axis) - SEPARATE YELLOW LINE
-        if (sortedLRData.length > 0) {
-            // Make learning rate line VERY visible - YELLOW CURVE
-            ctx.strokeStyle = '#ffff00'; // BRIGHT YELLOW for learning rate
-            ctx.lineWidth = 5; // THICK line
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            ctx.shadowColor = '#ffff00';
-            ctx.shadowBlur = 10;
-            ctx.beginPath();
-            
-            sortedLRData.forEach((point, i) => {
-                const epoch = typeof point.epoch === 'string' ? parseInt(point.epoch) : point.epoch;
-                const x = leftPadding + ((epoch - minEpoch) / (maxEpoch - minEpoch)) * plotWidth;
-                // Map to right Y-axis (inverted like left axis)
-                const y = topPadding + (1 - (point.value - minLR) / (maxLR - minLR)) * plotHeight;
-                
-                if (i === 0) {
-                    ctx.moveTo(x, y);
-                } else {
-                    ctx.lineTo(x, y);
-                }
-            });
-            ctx.stroke();
-            ctx.shadowBlur = 0; // Reset shadow
-            
-            // Draw learning rate data points for visibility - YELLOW
-            ctx.fillStyle = '#ffff00';
-            sortedLRData.forEach((point, i) => {
-                if (i % 2 === 0) { // Show every 2nd point for better visibility
-                    const epoch = typeof point.epoch === 'string' ? parseInt(point.epoch) : point.epoch;
-                    const x = leftPadding + ((epoch - minEpoch) / (maxEpoch - minEpoch)) * plotWidth;
-                    const y = topPadding + (1 - (point.value - minLR) / (maxLR - minLR)) * plotHeight;
-                    
-                    ctx.beginPath();
-                    ctx.arc(x, y, 5, 0, 2 * Math.PI);
-                    ctx.fill();
-                    // White outline for contrast
-                    ctx.strokeStyle = '#000000';
-                    ctx.lineWidth = 1;
-                    ctx.stroke();
-                }
-            });
-        }
-        
-        // Draw data points for validation loss - make them more visible
-        ctx.fillStyle = '#00ff88';
-        sortedLossData.forEach((point, i) => {
-            if (i % 3 === 0) { // Show every 3rd point for better visibility
-                const epoch = typeof point.epoch === 'string' ? parseInt(point.epoch) : point.epoch;
-                const x = leftPadding + ((epoch - minEpoch) / (maxEpoch - minEpoch)) * plotWidth;
-                const y = topPadding + (1 - (point.value - minLoss) / (maxLoss - minLoss)) * plotHeight;
-                
-                ctx.beginPath();
-                ctx.arc(x, y, 3, 0, 2 * Math.PI);
-                ctx.fill();
-            }
-        });
-        
-        // Draw current epoch cursor with glow effect - ALWAYS VISIBLE during animation
-        if (currentEpoch) {
-            // Parse epoch - handle both "epoch_1" format and numeric formats
-            let currentEpochNum: number;
-            if (typeof currentEpoch === 'string') {
-                // Remove "epoch_" prefix if present, then parse
-                const cleaned = currentEpoch.replace(/^epoch_/i, '');
-                currentEpochNum = parseInt(cleaned);
-            } else {
-                currentEpochNum = currentEpoch;
-            }
-            
-            // Skip if invalid epoch number
-            if (isNaN(currentEpochNum)) {
-                return;
-            }
-            
-            // Calculate cursor X position based on epoch
-            const epochRange = maxEpoch - minEpoch;
-            const x = epochRange > 0 
-                ? leftPadding + ((currentEpochNum - minEpoch) / epochRange) * plotWidth
-                : leftPadding + plotWidth / 2;
-            
-            // Only draw cursor if it's within the visible range
-            if (x >= leftPadding && x <= leftPadding + plotWidth) {
-                // Enhanced glow effect for better visibility
-                ctx.shadowColor = '#ff4444';
-                ctx.shadowBlur = 15;
-                ctx.strokeStyle = '#ff4444';
-                ctx.lineWidth = 3;
-                ctx.beginPath();
-                ctx.moveTo(x, topPadding);
-                ctx.lineTo(x, topPadding + plotHeight);
-                ctx.stroke();
-                
-                // Reset shadow
-                ctx.shadowBlur = 0;
-                
-                // Helper function to parse epoch number
-                const parseEpoch = (epoch: number | string): number => {
-                    if (typeof epoch === 'string') {
-                        const cleaned = epoch.replace(/^epoch_/i, '');
-                        return parseInt(cleaned);
-                    }
-                    return epoch;
-                };
-                
-                // Find closest validation loss point (exact match or closest)
-                let currentPoint = lossData.find(d => {
-                    const epoch = parseEpoch(d.epoch);
-                    return epoch === currentEpochNum;
-                });
-                
-                // If no exact match, find closest epoch
-                if (!currentPoint && sortedLossData.length > 0) {
-                    let closest = sortedLossData[0];
-                    let minDiff = Math.abs(parseEpoch(closest.epoch) - currentEpochNum);
-                    for (const point of sortedLossData) {
-                        const epoch = parseEpoch(point.epoch);
-                        const diff = Math.abs(epoch - currentEpochNum);
-                        if (diff < minDiff) {
-                            minDiff = diff;
-                            closest = point;
-                        }
-                    }
-                    currentPoint = closest;
-                }
-                
-                if (currentPoint) {
-                    const lossValue = currentPoint.value;
-                    const y = topPadding + (1 - (lossValue - minLoss) / (maxLoss - minLoss)) * plotHeight;
-                    
-                    // Draw validation loss marker
-                    ctx.fillStyle = '#ff4444';
-                    ctx.beginPath();
-                    ctx.arc(x, y, 6, 0, 2 * Math.PI);
-                    ctx.fill();
-                    
-                    // Draw white outline for better visibility
-                    ctx.strokeStyle = '#ffffff';
-                    ctx.lineWidth = 2;
-                    ctx.stroke();
-                    
-                    // Value label with background for readability - MUCH BIGGER
-                    const lossText = lossValue < 0.01 ? lossValue.toFixed(4) : 
-                                    lossValue < 0.1 ? lossValue.toFixed(3) : 
-                                    lossValue.toFixed(2);
-                    
-                    // Draw BIG background rectangle for text with padding
-                    const fontSize = 18 * scale; // Scale with modal
-                    const padding = 12 * scale;
-                    
-                    // Set font BEFORE measuring text
-                    ctx.font = `bold ${fontSize}px Arial`;
-                    const textWidth = ctx.measureText(`Loss: ${lossText}`).width;
-                    const boxWidth = Math.max(120 * scale, textWidth + padding * 2);
-                    const boxHeight = fontSize + padding * 2;
-                    const boxX = x - boxWidth / 2;
-                    const boxY = Math.max(10 * scale, y - boxHeight - 15 * scale);
-                    
-                    // Draw background with border
-                    ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
-                    ctx.fillRect(boxX - 2, boxY - 2, boxWidth + 4, boxHeight + 4);
-                    ctx.strokeStyle = '#00ff88';
-                    ctx.lineWidth = 2 * scale;
-                    ctx.strokeRect(boxX - 2, boxY - 2, boxWidth + 4, boxHeight + 4);
-                    
-                    // Draw validation loss label - BIG TEXT
-                    ctx.fillStyle = '#00ff88';
-                    ctx.textAlign = 'center';
-                    ctx.fillText(`Loss: ${lossText}`, x, boxY + fontSize + padding / 2);
-                }
-                
-                // Find closest learning rate point
-                if (sortedLRData.length > 0) {
-                    let currentLRPoint = sortedLRData.find(d => {
-                        const epoch = parseEpoch(d.epoch);
-                        return epoch === currentEpochNum;
-                    });
-                    
-                    // If no exact match, find closest epoch
-                    if (!currentLRPoint) {
-                        let closest = sortedLRData[0];
-                        let minDiff = Math.abs(parseEpoch(closest.epoch) - currentEpochNum);
-                        for (const point of sortedLRData) {
-                            const epoch = parseEpoch(point.epoch);
-                            const diff = Math.abs(epoch - currentEpochNum);
-                            if (diff < minDiff) {
-                                minDiff = diff;
-                                closest = point;
-                            }
-                        }
-                        currentLRPoint = closest;
-                    }
-                    
-                    if (currentLRPoint) {
-                        const lrValue = currentLRPoint.value;
-                        const lrY = topPadding + (1 - (lrValue - minLR) / (maxLR - minLR)) * plotHeight;
-                        
-                        // Draw learning rate marker - BIGGER - YELLOW
-                        ctx.fillStyle = '#ffff00';
-                        ctx.beginPath();
-                        ctx.arc(x, lrY, 8 * scale, 0, 2 * Math.PI);
-                        ctx.fill();
-                        
-                        // Draw black outline for contrast
-                        ctx.strokeStyle = '#000000';
-                        ctx.lineWidth = 3 * scale;
-                        ctx.stroke();
-                        
-                        // Format learning rate value
-                        const lrText = lrValue < 0.0001 ? lrValue.toExponential(2) :
-                                       lrValue < 0.01 ? lrValue.toFixed(5) :
-                                       lrValue < 0.1 ? lrValue.toFixed(4) :
-                                       lrValue.toFixed(3);
-                        
-                        // Draw BIG background rectangle for learning rate text
-                        const lrFontSize = 18 * scale;
-                        const lrPadding = 12 * scale;
-                        
-                        // Set font BEFORE measuring text
-                        ctx.font = `bold ${lrFontSize}px Arial`;
-                        const lrTextWidth = ctx.measureText(`LR: ${lrText}`).width;
-                        const lrBoxWidth = Math.max(120 * scale, lrTextWidth + lrPadding * 2);
-                        const lrBoxHeight = lrFontSize + lrPadding * 2;
-                        const lrBoxX = x - lrBoxWidth / 2;
-                        // Position below loss callout if they overlap, otherwise above marker
-                        const lrBoxY = (lrY < y && Math.abs(lrY - y) < 50 * scale) 
-                            ? Math.max(10 * scale, lrY + 20 * scale)
-                            : Math.max(10 * scale, lrY - lrBoxHeight - 15 * scale);
-                        
-                        // Draw background with border - YELLOW
-                        ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
-                        ctx.fillRect(lrBoxX - 2, lrBoxY - 2, lrBoxWidth + 4, lrBoxHeight + 4);
-                        ctx.strokeStyle = '#ffff00';
-                        ctx.lineWidth = 2 * scale;
-                        ctx.strokeRect(lrBoxX - 2, lrBoxY - 2, lrBoxWidth + 4, lrBoxHeight + 4);
-                        
-                        // Draw learning rate label - BIG TEXT - YELLOW
-                        ctx.fillStyle = '#ffff00';
-                        ctx.textAlign = 'center';
-                        ctx.fillText(`LR: ${lrText}`, x, lrBoxY + lrFontSize + lrPadding / 2);
-                    }
-                }
-            }
-        }
-        
-        // Draw labels with better formatting - LARGER FONTS
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 15px Arial';
-        ctx.textAlign = 'center';
-
-        // X-axis labels (epochs)
-        for (let i = 0; i <= 5; i++) {
-            const epoch = minEpoch + (i / 5) * (maxEpoch - minEpoch);
-            const x = leftPadding + (i / 5) * plotWidth;
-            ctx.fillText(Math.round(epoch).toString(), x, height - 8);
-        }
-
-        // Left Y-axis labels (validation loss values) - LARGER
-        ctx.textAlign = 'right';
-        ctx.font = 'bold 14px Arial';
-        ctx.fillStyle = '#00ff88'; // Green color for loss axis
-        for (let i = 0; i <= 4; i++) {
-            const loss = maxLoss - (i / 4) * (maxLoss - minLoss);
-            const y = topPadding + (i / 4) * plotHeight;
-            // Smart decimal formatting based on value magnitude
-            const formatted = loss < 0.01 ? loss.toFixed(4) :
-                             loss < 0.1 ? loss.toFixed(3) :
-                             loss.toFixed(2);
-            ctx.fillText(formatted, leftPadding - 10, y + 5);
-        }
-
-        // Right Y-axis labels (learning rate values) if provided - LARGER
-        if (sortedLRData.length > 0) {
-            ctx.textAlign = 'left';
-            ctx.font = 'bold 14px Arial';
-            ctx.fillStyle = '#ffff00'; // YELLOW color for learning rate axis
-            for (let i = 0; i <= 4; i++) {
-                const lr = maxLR - (i / 4) * (maxLR - minLR);
-                const y = topPadding + (i / 4) * plotHeight;
-                // Smart decimal formatting for learning rate
-                const formatted = lr < 0.0001 ? lr.toExponential(2) :
-                                 lr < 0.01 ? lr.toFixed(5) :
-                                 lr < 0.1 ? lr.toFixed(4) :
-                                 lr.toFixed(3);
-                ctx.fillText(formatted, leftPadding + plotWidth + 10, y + 5);
-            }
-        }
-
-        // Title with better positioning - LARGER
-        ctx.textAlign = 'center';
-        ctx.font = 'bold 16px Arial';
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(title, width / 2, 18);
-
-        // Legend if both datasets are present - LARGER
-        if (sortedLRData.length > 0) {
-            ctx.font = 'bold 13px Arial';
-            ctx.textAlign = 'left';
-            // Validation Loss label
-            ctx.fillStyle = '#00ff88';
-            ctx.fillText('Loss', leftPadding + 10, topPadding + plotHeight + 22);
-            // Learning Rate label
-            ctx.fillStyle = '#ffaa00';
-            ctx.fillText('LR', leftPadding + 70, topPadding + plotHeight + 22);
-        }
-    }, [lossData, learningRateData, currentEpoch, title]);
-    
-    // Draw to main canvas
-    useEffect(() => {
-        if (canvasRef.current) {
-            drawGraph(canvasRef.current, false);
-        }
-    }, [drawGraph]);
-    
-    // Draw to modal canvas when modal is open
-    useEffect(() => {
-        if (showModal && modalCanvasRef.current) {
-            drawGraph(modalCanvasRef.current, true);
-        }
-    }, [showModal, drawGraph]);
-
-    // Handle hover for tooltip
-    const handleHover = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-        const canvas = canvasRef.current;
-        if (!canvas || !lossData || lossData.length === 0) {
-            setHoverInfo(null);
-            return;
-        }
-
-        const rect = canvas.getBoundingClientRect();
-        const scaleX = canvas.width / rect.width;
-        const x = (e.clientX - rect.left) * scaleX;
-        const y = (e.clientY - rect.top) * (canvas.height / rect.height);
-
-        const leftPadding = 70;
-        const rightPadding = learningRateData && learningRateData.length > 0 ? 70 : 20;
-        const topPadding = 35;
-        const plotWidth = canvas.width - leftPadding - rightPadding;
-        const plotHeight = canvas.height - topPadding - 35;
-
-        // Check if mouse is over plot area
-        if (x < leftPadding || x > leftPadding + plotWidth || y < topPadding || y > topPadding + plotHeight) {
-            setHoverInfo(null);
-            return;
-        }
-
-        // Calculate epoch at mouse position
-        const epochs = lossData.map(d => typeof d.epoch === 'string' ? parseInt(d.epoch) : d.epoch);
-        const minEpoch = Math.min(...epochs);
-        const maxEpoch = Math.max(...epochs);
-        const epochAtMouse = minEpoch + ((x - leftPadding) / plotWidth) * (maxEpoch - minEpoch);
-
-        // Find closest data point
-        let closestPoint = lossData[0];
-        let closestDist = Infinity;
-        lossData.forEach(point => {
-            const epoch = typeof point.epoch === 'string' ? parseInt(point.epoch) : point.epoch;
-            const dist = Math.abs(epoch - epochAtMouse);
-            if (dist < closestDist) {
-                closestDist = dist;
-                closestPoint = point;
-            }
-        });
-
-        const closestEpoch = typeof closestPoint.epoch === 'string' ? parseInt(closestPoint.epoch) : closestPoint.epoch;
-
-        // Find learning rate at same epoch if available
-        let lrValue: number | undefined;
-        if (learningRateData && learningRateData.length > 0) {
-            const lrPoint = learningRateData.find(p => {
-                const e = typeof p.epoch === 'string' ? parseInt(p.epoch) : p.epoch;
-                return e === closestEpoch;
-            });
-            if (lrPoint) lrValue = lrPoint.value;
-        }
-
-        // Convert to screen coordinates for tooltip positioning
-        setHoverInfo({
-            x: e.clientX - rect.left,
-            y: e.clientY - rect.top,
-            epoch: closestEpoch,
-            loss: closestPoint.value,
-            lr: lrValue
-        });
-    }, [lossData, learningRateData]);
-
-    const handleMouseLeave = useCallback(() => {
-        setHoverInfo(null);
-    }, []);
-
-    return (
-        <>
-            <div
-                ref={containerRef}
-                style={{...style, cursor: 'pointer', position: 'relative'}}
-                onClick={() => setShowModal(true)}
-                onMouseMove={handleHover}
-                onMouseLeave={handleMouseLeave}
-                title="Click to enlarge graph"
-            >
-                <canvas
-                    ref={canvasRef}
-                    width="600"
-                    height="150"
-                    style={{
-                        width: '100%',
-                        height: '100%',
-                        borderRadius: '6px',
-                        border: '1px solid rgba(255,255,255,0.2)'
-                    }}
-                />
-
-                {/* Vertical cursor line on hover */}
-                {hoverInfo && (
-                    <div style={{
-                        position: 'absolute',
-                        left: `${hoverInfo.x}px`,
-                        top: '23%',
-                        width: '1px',
-                        height: '54%',
-                        background: 'rgba(255,255,255,0.6)',
-                        pointerEvents: 'none'
-                    }} />
-                )}
-
-                {/* Tooltip on hover */}
-                {hoverInfo && (
-                    <div style={{
-                        position: 'absolute',
-                        left: `${Math.min(hoverInfo.x + 10, (containerRef.current?.offsetWidth || 200) - 120)}px`,
-                        top: `${Math.max(10, hoverInfo.y - 60)}px`,
-                        background: '#1e1e1e',
-                        border: '1px solid #2a2a2a',
-                        color: '#e0e0e0',
-                        fontSize: '11px',
-                        padding: '6px 8px',
-                        borderRadius: '4px',
-                        pointerEvents: 'none',
-                        zIndex: 100,
-                        whiteSpace: 'nowrap'
-                    }}>
-                        <div><strong>Epoch:</strong> {hoverInfo.epoch}</div>
-                        <div><strong>Loss:</strong> {hoverInfo.loss.toFixed(4)}</div>
-                        {hoverInfo.lr !== undefined && (
-                            <div><strong>LR:</strong> {hoverInfo.lr.toExponential(2)}</div>
-                        )}
-                    </div>
-                )}
-            </div>
-            
-            {/* Modal Popover */}
-            {showModal && (
-                <div 
-                    style={{
-                        position: 'fixed',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        background: 'rgba(0, 0, 0, 0.9)',
-                        zIndex: 10000,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        padding: '40px'
-                    }}
-                    onClick={() => setShowModal(false)}
-                >
-                    <div 
-                        style={{
-                            background: '#2a2a2a',
-                            borderRadius: '12px',
-                            padding: '20px',
-                            maxWidth: '90vw',
-                            maxHeight: '90vh',
-                            position: 'relative',
-                            border: '2px solid #555'
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <button
-                            onClick={() => setShowModal(false)}
-                            style={{
-                                position: 'absolute',
-                                top: '10px',
-                                right: '10px',
-                                background: '#c44',
-                                border: '1px solid #666',
-                                color: '#fff',
-                                padding: '8px 12px',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                fontSize: '18px',
-                                fontWeight: 'bold',
-                                zIndex: 10001
-                            }}
-                            title="Close"
-                        >
-                            ✕
-                        </button>
-                        <canvas 
-                            ref={modalCanvasRef}
-                            width="1200"
-                            height="600"
-                            style={{ 
-                                width: '100%', 
-                                height: '100%',
-                                borderRadius: '6px',
-                                border: '1px solid rgba(255,255,255,0.2)',
-                                maxWidth: '1200px',
-                                maxHeight: '600px'
-                            }}
-                        />
-                    </div>
-                </div>
-            )}
-        </>
-    );
-};
-
-// Movement Plot Overlay - shows how far points moved between epochs to evaluate convergence
-const MovementPlotOverlay: React.FC<{
-    movementData: Array<{ epoch: string, mean: number, median: number, p90: number, max: number }>,
-    currentEpoch?: string,
-    style?: React.CSSProperties
-}> = ({ movementData, currentEpoch, style }) => {
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const containerRef = useRef<HTMLDivElement>(null);
-    const [showModal, setShowModal] = useState(false);
-    const [hoverInfo, setHoverInfo] = useState<{
-        x: number;
-        epoch: number;
-        mean: number;
-        median: number;
-        p90: number;
-    } | null>(null);
-
-    const drawGraph = useCallback((canvas: HTMLCanvasElement) => {
-        if (!canvas || !movementData || movementData.length === 0) return;
-
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-
-        const { width, height } = canvas;
-        const leftPadding = 60;
-        const rightPadding = 20;
-        const topPadding = 30;
-        const bottomPadding = 30;
-        const plotWidth = width - leftPadding - rightPadding;
-        const plotHeight = height - topPadding - bottomPadding;
-
-        ctx.clearRect(0, 0, width, height);
-        ctx.fillStyle = 'rgba(0,0,0,0.9)';
-        ctx.fillRect(0, 0, width, height);
-
-        // Parse epoch numbers
-        const epochs = movementData.map(d => parseInt(d.epoch.replace('epoch_', '')));
-        const minEpoch = Math.min(...epochs);
-        const maxEpoch = Math.max(...epochs);
-        const epochRange = maxEpoch - minEpoch || 1;
-
-        // Find Y range from p90 values (mean and median will fit within this)
-        const p90Values = movementData.map(d => d.p90);
-        const meanValues = movementData.map(d => d.mean);
-        let maxY = Math.max(...p90Values) * 1.1;
-        if (maxY === 0) maxY = 1;
-        const minY = 0;
-
-        // Grid
-        ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-        ctx.lineWidth = 1;
-        for (let i = 0; i <= 4; i++) {
-            const y = topPadding + (i / 4) * plotHeight;
-            ctx.beginPath();
-            ctx.moveTo(leftPadding, y);
-            ctx.lineTo(leftPadding + plotWidth, y);
-            ctx.stroke();
-        }
-        for (let i = 0; i <= 5; i++) {
-            const x = leftPadding + (i / 5) * plotWidth;
-            ctx.beginPath();
-            ctx.moveTo(x, topPadding);
-            ctx.lineTo(x, topPadding + plotHeight);
-            ctx.stroke();
-        }
-
-        // Axes
-        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(leftPadding, topPadding + plotHeight);
-        ctx.lineTo(leftPadding + plotWidth, topPadding + plotHeight);
-        ctx.moveTo(leftPadding, topPadding);
-        ctx.lineTo(leftPadding, topPadding + plotHeight);
-        ctx.stroke();
-
-        // Helper to map data to canvas coords
-        const toX = (epoch: number) => leftPadding + ((epoch - minEpoch) / epochRange) * plotWidth;
-        const toY = (val: number) => topPadding + (1 - (val - minY) / (maxY - minY)) * plotHeight;
-
-        // Draw p90 line (faint)
-        ctx.strokeStyle = 'rgba(255, 100, 100, 0.4)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        movementData.forEach((d, i) => {
-            const x = toX(epochs[i]);
-            const y = toY(d.p90);
-            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-        });
-        ctx.stroke();
-
-        // Draw median line
-        ctx.strokeStyle = '#ffaa00';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        movementData.forEach((d, i) => {
-            const x = toX(epochs[i]);
-            const y = toY(d.median);
-            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-        });
-        ctx.stroke();
-
-        // Draw mean line (primary)
-        const gradient = ctx.createLinearGradient(0, topPadding, 0, topPadding + plotHeight);
-        gradient.addColorStop(0, '#00ccff');
-        gradient.addColorStop(1, '#0088aa');
-        ctx.strokeStyle = gradient;
-        ctx.lineWidth = 3;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.beginPath();
-        movementData.forEach((d, i) => {
-            const x = toX(epochs[i]);
-            const y = toY(d.mean);
-            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-        });
-        ctx.stroke();
-
-        // Current epoch cursor
-        if (currentEpoch) {
-            const currentEpochNum = parseInt(currentEpoch.replace(/^epoch_/i, ''));
-            if (!isNaN(currentEpochNum) && currentEpochNum >= minEpoch && currentEpochNum <= maxEpoch) {
-                const x = toX(currentEpochNum);
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-                ctx.lineWidth = 2;
-                ctx.setLineDash([4, 4]);
-                ctx.beginPath();
-                ctx.moveTo(x, topPadding);
-                ctx.lineTo(x, topPadding + plotHeight);
-                ctx.stroke();
-                ctx.setLineDash([]);
-
-                // Find matching data point for callout
-                const matchIdx = movementData.findIndex(d => d.epoch === currentEpoch || parseInt(d.epoch.replace('epoch_', '')) === currentEpochNum);
-                if (matchIdx >= 0) {
-                    const d = movementData[matchIdx];
-                    const meanY = toY(d.mean);
-                    // Dot on the mean line
-                    ctx.fillStyle = '#00ccff';
-                    ctx.beginPath();
-                    ctx.arc(x, meanY, 5, 0, 2 * Math.PI);
-                    ctx.fill();
-                    // Callout text
-                    ctx.fillStyle = '#ffffff';
-                    ctx.font = 'bold 11px Arial';
-                    ctx.textAlign = 'center';
-                    ctx.fillText(`${d.mean.toFixed(4)}`, x, Math.max(topPadding + 12, meanY - 10));
-                }
-            }
-        }
-
-        // X-axis labels - LARGER
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 14px Arial';
-        ctx.textAlign = 'center';
-        for (let i = 0; i <= 5; i++) {
-            const epoch = minEpoch + (i / 5) * epochRange;
-            const x = leftPadding + (i / 5) * plotWidth;
-            ctx.fillText(Math.round(epoch).toString(), x, height - 6);
-        }
-
-        // Y-axis labels - LARGER
-        ctx.textAlign = 'right';
-        ctx.font = 'bold 13px Arial';
-        ctx.fillStyle = '#00ccff';
-        for (let i = 0; i <= 4; i++) {
-            const val = maxY - (i / 4) * (maxY - minY);
-            const y = topPadding + (i / 4) * plotHeight;
-            ctx.fillText(val < 0.01 ? val.toExponential(1) : val.toFixed(3), leftPadding - 8, y + 4);
-        }
-
-        // Title - LARGER
-        ctx.textAlign = 'center';
-        ctx.font = 'bold 16px Arial';
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText('Point Movement (epoch-to-epoch)', width / 2, 18);
-
-        // Legend - LARGER
-        ctx.font = 'bold 12px Arial';
-        ctx.textAlign = 'left';
-        ctx.fillStyle = '#00ccff';
-        ctx.fillText('mean', leftPadding + 10, topPadding + plotHeight + 20);
-        ctx.fillStyle = '#ffaa00';
-        ctx.fillText('median', leftPadding + 55, topPadding + plotHeight + 20);
-        ctx.fillStyle = 'rgba(255,100,100,0.7)';
-        ctx.fillText('p90', leftPadding + 110, topPadding + plotHeight + 20);
-    }, [movementData, currentEpoch]);
-
-    useEffect(() => {
-        if (canvasRef.current) {
-            drawGraph(canvasRef.current);
-        }
-    }, [drawGraph]);
-
-    // Hover handler
-    const handleHover = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-        const canvas = canvasRef.current;
-        if (!canvas || !movementData || movementData.length === 0) {
-            setHoverInfo(null);
-            return;
-        }
-
-        const rect = canvas.getBoundingClientRect();
-        const scaleX = canvas.width / rect.width;
-        const x = (e.clientX - rect.left) * scaleX;
-
-        const leftPadding = 60;
-        const rightPadding = 20;
-        const plotWidth = canvas.width - leftPadding - rightPadding;
-
-        if (x < leftPadding || x > leftPadding + plotWidth) {
-            setHoverInfo(null);
-            return;
-        }
-
-        const epochs = movementData.map(d => parseInt(d.epoch.replace('epoch_', '')));
-        const minEpoch = Math.min(...epochs);
-        const maxEpoch = Math.max(...epochs);
-        const epochRange = maxEpoch - minEpoch || 1;
-        const epochAtMouse = minEpoch + ((x - leftPadding) / plotWidth) * epochRange;
-
-        // Find closest data point
-        let closestIdx = 0;
-        let closestDist = Infinity;
-        epochs.forEach((epoch, i) => {
-            const dist = Math.abs(epoch - epochAtMouse);
-            if (dist < closestDist) {
-                closestDist = dist;
-                closestIdx = i;
-            }
-        });
-
-        const d = movementData[closestIdx];
-        setHoverInfo({
-            x: e.clientX - rect.left,
-            epoch: epochs[closestIdx],
-            mean: d.mean,
-            median: d.median,
-            p90: d.p90
-        });
-    }, [movementData]);
-
-    const handleMouseLeave = useCallback(() => {
-        setHoverInfo(null);
-    }, []);
-
-    return (
-        <div
-            ref={containerRef}
-            style={{...style, position: 'relative', cursor: 'pointer'}}
-            onMouseMove={handleHover}
-            onMouseLeave={handleMouseLeave}
-            onClick={() => setShowModal(true)}
-            title="Click to enlarge"
-        >
-            <canvas
-                ref={canvasRef}
-                width="600"
-                height="150"
-                style={{
-                    width: '100%',
-                    height: '100%',
-                    borderRadius: '6px',
-                    border: '1px solid rgba(255,255,255,0.2)'
-                }}
-            />
-
-            {/* Vertical cursor line */}
-            {hoverInfo && (
-                <div style={{
-                    position: 'absolute',
-                    left: `${hoverInfo.x}px`,
-                    top: '20%',
-                    width: '1px',
-                    height: '60%',
-                    background: 'rgba(255,255,255,0.6)',
-                    pointerEvents: 'none'
-                }} />
-            )}
-
-            {/* Tooltip */}
-            {hoverInfo && (
-                <div style={{
-                    position: 'absolute',
-                    left: `${Math.min(hoverInfo.x + 10, (containerRef.current?.offsetWidth || 200) - 100)}px`,
-                    top: '10px',
-                    background: '#1e1e1e',
-                    border: '1px solid #2a2a2a',
-                    color: '#e0e0e0',
-                    fontSize: '11px',
-                    padding: '6px 8px',
-                    borderRadius: '4px',
-                    pointerEvents: 'none',
-                    zIndex: 100,
-                    whiteSpace: 'nowrap'
-                }}>
-                    <div><strong>Epoch:</strong> {hoverInfo.epoch}</div>
-                    <div style={{color: '#00ccff'}}><strong>Mean:</strong> {hoverInfo.mean.toFixed(4)}</div>
-                    <div style={{color: '#ffaa00'}}><strong>Median:</strong> {hoverInfo.median.toFixed(4)}</div>
-                    <div style={{color: 'rgba(255,100,100,0.9)'}}><strong>P90:</strong> {hoverInfo.p90.toFixed(4)}</div>
-                </div>
-            )}
-
-            {/* Modal */}
-            {showModal && (
-                <div
-                    style={{
-                        position: 'fixed',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        background: 'rgba(0,0,0,0.9)',
-                        zIndex: 10000,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        padding: '40px'
-                    }}
-                    onClick={() => setShowModal(false)}
-                >
-                    <div
-                        style={{
-                            background: '#2a2a2a',
-                            borderRadius: '12px',
-                            padding: '20px',
-                            maxWidth: '90vw',
-                            position: 'relative',
-                            border: '2px solid #555'
-                        }}
-                        onClick={e => e.stopPropagation()}
-                    >
-                        <button
-                            onClick={() => setShowModal(false)}
-                            style={{
-                                position: 'absolute',
-                                top: '10px',
-                                right: '10px',
-                                background: '#c44',
-                                border: '1px solid #666',
-                                color: '#fff',
-                                padding: '8px 12px',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                fontSize: '18px',
-                                fontWeight: 'bold'
-                            }}
-                        >
-                            ✕
-                        </button>
-                        <div style={{fontSize: '18px', fontWeight: 'bold', marginBottom: '16px', color: '#fff'}}>
-                            Point Movement (epoch-to-epoch)
-                        </div>
-                        <canvas
-                            ref={(el) => {
-                                if (el && showModal) {
-                                    // Draw enlarged graph
-                                    const ctx = el.getContext('2d');
-                                    if (ctx) {
-                                        el.width = 1000;
-                                        el.height = 400;
-                                        drawGraph(el);
-                                    }
-                                }
-                            }}
-                            width="1000"
-                            height="400"
-                            style={{
-                                width: '100%',
-                                maxWidth: '1000px',
-                                borderRadius: '6px',
-                                border: '1px solid rgba(255,255,255,0.2)'
-                            }}
-                        />
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-};
 
 // Distribution Chart Component for Scalar Columns
 const DistributionChart: React.FC<{
@@ -1804,6 +444,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [isWideScreen, setIsWideScreen] = useState(typeof window !== 'undefined' && window.innerWidth >= 1400);
     const [showMobilePanel, setShowMobilePanel] = useState(false);
 
+    // Page load time for debugging (captured once on mount)
+    const pageLoadTime = useMemo(() => {
+        const now = new Date();
+        return now.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+    }, []);
+
     // Thumbnail mode - hide all controls when container is small
     // Default to FALSE so sidebar shows immediately, ResizeObserver will hide if needed
     const [isThumbnail, setIsThumbnail] = useState(false);
@@ -1848,6 +494,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     // Point visual controls - optimized for performance
     const [pointSize, setPointSize] = useState(0.01); // Default point size per spec
     const [pointAlpha, setPointAlpha] = useState(0.50); // 50% alpha
+    const [wireframeOpacity, setWireframeOpacity] = useState(0.05); // Wireframe sphere opacity
     const [loadingProgress, setLoadingProgress] = useState<{ loaded: number, total: number } | null>(null);
     
     // Movement histogram state
@@ -1935,6 +582,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [showBoundsBox, setShowBoundsBox] = useState(false);
     const [showGreatCircles, setShowGreatCircles] = useState(false);
     const [showModelCard, setShowModelCard] = useState(false);
+    const [modelCardData, setModelCardData] = useState<any>(null);
+    const [modelCardLoading, setModelCardLoading] = useState(false);
+    const [modelCardError, setModelCardError] = useState<string | null>(null);
+    const modelCardContainerRef = useRef<HTMLDivElement>(null);
     
     // Color rules state - each rule has a query, column, color, and record IDs
     const [colorRules, setColorRules] = useState<Array<{
@@ -1984,6 +635,57 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         });
         return () => setRetryStatusCallback(null);
     }, []);
+
+    // Load model card when modal opens
+    useEffect(() => {
+        if (!showModelCard) return;
+
+        const loadModelCard = async () => {
+            setModelCardLoading(true);
+            setModelCardError(null);
+
+            try {
+                // Load the external model card library if not already loaded
+                if (!(window as any).FeatrixModelCard) {
+                    await new Promise<void>((resolve, reject) => {
+                        const script = document.createElement('script');
+                        script.src = 'https://bits.featrix.com/js/featrix-modelcard/model-card.js';
+                        script.onload = () => resolve();
+                        script.onerror = () => reject(new Error('Failed to load model card library'));
+                        document.head.appendChild(script);
+                    });
+                }
+
+                // Fetch model card data from API
+                const baseUrl = apiBaseUrl || 'https://sphere-api.featrix.com';
+                const response = await fetch(`${baseUrl}/compute/session/${sessionId}/model_card`);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch model card: ${response.status}`);
+                }
+                const data = await response.json();
+                setModelCardData(data);
+            } catch (err) {
+                console.error('Error loading model card:', err);
+                setModelCardError(err instanceof Error ? err.message : 'Failed to load model card');
+            } finally {
+                setModelCardLoading(false);
+            }
+        };
+
+        loadModelCard();
+    }, [showModelCard, sessionId, apiBaseUrl]);
+
+    // Render model card when data is available
+    useEffect(() => {
+        if (!showModelCard || !modelCardData || !modelCardContainerRef.current) return;
+
+        const FeatrixModelCard = (window as any).FeatrixModelCard;
+        if (FeatrixModelCard) {
+            const html = FeatrixModelCard.renderHTML(modelCardData);
+            modelCardContainerRef.current.innerHTML = html;
+            FeatrixModelCard.attachEventListeners(modelCardContainerRef.current);
+        }
+    }, [showModelCard, modelCardData]);
 
     // Countdown function for initial pause - using useCallback to ensure stable reference
     const startCountdown = useCallback(() => {
@@ -2082,10 +784,14 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     // Try to fetch final projections for cluster results AND full dataset
                     let clusterResults = {};
                     let fullProjectionsCoords: any[] = [];
+                    let sourceDataByRowId: Map<number, any> = new Map();
+
+                    const baseUrl = apiBaseUrl || (window.location.hostname === 'localhost'
+                        ? window.location.origin + '/proxy/featrix'
+                        : 'https://sphere-api.featrix.com');
+
+                    // First try /projections endpoint (only available after training completes)
                     try {
-                        const baseUrl = apiBaseUrl || (window.location.hostname === 'localhost'
-                            ? window.location.origin + '/proxy/featrix'
-                            : 'https://sphere-api.featrix.com');
                         const projectionsResponse = await fetch(`${baseUrl}/compute/session/${sessionId}/projections?limit=10000`);
                         if (projectionsResponse.ok) {
                             const projectionsData = await projectionsResponse.json();
@@ -2095,23 +801,82 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             }
                             if (projectionsData.projections?.coords) {
                                 fullProjectionsCoords = projectionsData.projections.coords;
+                                console.log('📊 Got full projections with', fullProjectionsCoords.length, 'coords');
                             }
+                        } else {
+                            console.log('⚠️ /projections returned', projectionsResponse.status, '- will try include_source_data fallback');
                         }
                     } catch (err) {
-                        console.error('Error fetching full projections:', err);
+                        console.log('⚠️ /projections failed - will try include_source_data fallback:', err);
+                    }
+
+                    // Fallback: If /projections didn't give us data, fetch source_data via epoch_projections
+                    // This works even during training since __featrix_row_id is stable across epochs
+                    if (fullProjectionsCoords.length === 0) {
+                        try {
+                            setLoadingStep('Fetching source data...');
+                            const sourceDataResponse = await fetch(
+                                `${baseUrl}/compute/session/${sessionId}/epoch_projections?include_source_data=true&limit=1`
+                            );
+                            if (sourceDataResponse.ok) {
+                                const sourceData = await sourceDataResponse.json();
+                                if (sourceData.source_data_enriched && sourceData.epoch_projections) {
+                                    // Get the single epoch that was returned
+                                    const epochKey = Object.keys(sourceData.epoch_projections)[0];
+                                    const epochCoords = sourceData.epoch_projections[epochKey]?.coords || [];
+
+                                    // Cache source_data by __featrix_row_id for joining with other epochs
+                                    epochCoords.forEach((coord: any) => {
+                                        if (coord.source_data && coord.__featrix_row_id !== undefined) {
+                                            sourceDataByRowId.set(coord.__featrix_row_id, coord.source_data);
+                                        }
+                                    });
+                                    console.log('📊 Cached source_data for', sourceDataByRowId.size, 'points via include_source_data');
+                                }
+                            }
+                        } catch (err) {
+                            console.error('Error fetching source data fallback:', err);
+                        }
                     }
 
                     setLoadingStep('Processing data...');
                     setLoadingDetail(`${epochCount} epochs, ${pointCount} points` + (fullProjectionsCoords.length > 0 ? `, ${fullProjectionsCoords.length} full projection rows` : ''));
 
                     setTrainingData(apiTrainingData.epoch_projections);
-                    // Use API data for session projections with cluster results AND full dataset coords
-                    const usingFullProjections = fullProjectionsCoords.length > 0;
+
+                    // Build final coords with source data
+                    let finalCoords: any[];
+                    if (fullProjectionsCoords.length > 0) {
+                        // Use full projections if available
+                        finalCoords = fullProjectionsCoords;
+                        console.log('📊 Using full projections coords');
+                    } else {
+                        // Fall back to epoch coords, enriched with cached source_data
+                        const epochCoords = apiTrainingData.epoch_projections[Object.keys(apiTrainingData.epoch_projections)[0]]?.coords || [];
+                        if (sourceDataByRowId.size > 0) {
+                            // Merge source_data into epoch coords
+                            finalCoords = epochCoords.map((coord: any) => {
+                                const sourceData = sourceDataByRowId.get(coord.__featrix_row_id);
+                                if (sourceData) {
+                                    return {
+                                        ...coord,
+                                        source_data: sourceData  // Add source_data for Data Inspector
+                                    };
+                                }
+                                return coord;
+                            });
+                            console.log('📊 Enriched', finalCoords.filter((c: any) => c.source_data).length, 'coords with source_data');
+                        } else {
+                            finalCoords = epochCoords;
+                            console.log('📊 Using epoch coords (no source_data available)');
+                        }
+                    }
+
                     const sessionData = {
                         ...apiTrainingData,
                         entire_cluster_results: clusterResults,
-                        // CRITICAL: Use full dataset coords if available, otherwise fall back to sampled
-                        coords: usingFullProjections ? fullProjectionsCoords : (apiTrainingData.epoch_projections[Object.keys(apiTrainingData.epoch_projections)[0]]?.coords || [])
+                        coords: finalCoords,
+                        sourceDataByRowId: sourceDataByRowId.size > 0 ? sourceDataByRowId : undefined  // Pass the map for use in load_training_movie
                     };
                     setSessionProjections(sessionData);
                     
@@ -3020,7 +1785,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         <div style={{ marginBottom: '20px', fontSize: '18px', color: '#64b5f6' }}>
                             Training in progress
                         </div>
-                        <div style={{ fontSize: '14px', color: '#b0b0b0', marginBottom: '10px' }}>
+                        <div style={{ fontSize: '14px', color: '#b8b8b8', marginBottom: '10px' }}>
                             Will check for new frames in {nextCheckCountdown} seconds
                         </div>
                         <div style={{ fontSize: '12px', color: '#888', marginTop: '5px', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
@@ -3154,7 +1919,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
             width: '100%',
             height: '100vh',
             background: '#1e1e1e',
-            color: '#e0e0e0',
+            color: '#e6e6e6',
             overflow: 'hidden',
             fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
         }}>
@@ -3183,7 +1948,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             style={{
                                 background: '#222222',
                                 border: '1px solid #2a2a2a',
-                                color: '#b0b0b0',
+                                color: '#b8b8b8',
                                 padding: '6px 12px',
                                 borderRadius: '4px',
                                 cursor: 'pointer',
@@ -3201,13 +1966,33 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     <span style={{
                         fontFamily: 'monospace',
                         fontSize: '12px',
-                        color: '#b0b0b0',
+                        color: '#b8b8b8',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
                     }}>
                         {isMobile && sessionId.length > 20 ? sessionId.slice(0, 12) + '...' : sessionId}
                     </span>
+                    <button
+                        onClick={() => {
+                            navigator.clipboard.writeText(sessionId);
+                        }}
+                        style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#8f8f8f',
+                            padding: '4px 6px',
+                            cursor: 'pointer',
+                            fontSize: '12px',
+                            flexShrink: 0,
+                        }}
+                        title="Copy Session ID"
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                    </button>
                 </div>
 
                 {/* Center: Frame X/Y and status */}
@@ -3217,17 +2002,17 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     gap: '12px',
                 }}>
                     {frameInfo && !isMobile && (
-                        <span style={{ fontSize: '12px', color: '#e0e0e0' }}>
+                        <span style={{ fontSize: '12px', color: '#e6e6e6' }}>
                             Frame {frameInfo.current} / {frameInfo.total}
                             {frameInfo.epoch && (
-                                <span style={{ color: '#b0b0b0', marginLeft: '8px' }}>
+                                <span style={{ color: '#b8b8b8', marginLeft: '8px' }}>
                                     (Epoch {frameInfo.epoch.toString().replace('epoch_', '')})
                                 </span>
                             )}
                         </span>
                     )}
                     {frameInfo && isMobile && (
-                        <span style={{ fontSize: '11px', color: '#e0e0e0' }}>
+                        <span style={{ fontSize: '11px', color: '#e6e6e6' }}>
                             {frameInfo.current}/{frameInfo.total}
                         </span>
                     )}
@@ -3235,12 +2020,26 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         <span style={{ fontSize: '11px', color: '#64b5f6' }}>In Progress</span>
                     )}
                     {trainingStatus === 'completed' && !isMobile && (
-                        <span style={{ fontSize: '11px', color: '#b0b0b0' }}>Completed</span>
+                        <span style={{ fontSize: '11px', color: '#b8b8b8' }}>Completed</span>
                     )}
                 </div>
 
-                {/* Right: Play/Pause (mobile) + Rotate toggle */}
+                {/* Right: featrix branding + Play/Pause (mobile) + Rotate toggle */}
                 <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px' }}>
+                    <a
+                        href="https://featrix.ai"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                            color: '#6a6a6a',
+                            fontSize: '11px',
+                            textDecoration: 'none',
+                            fontFamily: 'monospace',
+                            marginRight: '8px',
+                        }}
+                    >
+                        featrix.ai
+                    </a>
                     {/* Mobile: Playback play/pause always visible */}
                     {isMobile && (
                         <button
@@ -3256,7 +2055,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             style={{
                                 background: 'transparent',
                                 border: 'none',
-                                color: isPlaying ? '#64b5f6' : '#b0b0b0',
+                                color: isPlaying ? '#64b5f6' : '#b8b8b8',
                                 padding: '6px 10px',
                                 borderRadius: '4px',
                                 cursor: 'pointer',
@@ -3275,7 +2074,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         style={{
                             background: 'transparent',
                             border: 'none',
-                            color: rotationEnabled ? '#64b5f6' : '#b0b0b0',
+                            color: rotationEnabled ? '#64b5f6' : '#b8b8b8',
                             padding: '6px 10px',
                             borderRadius: '4px',
                             cursor: 'pointer',
@@ -3296,7 +2095,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
             {!isMobile && !isThumbnail && (
             <div style={{
                 width: isWideScreen ? '400px' : '360px',
-                background: '#181818',
+                background: '#171717',
                 borderRight: '1px solid #2a2a2a',
                 padding: 0,
                 overflowY: 'auto',
@@ -3313,57 +2112,238 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         {frameInfo && (
-                            <>
-                                <span style={{
-                                    fontSize: '13px',
-                                    fontWeight: 600,
-                                    color: '#e0e0e0',
-                                }}>
-                                    Epoch {frameInfo.epoch?.toLocaleString() ?? '—'}
-                                </span>
-                                <span style={{
-                                    fontSize: '11px',
-                                    color: '#8a8a8a',
-                                }}>
-                                    Frame {frameInfo.current} / {frameInfo.total}
-                                </span>
-                            </>
+                            <span style={{
+                                fontSize: '13px',
+                                fontWeight: 600,
+                                color: '#e6e6e6',
+                            }}>
+                                Epoch {frameInfo.epoch?.toString().replace('epoch_', '') ?? '—'}
+                            </span>
                         )}
                         {!frameInfo && (
-                            <span style={{ fontSize: '12px', color: '#8a8a8a' }}>Loading...</span>
+                            <span style={{ fontSize: '12px', color: '#8f8f8f' }}>Loading...</span>
                         )}
                     </div>
                 </div>
 
-                {/* Panel 1: CLUSTER CONTROLS */}
+
+                {/* Panel 1: SEARCH */}
+                {/* Panel 3: SEARCH (default CLOSED) */}
+                <CollapsibleSection title="SEARCH" defaultOpen={false}>
+                    {columnTypes && Object.keys(columnTypes).length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            {/* Column selector */}
+                            <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '10px', alignItems: 'center' }}>
+                                <span style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>Column</span>
+                                <select
+                                    value={selectedSearchColumn}
+                                    onChange={(e) => setSelectedSearchColumn(e.target.value)}
+                                    style={{
+                                        height: '30px',
+                                        fontSize: '12px',
+                                        fontWeight: 500,
+                                        padding: '0 8px',
+                                        backgroundColor: '#202020',
+                                        color: '#e6e6e6',
+                                        border: '1px solid #2a2a2a',
+                                        borderRadius: '6px',
+                                        cursor: 'pointer',
+                                        width: '100%',
+                                    }}
+                                >
+                                    {Object.keys(columnTypes).map((col) => (
+                                        <option key={col} value={col}>{col}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Search input */}
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <input
+                                    type="text"
+                                    value={searchQuery}
+                                    onChange={handleSearchInput}
+                                    onKeyDown={handleSearchKeyDown}
+                                    placeholder="Search..."
+                                    style={{
+                                        flex: 1,
+                                        height: '30px',
+                                        background: '#202020',
+                                        border: '1px solid #2a2a2a',
+                                        color: '#e6e6e6',
+                                        padding: '0 10px',
+                                        borderRadius: '6px',
+                                        fontSize: '12px',
+                                    }}
+                                />
+                                <button
+                                    onClick={handleSearchSubmit}
+                                    disabled={!searchQuery.trim()}
+                                    style={{
+                                        width: '48px',
+                                        height: '30px',
+                                        background: searchQuery.trim() ? '#64b5f6' : '#202020',
+                                        border: '1px solid #2a2a2a',
+                                        color: searchQuery.trim() ? '#141414' : '#8f8f8f',
+                                        padding: '0',
+                                        borderRadius: '6px',
+                                        cursor: searchQuery.trim() ? 'pointer' : 'not-allowed',
+                                        fontSize: '11px',
+                                        fontWeight: 600,
+                                    }}
+                                >
+                                    GO
+                                </button>
+                                {searchQuery && (
+                                    <button
+                                        onClick={() => {
+                                            setSearchQuery('');
+                                            setSearchResultStats(null);
+                                            applyColorRules();
+                                        }}
+                                        style={{
+                                            width: '30px',
+                                            height: '30px',
+                                            background: '#202020',
+                                            border: '1px solid #2a2a2a',
+                                            color: '#8f8f8f',
+                                            padding: '0',
+                                            borderRadius: '6px',
+                                            cursor: 'pointer',
+                                            fontSize: '12px',
+                                        }}
+                                    >
+                                        X
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Color Rules */}
+                            {colorRules.length > 0 && (
+                                <div style={{ marginTop: '8px' }}>
+                                    <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginBottom: '6px' }}>
+                                        Color Rules ({colorRules.length})
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '150px', overflowY: 'auto' }}>
+                                        {colorRules.map((rule) => (
+                                            <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px', background: '#181818', borderRadius: '3px' }}>
+                                                <div style={{ width: '14px', height: '14px', background: rule.color, borderRadius: '2px', flexShrink: 0 }} />
+                                                <div style={{ flex: 1, fontSize: '11px', color: '#b8b8b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {rule.column}: {rule.query} ({rule.recordIds.length})
+                                                </div>
+                                                <button
+                                                    onClick={() => setColorRules(prev => prev.filter(r => r.id !== rule.id))}
+                                                    style={{
+                                                        background: 'transparent',
+                                                        border: 'none',
+                                                        color: '#b8b8b8',
+                                                        padding: '2px 4px',
+                                                        cursor: 'pointer',
+                                                        fontSize: '10px',
+                                                    }}
+                                                >
+                                                    X
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <button
+                                        onClick={() => setColorRules([])}
+                                        style={{
+                                            marginTop: '6px',
+                                            width: '100%',
+                                            background: '#2a2a2a',
+                                            border: 'none',
+                                            color: '#b8b8b8',
+                                            padding: '6px',
+                                            borderRadius: '3px',
+                                            cursor: 'pointer',
+                                            fontSize: '11px',
+                                        }}
+                                    >
+                                        Clear All
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Column vocabulary for quick selection */}
+                            {columnVocabulary && columnVocabulary.type !== 'scalar' && columnVocabulary.vocabulary && (
+                                <div style={{ marginTop: '4px' }}>
+                                    <div style={{ fontSize: '11px', color: '#b8b8b8', marginBottom: '4px' }}>Values:</div>
+                                    <div style={{ maxHeight: '100px', overflowY: 'auto', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                        {columnVocabulary.vocabulary.slice(0, 20).map((val, idx) => (
+                                            <button
+                                                key={idx}
+                                                onClick={() => {
+                                                    setSearchQuery(val);
+                                                    const fakeEvent = { target: { value: val } } as React.ChangeEvent<HTMLInputElement>;
+                                                    handleSearchInput(fakeEvent);
+                                                }}
+                                                style={{
+                                                    background: '#222222',
+                                                    border: searchQuery === val ? '1px solid #64b5f6' : '1px solid #2a2a2a',
+                                                    color: searchQuery === val ? '#64b5f6' : '#b8b8b8',
+                                                    padding: '2px 6px',
+                                                    borderRadius: '3px',
+                                                    cursor: 'pointer',
+                                                    fontSize: '10px',
+                                                }}
+                                            >
+                                                {val.length > 15 ? val.substring(0, 15) + '...' : val}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Distribution chart for scalar columns */}
+                            {columnVocabulary && columnVocabulary.type === 'scalar' && columnVocabulary.distribution && (
+                                <div style={{ marginTop: '4px' }}>
+                                    <DistributionChart
+                                        distribution={columnVocabulary.distribution}
+                                        min={columnVocabulary.min || 0}
+                                        max={columnVocabulary.max || 0}
+                                        searchValue={searchQuery ? parseFloat(searchQuery) : null}
+                                    />
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div style={{ fontSize: '12px', color: '#b8b8b8' }}>No searchable columns</div>
+                    )}
+                </CollapsibleSection>
+
+                {/* Panel 2: CLUSTER CONTROLS */}
                 <CollapsibleSection title="CLUSTER CONTROLS" defaultOpen={false}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         {/* Cluster Coloring dropdown */}
-                        <label style={{ color: '#b0b0b0', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <span>Cluster Coloring</span>
+                        <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '10px', alignItems: 'center' }}>
+                            <span style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>Cluster Coloring</span>
                             <select
                                 value={clusterColorMode}
                                 onChange={(e) => setClusterColorMode(e.target.value as 'final' | 'per-epoch')}
                                 style={{
+                                    height: '30px',
                                     fontSize: '12px',
-                                    padding: '4px 8px',
+                                    fontWeight: 500,
+                                    padding: '0 8px',
                                     backgroundColor: '#202020',
-                                    color: '#e0e0e0',
+                                    color: '#e6e6e6',
                                     border: '1px solid #2a2a2a',
-                                    borderRadius: '3px',
+                                    borderRadius: '6px',
                                     cursor: 'pointer',
-                                    width: '140px',
+                                    width: '100%',
                                 }}
                             >
                                 <option value="final">Final Frame</option>
                                 <option value="per-epoch">Per-Epoch</option>
                             </select>
-                        </label>
+                        </div>
 
                         {/* Focus Cluster dropdown */}
                         {frameInfo && (
-                            <label style={{ color: '#b0b0b0', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <span>Focus Cluster</span>
+                            <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '10px', alignItems: 'center' }}>
+                                <span style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>Focus Cluster</span>
                                 <select
                                     value={spotlightCluster}
                                     onChange={(e) => {
@@ -3376,14 +2356,16 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                         }
                                     }}
                                     style={{
+                                        height: '30px',
                                         fontSize: '12px',
-                                        padding: '4px 8px',
+                                        fontWeight: 500,
+                                        padding: '0 8px',
                                         backgroundColor: '#202020',
-                                        color: '#e0e0e0',
+                                        color: '#e6e6e6',
                                         border: '1px solid #2a2a2a',
-                                        borderRadius: '3px',
+                                        borderRadius: '6px',
                                         cursor: 'pointer',
-                                        width: '140px',
+                                        width: '100%',
                                     }}
                                 >
                                     <option value={-1}>None</option>
@@ -3391,12 +2373,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                         <option key={i} value={i}>Cluster {i}</option>
                                     ))}
                                 </select>
-                            </label>
+                            </div>
                         )}
 
                         {/* Show Cluster Spheres checkbox */}
                         {frameInfo && (
-                            <label style={{ color: '#b0b0b0', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '4px' }}>
                                 <input
                                     type="checkbox"
                                     checked={showDynamicHulls}
@@ -3404,14 +2386,14 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     disabled={frameInfo.visible < 4}
                                     style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#64b5f6' }}
                                 />
-                                <span style={{ color: frameInfo.visible >= 4 ? '#b0b0b0' : '#555' }}>Show Cluster Spheres</span>
+                                <span style={{ fontSize: '12px', fontWeight: 500, color: frameInfo.visible >= 4 ? '#d8d8d8' : '#555' }}>Show Cluster Spheres</span>
                             </label>
                         )}
 
                         {/* Cluster color swatches (if showColorLegend) */}
                         {showColorLegend && frameInfo && frameInfo.visible > 0 && (
                             <div style={{ marginTop: '8px' }}>
-                                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8a', marginBottom: '6px' }}>Cluster Colors</div>
+                                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginBottom: '6px' }}>Cluster Colors</div>
                                 <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                                     {Array.from({length: frameInfo.visible}, (_, i) => {
                                         const kColorTable = [0x4C78A8, 0x72B7B2, 0xF58518, 0xE45756, 0x54A24B, 0xB279A2, 0xFF9DA6, 0x9D755D, 0xBAB0AC, 0x79706E, 0xD37295, 0x8F6D31];
@@ -3421,7 +2403,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                         const color = '#' + colorHex.toString(16).padStart(6, '0');
                                         return (
                                             <div key={`cluster-${i}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-                                                <span style={{ fontSize: '10px', color: '#b0b0b0' }}>C{i}</span>
+                                                <span style={{ fontSize: '10px', color: '#b8b8b8' }}>C{i}</span>
                                                 <input
                                                     type="color"
                                                     value={color}
@@ -3458,7 +2440,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                         width: '100%',
                                         background: '#2a2a2a',
                                         border: 'none',
-                                        color: '#b0b0b0',
+                                        color: '#b8b8b8',
                                         padding: '6px',
                                         borderRadius: '4px',
                                         cursor: 'pointer',
@@ -3473,7 +2455,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         {/* Cluster inspector (if showClusterDebug) */}
                         {showClusterDebug && (
                             <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #2a2a2a' }}>
-                                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8a', marginTop: '14px', marginBottom: '6px' }}>Cluster Inspector</div>
+                                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginTop: '14px', marginBottom: '6px' }}>Cluster Inspector</div>
                                 {sphereRef && (() => {
                                     const clusterCounts = new Map<number, number>();
                                     let pointsWithoutCluster = 0;
@@ -3500,27 +2482,27 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     }
 
                                     if (clusterCounts.size === 0) {
-                                        return <div style={{ fontSize: '12px', color: '#b0b0b0' }}>No cluster data ({totalPoints} points)</div>;
+                                        return <div style={{ fontSize: '12px', color: '#b8b8b8' }}>No cluster data ({totalPoints} points)</div>;
                                     }
 
                                     return (
                                         <div style={{ fontSize: '11px', fontFamily: 'monospace', maxHeight: '120px', overflowY: 'auto' }}>
                                             {Array.from(clusterCounts.entries()).sort((a, b) => a[0] - b[0]).map(([cluster, count]) => (
-                                                <div key={cluster} style={{ marginBottom: '2px', color: '#b0b0b0' }}>
+                                                <div key={cluster} style={{ marginBottom: '2px', color: '#b8b8b8' }}>
                                                     C{cluster}: {count} points
                                                 </div>
                                             ))}
                                             {pointsWithoutCluster > 0 && (
-                                                <div style={{ marginTop: '4px', color: '#b0b0b0' }}>{pointsWithoutCluster} unassigned</div>
+                                                <div style={{ marginTop: '4px', color: '#b8b8b8' }}>{pointsWithoutCluster} unassigned</div>
                                             )}
                                         </div>
                                     );
                                 })()}
                                 {selectedPointInfo && (
                                     <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #2a2a2a', fontSize: '11px' }}>
-                                        <div style={{ color: '#e0e0e0', fontWeight: 'bold', marginBottom: '4px' }}>Selected Point</div>
-                                        <div style={{ color: '#b0b0b0' }}>Row: {selectedPointInfo.rowOffset}</div>
-                                        <div style={{ color: '#b0b0b0' }}>Cluster: {selectedPointInfo.clusterId}</div>
+                                        <div style={{ color: '#e6e6e6', fontWeight: 'bold', marginBottom: '4px' }}>Selected Point</div>
+                                        <div style={{ color: '#b8b8b8' }}>Row: {selectedPointInfo.rowOffset}</div>
+                                        <div style={{ color: '#b8b8b8' }}>Cluster: {selectedPointInfo.clusterId}</div>
                                     </div>
                                 )}
                             </div>
@@ -3528,28 +2510,25 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     </div>
                 </CollapsibleSection>
 
+                {/* Panel 3: MODEL INFO */}
                 {/* Panel 2: MODEL INFO (default CLOSED) */}
                 <CollapsibleSection title="MODEL INFO" defaultOpen={false}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        {/* Training status text */}
-                        <div style={{ fontSize: '12px', color: '#b0b0b0' }}>
-                            {trainingStatus === 'training' && (
-                                <span style={{ color: '#64b5f6' }}>Training in progress</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+                        {/* Training status and frame info - flat text line */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                            <span style={{ fontSize: '12px', color: '#b8b8b8' }}>
+                                {trainingStatus === 'training' && <span style={{ color: '#64b5f6' }}>Training in progress</span>}
+                                {trainingStatus === 'completed' && <span>Training completed</span>}
+                                {!trainingStatus && <span>Status unknown</span>}
+                            </span>
+                            {frameInfo && (
+                                <span style={{ fontSize: '12px', color: '#8f8f8f' }}>
+                                    Frame {frameInfo.current} / {frameInfo.total}
+                                </span>
                             )}
-                            {trainingStatus === 'completed' && (
-                                <span>Training completed</span>
-                            )}
-                            {!trainingStatus && <span>Status unknown</span>}
                         </div>
 
-                        {/* Frame X/Y count */}
-                        {frameInfo && (
-                            <div style={{ fontSize: '12px', color: '#b0b0b0' }}>
-                                Frame {frameInfo.current} / {frameInfo.total}
-                            </div>
-                        )}
-
-                        {/* Validation Loss chart */}
+                        {/* Validation Loss chart - flat, no box */}
                         {lossData && (() => {
                             let validationLossData = null;
                             if (lossData.validation_loss && Array.isArray(lossData.validation_loss)) {
@@ -3575,234 +2554,66 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
 
                             return (
                                 <div>
+                                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#e6e6e6', marginBottom: '6px' }}>Validation Loss</div>
                                     <LossPlotOverlay
                                         lossData={validationLossData}
                                         learningRateData={learningRateData && learningRateData.length > 0 ? learningRateData : undefined}
                                         currentEpoch={frameInfo?.epoch}
-                                        title="Validation Loss"
-                                        style={{ width: '100%', height: '100px', pointerEvents: 'none' }}
+                                        title=""
+                                        style={{ width: '100%', height: '120px', pointerEvents: 'none', borderRadius: '4px', border: '1px solid #1a1a1a' }}
                                     />
                                 </div>
                             );
                         })()}
 
-                        {/* Point Movement chart */}
+                        {/* Divider between charts */}
+                        {lossData && movementData.length > 0 && (
+                            <div style={{ height: '1px', background: '#2a2a2a', margin: '14px 0' }} />
+                        )}
+
+                        {/* Point Movement chart - flat, no box */}
                         {movementData.length > 0 && (
                             <div>
+                                <div style={{ fontSize: '12px', fontWeight: 600, color: '#e6e6e6', marginBottom: '6px' }}>Point Movement</div>
                                 <MovementPlotOverlay
                                     movementData={movementData}
                                     currentEpoch={frameInfo?.epoch}
-                                    style={{ width: '100%', height: '100px', pointerEvents: 'none' }}
+                                    style={{ width: '100%', height: '120px', pointerEvents: 'none', borderRadius: '4px', border: '1px solid #1a1a1a' }}
                                 />
                             </div>
                         )}
 
-                        {/* View Model Card button */}
-                        <button
-                            onClick={() => setShowModelCard(true)}
-                            style={{
-                                marginTop: '8px',
-                                background: '#222222',
-                                border: '1px solid #2a2a2a',
-                                color: '#b0b0b0',
-                                padding: '8px 12px',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                fontSize: '12px',
-                                width: '100%',
-                            }}
-                        >
-                            View Model Card
-                        </button>
+                        {/* View Model Card - link style action */}
+                        <div style={{ marginTop: '16px', textAlign: 'right' }}>
+                            <button
+                                onClick={() => setShowModelCard(true)}
+                                style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: '#64b5f6',
+                                    padding: '0',
+                                    cursor: 'pointer',
+                                    fontSize: '12px',
+                                    fontWeight: 500,
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.textDecoration = 'underline'}
+                                onMouseLeave={(e) => e.currentTarget.style.textDecoration = 'none'}
+                            >
+                                View Model Card →
+                            </button>
+                        </div>
                     </div>
                 </CollapsibleSection>
 
-                {/* Panel 3: SEARCH (default CLOSED) */}
-                <CollapsibleSection title="SEARCH" defaultOpen={false}>
-                    {columnTypes && Object.keys(columnTypes).length > 0 ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                            {/* Column selector */}
-                            <label style={{ color: '#b0b0b0', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <span>Column</span>
-                                <select
-                                    value={selectedSearchColumn}
-                                    onChange={(e) => setSelectedSearchColumn(e.target.value)}
-                                    style={{
-                                        fontSize: '12px',
-                                        padding: '4px 8px',
-                                        backgroundColor: '#202020',
-                                        color: '#e0e0e0',
-                                        border: '1px solid #2a2a2a',
-                                        borderRadius: '3px',
-                                        cursor: 'pointer',
-                                        width: '160px',
-                                    }}
-                                >
-                                    {Object.keys(columnTypes).map((col) => (
-                                        <option key={col} value={col}>{col}</option>
-                                    ))}
-                                </select>
-                            </label>
-
-                            {/* Search input */}
-                            <div style={{ display: 'flex', gap: '6px' }}>
-                                <input
-                                    type="text"
-                                    value={searchQuery}
-                                    onChange={handleSearchInput}
-                                    onKeyDown={handleSearchKeyDown}
-                                    placeholder="Search..."
-                                    style={{
-                                        flex: 1,
-                                        background: '#2a2a2a',
-                                        border: '1px solid #2a2a2a',
-                                        color: '#e0e0e0',
-                                        padding: '6px 10px',
-                                        borderRadius: '3px',
-                                        fontSize: '12px',
-                                    }}
-                                />
-                                <button
-                                    onClick={handleSearchSubmit}
-                                    disabled={!searchQuery.trim()}
-                                    style={{
-                                        background: searchQuery.trim() ? '#64b5f6' : '#2a2a2a',
-                                        border: 'none',
-                                        color: searchQuery.trim() ? '#141414' : '#b0b0b0',
-                                        padding: '6px 12px',
-                                        borderRadius: '3px',
-                                        cursor: searchQuery.trim() ? 'pointer' : 'not-allowed',
-                                        fontSize: '11px',
-                                        fontWeight: 'bold',
-                                    }}
-                                >
-                                    GO
-                                </button>
-                                {searchQuery && (
-                                    <button
-                                        onClick={() => {
-                                            setSearchQuery('');
-                                            setSearchResultStats(null);
-                                            applyColorRules();
-                                        }}
-                                        style={{
-                                            background: '#2a2a2a',
-                                            border: 'none',
-                                            color: '#b0b0b0',
-                                            padding: '6px 8px',
-                                            borderRadius: '3px',
-                                            cursor: 'pointer',
-                                            fontSize: '11px',
-                                        }}
-                                    >
-                                        X
-                                    </button>
-                                )}
-                            </div>
-
-                            {/* Color Rules */}
-                            {colorRules.length > 0 && (
-                                <div style={{ marginTop: '8px' }}>
-                                    <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8a', marginBottom: '6px' }}>
-                                        Color Rules ({colorRules.length})
-                                    </div>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '150px', overflowY: 'auto' }}>
-                                        {colorRules.map((rule) => (
-                                            <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px', background: '#181818', borderRadius: '3px' }}>
-                                                <div style={{ width: '14px', height: '14px', background: rule.color, borderRadius: '2px', flexShrink: 0 }} />
-                                                <div style={{ flex: 1, fontSize: '11px', color: '#b0b0b0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                    {rule.column}: {rule.query} ({rule.recordIds.length})
-                                                </div>
-                                                <button
-                                                    onClick={() => setColorRules(prev => prev.filter(r => r.id !== rule.id))}
-                                                    style={{
-                                                        background: 'transparent',
-                                                        border: 'none',
-                                                        color: '#b0b0b0',
-                                                        padding: '2px 4px',
-                                                        cursor: 'pointer',
-                                                        fontSize: '10px',
-                                                    }}
-                                                >
-                                                    X
-                                                </button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <button
-                                        onClick={() => setColorRules([])}
-                                        style={{
-                                            marginTop: '6px',
-                                            width: '100%',
-                                            background: '#2a2a2a',
-                                            border: 'none',
-                                            color: '#b0b0b0',
-                                            padding: '6px',
-                                            borderRadius: '3px',
-                                            cursor: 'pointer',
-                                            fontSize: '11px',
-                                        }}
-                                    >
-                                        Clear All
-                                    </button>
-                                </div>
-                            )}
-
-                            {/* Column vocabulary for quick selection */}
-                            {columnVocabulary && columnVocabulary.type !== 'scalar' && columnVocabulary.vocabulary && (
-                                <div style={{ marginTop: '4px' }}>
-                                    <div style={{ fontSize: '11px', color: '#b0b0b0', marginBottom: '4px' }}>Values:</div>
-                                    <div style={{ maxHeight: '100px', overflowY: 'auto', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                        {columnVocabulary.vocabulary.slice(0, 20).map((val, idx) => (
-                                            <button
-                                                key={idx}
-                                                onClick={() => {
-                                                    setSearchQuery(val);
-                                                    const fakeEvent = { target: { value: val } } as React.ChangeEvent<HTMLInputElement>;
-                                                    handleSearchInput(fakeEvent);
-                                                }}
-                                                style={{
-                                                    background: '#222222',
-                                                    border: searchQuery === val ? '1px solid #64b5f6' : '1px solid #2a2a2a',
-                                                    color: searchQuery === val ? '#64b5f6' : '#b0b0b0',
-                                                    padding: '2px 6px',
-                                                    borderRadius: '3px',
-                                                    cursor: 'pointer',
-                                                    fontSize: '10px',
-                                                }}
-                                            >
-                                                {val.length > 15 ? val.substring(0, 15) + '...' : val}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Distribution chart for scalar columns */}
-                            {columnVocabulary && columnVocabulary.type === 'scalar' && columnVocabulary.distribution && (
-                                <div style={{ marginTop: '4px' }}>
-                                    <DistributionChart
-                                        distribution={columnVocabulary.distribution}
-                                        min={columnVocabulary.min || 0}
-                                        max={columnVocabulary.max || 0}
-                                        searchValue={searchQuery ? parseFloat(searchQuery) : null}
-                                    />
-                                </div>
-                            )}
-                        </div>
-                    ) : (
-                        <div style={{ fontSize: '12px', color: '#b0b0b0' }}>No searchable columns</div>
-                    )}
-                </CollapsibleSection>
-
+                {/* Panel 4: SETTINGS */}
                 {/* Panel 4: SETTINGS */}
                 <CollapsibleSection title="SETTINGS" defaultOpen={false}>
-                    {/* Rendering group - first subgroup gets less top margin */}
-                    <div style={{ marginBottom: '16px' }}>
-                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8a', marginTop: '0', marginBottom: '6px' }}>Rendering</div>
+                    {/* Rendering group */}
+                    <div style={{ marginBottom: '18px' }}>
+                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginBottom: '8px' }}>Rendering</div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                            <label style={{ color: '#b0b0b0', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <span>Point Size</span>
+                            <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '10px', alignItems: 'center' }}>
+                                <span style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>Point Size</span>
                                 <select
                                     value={pointSize}
                                     onChange={(e) => {
@@ -3814,14 +2625,16 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                         }
                                     }}
                                     style={{
+                                        height: '30px',
                                         fontSize: '12px',
-                                        padding: '4px 8px',
+                                        fontWeight: 500,
+                                        padding: '0 8px',
                                         backgroundColor: '#202020',
-                                        color: '#e0e0e0',
+                                        color: '#e6e6e6',
                                         border: '1px solid #2a2a2a',
-                                        borderRadius: '3px',
+                                        borderRadius: '6px',
                                         cursor: 'pointer',
-                                        width: '100px',
+                                        width: '100%',
                                     }}
                                 >
                                     <option value={0.01}>0.01</option>
@@ -3832,9 +2645,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     <option value={0.10}>0.10</option>
                                     <option value={0.15}>0.15</option>
                                 </select>
-                            </label>
-                            <label style={{ color: '#b0b0b0', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <span>Alpha</span>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '10px', alignItems: 'center' }}>
+                                <span style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>Alpha</span>
                                 <select
                                     value={pointAlpha}
                                     onChange={(e) => {
@@ -3846,14 +2659,16 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                         }
                                     }}
                                     style={{
+                                        height: '30px',
                                         fontSize: '12px',
-                                        padding: '4px 8px',
+                                        fontWeight: 500,
+                                        padding: '0 8px',
                                         backgroundColor: '#202020',
-                                        color: '#e0e0e0',
+                                        color: '#e6e6e6',
                                         border: '1px solid #2a2a2a',
-                                        borderRadius: '3px',
+                                        borderRadius: '6px',
                                         cursor: 'pointer',
-                                        width: '100px',
+                                        width: '100%',
                                     }}
                                 >
                                     <option value={0.25}>25%</option>
@@ -3861,21 +2676,23 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     <option value={0.75}>75%</option>
                                     <option value={1.00}>100%</option>
                                 </select>
-                            </label>
-                            <label style={{ color: '#b0b0b0', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <span>Trail Length</span>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '10px', alignItems: 'center' }}>
+                                <span style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>Trail Length</span>
                                 <select
                                     value={trailLength}
                                     onChange={(e) => setTrailLength(parseInt(e.target.value))}
                                     style={{
+                                        height: '30px',
                                         fontSize: '12px',
-                                        padding: '4px 8px',
+                                        fontWeight: 500,
+                                        padding: '0 8px',
                                         backgroundColor: '#202020',
-                                        color: '#e0e0e0',
+                                        color: '#e6e6e6',
                                         border: '1px solid #2a2a2a',
-                                        borderRadius: '3px',
+                                        borderRadius: '6px',
                                         cursor: 'pointer',
-                                        width: '100px',
+                                        width: '100%',
                                     }}
                                 >
                                     <option value={2}>2 frames</option>
@@ -3884,86 +2701,122 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     <option value={10}>10 frames</option>
                                     <option value={15}>15 frames</option>
                                 </select>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '10px', alignItems: 'center' }}>
+                                <span style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>Wireframe</span>
+                                <select
+                                    value={wireframeOpacity}
+                                    onChange={(e) => {
+                                        const newOpacity = parseFloat(e.target.value);
+                                        setWireframeOpacity(newOpacity);
+                                        if (sphereRef) {
+                                            set_wireframe_opacity(sphereRef, newOpacity);
+                                            render_sphere(sphereRef);
+                                        }
+                                    }}
+                                    style={{
+                                        height: '30px',
+                                        fontSize: '12px',
+                                        fontWeight: 500,
+                                        padding: '0 8px',
+                                        backgroundColor: '#202020',
+                                        color: '#e6e6e6',
+                                        border: '1px solid #2a2a2a',
+                                        borderRadius: '6px',
+                                        cursor: 'pointer',
+                                        width: '100%',
+                                    }}
+                                >
+                                    <option value={0}>Off</option>
+                                    <option value={0.02}>2%</option>
+                                    <option value={0.05}>5%</option>
+                                    <option value={0.10}>10%</option>
+                                    <option value={0.15}>15%</option>
+                                    <option value={0.25}>25%</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Geometry Overlays group */}
+                    <div>
+                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginTop: '14px', marginBottom: '8px' }}>Geometry Overlays</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {/* Show Bounds Boxes */}
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={showBoundsBox}
+                                    onChange={(e) => {
+                                        const enabled = e.target.checked;
+                                        setShowBoundsBox(enabled);
+                                        if (sphereRef) {
+                                            toggle_bounds_box(sphereRef, enabled);
+                                            render_sphere(sphereRef);
+                                        }
+                                    }}
+                                    style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#64b5f6' }}
+                                />
+                                <span style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>Show Bounds Box</span>
+                            </label>
+
+                            {/* Show Great Circles */}
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={showGreatCircles}
+                                    onChange={(e) => {
+                                        const enabled = e.target.checked;
+                                        setShowGreatCircles(enabled);
+                                        if (sphereRef) {
+                                            toggle_great_circles(sphereRef, enabled);
+                                        }
+                                    }}
+                                    style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#64b5f6' }}
+                                />
+                                <span style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>Show Great Circles</span>
+                            </label>
+
+                            {/* Show Convex Hulls */}
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={sphereRef?.showEmbeddingHull || false}
+                                    onChange={(e) => {
+                                        if (sphereRef) {
+                                            toggle_embedding_hull(sphereRef, e.target.checked);
+                                            render_sphere(sphereRef);
+                                        }
+                                    }}
+                                    style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#64b5f6' }}
+                                />
+                                <span style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>Show Convex Hulls</span>
                             </label>
                         </div>
-                    </div>
 
-                    {/* Geometry Overlays group - subsequent subgroup gets more top margin */}
-                    <div>
-                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8a', marginTop: '14px', marginBottom: '6px' }}>Geometry Overlays</div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                            <div style={{ display: 'flex', gap: '6px', marginLeft: '4px' }}>
-                                <button
-                                    onClick={() => {
-                                        setShowBoundsBox(!showBoundsBox);
-                                        if (sphereRef) {
-                                            toggle_bounds_box(sphereRef, !showBoundsBox);
-                                            render_sphere(sphereRef);
-                                        }
-                                    }}
-                                    style={{
-                                        flex: 1,
-                                        background: '#222222',
-                                        border: showBoundsBox ? '1px solid #64b5f6' : '1px solid #2a2a2a',
-                                        color: showBoundsBox ? '#64b5f6' : '#b0b0b0',
-                                        padding: '8px 12px',
-                                        borderRadius: '4px',
-                                        cursor: 'pointer',
-                                        fontSize: '12px',
-                                    }}
-                                >
-                                    Bounds
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        if (sphereRef) {
-                                            toggle_embedding_hull(sphereRef, !sphereRef.showEmbeddingHull);
-                                            render_sphere(sphereRef);
-                                        }
-                                    }}
-                                    style={{
-                                        flex: 1,
-                                        background: '#222222',
-                                        border: sphereRef?.showEmbeddingHull ? '1px solid #64b5f6' : '1px solid #2a2a2a',
-                                        color: sphereRef?.showEmbeddingHull ? '#64b5f6' : '#b0b0b0',
-                                        padding: '8px 12px',
-                                        borderRadius: '4px',
-                                        cursor: 'pointer',
-                                        fontSize: '12px',
-                                    }}
-                                >
-                                    Hull
-                                </button>
+                        {/* Sphere Coverage display - always visible */}
+                        {sphereRef && sphereRef.boundsBoxVolumeUtilization !== undefined && (
+                            <div style={{ fontSize: '11px', color: '#8f8f8f', marginTop: '10px' }}>
+                                Sphere Coverage: <span style={{ color: '#e6e6e6', fontFamily: 'monospace' }}>{sphereRef.boundsBoxVolumeUtilization.toFixed(2)}%</span>
                             </div>
-
-                            {/* Show Great Circles checkbox (only when bounds is shown) */}
-                            {showBoundsBox && (
-                                <label style={{ color: '#b0b0b0', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                                    <input
-                                        type="checkbox"
-                                        checked={showGreatCircles}
-                                        onChange={(e) => {
-                                            const enabled = e.target.checked;
-                                            setShowGreatCircles(enabled);
-                                            if (sphereRef) {
-                                                toggle_great_circles(sphereRef, enabled);
-                                            }
-                                        }}
-                                        style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#64b5f6' }}
-                                    />
-                                    <span>Show Great Circles</span>
-                                </label>
-                            )}
-
-                            {/* Sphere Coverage display (only when bounds is shown) */}
-                            {showBoundsBox && sphereRef && sphereRef.boundsBoxVolumeUtilization !== undefined && (
-                                <div style={{ fontSize: '12px', color: '#b0b0b0', padding: '8px', background: '#181818', borderRadius: '4px' }}>
-                                    Sphere Coverage: <span style={{ color: '#e0e0e0' }}>{sphereRef.boundsBoxVolumeUtilization.toFixed(2)}%</span>
-                                </div>
-                            )}
-                        </div>
+                        )}
                     </div>
                 </CollapsibleSection>
+
+                {/* Sidebar Footer - Build info and load time */}
+                <div style={{
+                    padding: '12px 16px',
+                    borderTop: '1px solid #2a2a2a',
+                    marginTop: 'auto',
+                    fontSize: '10px',
+                    color: '#4a4a4a',
+                    fontFamily: 'monospace',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                }}>
+                    <span>v1.0 build 2024.02</span>
+                    <span>loaded {pageLoadTime}</span>
+                </div>
             </div>
             )}
 
@@ -3993,7 +2846,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     width: '320px',
                     maxWidth: '85vw',
                     height: '100%',
-                    background: '#181818',
+                    background: '#171717',
                     borderRight: '1px solid #2a2a2a',
                     zIndex: 9999,
                     transform: showMobilePanel ? 'translateX(0)' : 'translateX(-100%)',
@@ -4017,15 +2870,15 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                             {frameInfo ? (
                                 <>
-                                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#e0e0e0' }}>
-                                        Epoch {frameInfo.epoch?.toLocaleString() ?? '—'}
+                                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#e6e6e6' }}>
+                                        Epoch {frameInfo.epoch?.toString().replace('epoch_', '') ?? '—'}
                                     </span>
-                                    <span style={{ fontSize: '10px', color: '#8a8a8a' }}>
+                                    <span style={{ fontSize: '10px', color: '#8f8f8f' }}>
                                         Frame {frameInfo.current} / {frameInfo.total}
                                     </span>
                                 </>
                             ) : (
-                                <span style={{ fontSize: '12px', fontWeight: 600, color: '#e0e0e0' }}>Controls</span>
+                                <span style={{ fontSize: '12px', fontWeight: 600, color: '#e6e6e6' }}>Controls</span>
                             )}
                         </div>
                         <button
@@ -4033,7 +2886,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             style={{
                                 background: 'transparent',
                                 border: 'none',
-                                color: '#b0b0b0',
+                                color: '#b8b8b8',
                                 fontSize: '20px',
                                 cursor: 'pointer',
                                 padding: '4px 8px',
@@ -4045,22 +2898,123 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     </div>
                     {/* Same accordion content as desktop */}
                     <div style={{ flex: 1, overflowY: 'auto' }}>
+                        {/* Panel 0: PLAYBACK - Transport controls */}
+                        <CollapsibleSection title="PLAYBACK" defaultOpen={true}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                {/* Play/Pause and frame navigation */}
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                                    <button
+                                        onClick={() => {
+                                            if (sphereRef) {
+                                                step_training_movie_frame(sphereRef, 'backward');
+                                            }
+                                        }}
+                                        style={{
+                                            background: '#252525',
+                                            border: '1px solid #3a3a3a',
+                                            color: '#b8b8b8',
+                                            padding: '10px 16px',
+                                            borderRadius: '4px',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                        }}
+                                        title="Previous Frame"
+                                    >
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="5" width="3" height="14"/><polygon points="19,5 9,12 19,19"/></svg>
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            if (isPlaying) {
+                                                pause_training_movie(sphereRef);
+                                                setIsPlaying(false);
+                                            } else {
+                                                resume_training_movie(sphereRef);
+                                                setIsPlaying(true);
+                                            }
+                                        }}
+                                        style={{
+                                            background: isPlaying ? '#64b5f6' : '#252525',
+                                            border: '1px solid #3a3a3a',
+                                            color: isPlaying ? '#000' : '#e6e6e6',
+                                            padding: '10px 24px',
+                                            borderRadius: '4px',
+                                            cursor: 'pointer',
+                                            fontSize: '18px',
+                                            fontWeight: 600,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                        }}
+                                        title={isPlaying ? "Pause" : "Play"}
+                                    >
+                                        {isPlaying ? (
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                                        ) : (
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+                                        )}
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            if (sphereRef) {
+                                                step_training_movie_frame(sphereRef, 'forward');
+                                            }
+                                        }}
+                                        style={{
+                                            background: '#252525',
+                                            border: '1px solid #3a3a3a',
+                                            color: '#b8b8b8',
+                                            padding: '10px 16px',
+                                            borderRadius: '4px',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                        }}
+                                        title="Next Frame"
+                                    >
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,5 15,12 5,19"/><rect x="18" y="5" width="3" height="14"/></svg>
+                                    </button>
+                                </div>
+                                {/* Frame scrubber */}
+                                {frameInfo && frameInfo.total > 1 && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span style={{ color: '#8f8f8f', fontSize: '11px', width: '30px' }}>1</span>
+                                        <input
+                                            type="range"
+                                            min={1}
+                                            max={frameInfo.total}
+                                            value={frameInfo.current}
+                                            onChange={(e) => {
+                                                if (sphereRef) {
+                                                    goto_training_movie_frame(sphereRef, parseInt(e.target.value));
+                                                }
+                                            }}
+                                            style={{ flex: 1, cursor: 'pointer' }}
+                                        />
+                                        <span style={{ color: '#8f8f8f', fontSize: '11px', width: '30px', textAlign: 'right' }}>{frameInfo.total}</span>
+                                    </div>
+                                )}
+                            </div>
+                        </CollapsibleSection>
+
                         {/* Panel 1: CLUSTER CONTROLS */}
                         <CollapsibleSection title="CLUSTER CONTROLS" defaultOpen={false}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                <label style={{ color: '#b0b0b0', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <label style={{ color: '#b8b8b8', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                     <span>Cluster Coloring</span>
                                     <select
                                         value={clusterColorMode}
                                         onChange={(e) => setClusterColorMode(e.target.value as 'final' | 'per-epoch')}
-                                        style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: '#202020', color: '#e0e0e0', border: '1px solid #2a2a2a', borderRadius: '3px', cursor: 'pointer', width: '120px' }}
+                                        style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: '#202020', color: '#e6e6e6', border: '1px solid #2a2a2a', borderRadius: '3px', cursor: 'pointer', width: '120px' }}
                                     >
                                         <option value="final">Final Frame</option>
                                         <option value="per-epoch">Per-Epoch</option>
                                     </select>
                                 </label>
                                 {frameInfo && (
-                                    <label style={{ color: '#b0b0b0', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <label style={{ color: '#b8b8b8', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                         <span>Focus Cluster</span>
                                         <select
                                             value={spotlightCluster}
@@ -4073,7 +3027,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                                     render_sphere(sphereRef);
                                                 }
                                             }}
-                                            style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: '#202020', color: '#e0e0e0', border: '1px solid #2a2a2a', borderRadius: '3px', cursor: 'pointer', width: '120px' }}
+                                            style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: '#202020', color: '#e6e6e6', border: '1px solid #2a2a2a', borderRadius: '3px', cursor: 'pointer', width: '120px' }}
                                         >
                                             <option value={-1}>None</option>
                                             {frameInfo.visible > 0 && Array.from({length: frameInfo.visible}, (_, i) => (
@@ -4088,9 +3042,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         {/* Panel 2: SETTINGS */}
                         <CollapsibleSection title="SETTINGS" defaultOpen={false}>
                             <div style={{ marginBottom: '16px' }}>
-                                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8a', marginTop: '0', marginBottom: '6px' }}>Rendering</div>
+                                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginTop: '0', marginBottom: '6px' }}>Rendering</div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                    <label style={{ color: '#b0b0b0', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <label style={{ color: '#b8b8b8', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                         <span>Point Size</span>
                                         <select
                                             value={pointSize}
@@ -4102,7 +3056,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                                     render_sphere(sphereRef);
                                                 }
                                             }}
-                                            style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: '#202020', color: '#e0e0e0', border: '1px solid #2a2a2a', borderRadius: '3px', cursor: 'pointer', width: '80px' }}
+                                            style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: '#202020', color: '#e6e6e6', border: '1px solid #2a2a2a', borderRadius: '3px', cursor: 'pointer', width: '80px' }}
                                         >
                                             <option value={0.01}>0.01</option>
                                             <option value={0.02}>0.02</option>
@@ -4110,7 +3064,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                             <option value={0.06}>0.06</option>
                                         </select>
                                     </label>
-                                    <label style={{ color: '#b0b0b0', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <label style={{ color: '#b8b8b8', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                         <span>Alpha</span>
                                         <select
                                             value={pointAlpha}
@@ -4122,7 +3076,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                                     render_sphere(sphereRef);
                                                 }
                                             }}
-                                            style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: '#202020', color: '#e0e0e0', border: '1px solid #2a2a2a', borderRadius: '3px', cursor: 'pointer', width: '80px' }}
+                                            style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: '#202020', color: '#e6e6e6', border: '1px solid #2a2a2a', borderRadius: '3px', cursor: 'pointer', width: '80px' }}
                                         >
                                             <option value={0.25}>25%</option>
                                             <option value={0.50}>50%</option>
@@ -4144,6 +3098,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 background: '#232323',
                 minHeight: 0,
                 overflow: 'hidden',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
             }}>
                 {/* Countdown Overlay - only temporary, positioned over sphere */}
                 {showCountdown && (
@@ -4153,7 +3110,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         left: '50%',
                         transform: 'translate(-50%, -50%)',
                         background: 'rgba(20, 20, 20, 0.95)',
-                        color: '#e0e0e0',
+                        color: '#e6e6e6',
                         padding: '30px 50px',
                         borderRadius: '12px',
                         fontSize: '32px',
@@ -4169,8 +3126,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     </div>
                 )}
                 
-                {/* Gesture hints overlay for mobile */}
-                {showGestureHints && isMobile && !isThumbnail && (
+                {/* Gesture hints overlay for mobile - hide during countdown */}
+                {showGestureHints && isMobile && !isThumbnail && !showCountdown && (
                     <div
                         onClick={() => setShowGestureHints(false)}
                         style={{
@@ -4350,7 +3307,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         onTouchEnd={isMobile ? handleOverlayInteractionEnd : undefined}
                         style={{
                             position: 'absolute',
-                            bottom: isMobile ? 'calc(24px + env(safe-area-inset-bottom, 0px))' : '24px',
+                            bottom: isMobile ? 'calc(20px + env(safe-area-inset-bottom, 0px))' : '20px',
                             left: '50%',
                             transform: 'translateX(-50%)',
                             zIndex: 100,
@@ -4358,25 +3315,44 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             pointerEvents: overlayVisible ? 'auto' : 'none',
                             transition: 'opacity 200ms ease',
                             display: 'flex',
-                            flexDirection: 'column',
                             alignItems: 'center',
-                            gap: '6px',
-                            width: isMobile ? 'calc(100% - 32px)' : 'min(90%, 600px)',
-                            maxWidth: '600px',
-                            background: 'rgba(0, 0, 0, 0.55)',
-                            backdropFilter: 'blur(8px)',
-                            borderRadius: '10px',
-                            padding: '12px 16px 8px',
+                            gap: '12px',
+                            width: isMobile ? 'calc(100% - 32px)' : 'auto',
+                            maxWidth: '500px',
+                            minWidth: '320px',
+                            background: 'rgba(0, 0, 0, 0.7)',
+                            backdropFilter: 'blur(12px)',
+                            borderRadius: '8px',
+                            padding: '8px 12px',
+                            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)',
                         }}
                     >
+                        {/* Transport buttons */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flexShrink: 0 }}>
+                            <button onClick={() => { if (sphereRef) { goto_training_movie_frame(sphereRef, 1); setIsPlaying(false); setFrameInput('1'); } }} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', borderRadius: '4px', transition: 'color 150ms' }} onMouseEnter={e => e.currentTarget.style.color = '#fff'} onMouseLeave={e => e.currentTarget.style.color = '#999'} title="First Frame">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="5" width="3" height="14"/><polygon points="19,5 10,12 19,19"/></svg>
+                            </button>
+                            <button onClick={handleStepBackward} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', borderRadius: '4px', transition: 'color 150ms' }} onMouseEnter={e => e.currentTarget.style.color = '#fff'} onMouseLeave={e => e.currentTarget.style.color = '#999'} title="Previous Frame">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="18,5 9,12 18,19"/><polygon points="10,5 1,12 10,19"/></svg>
+                            </button>
+                            <button onClick={handlePlayPause} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: '6px 8px', display: 'flex', alignItems: 'center', borderRadius: '4px' }} title={isPlaying ? 'Pause' : 'Play'}>
+                                {isPlaying ? (
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+                                ) : (
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>
+                                )}
+                            </button>
+                            <button onClick={handleStepForward} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', borderRadius: '4px', transition: 'color 150ms' }} onMouseEnter={e => e.currentTarget.style.color = '#fff'} onMouseLeave={e => e.currentTarget.style.color = '#999'} title="Next Frame">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,5 15,12 6,19"/><polygon points="14,5 23,12 14,19"/></svg>
+                            </button>
+                            <button onClick={() => { if (sphereRef && frameInfo) { goto_training_movie_frame(sphereRef, frameInfo.total); setIsPlaying(false); setFrameInput(frameInfo.total.toString()); } }} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', borderRadius: '4px', transition: 'color 150ms' }} onMouseEnter={e => e.currentTarget.style.color = '#fff'} onMouseLeave={e => e.currentTarget.style.color = '#999'} title="Last Frame">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,5 14,12 5,19"/><rect x="17" y="5" width="3" height="14"/></svg>
+                            </button>
+                        </div>
+
                         {/* Scrub slider */}
                         <div
-                            style={{
-                                width: '100%',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                            }}
+                            style={{ flex: 1, display: 'flex', alignItems: 'center', minWidth: 0 }}
                             onWheel={(e) => {
                                 if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
                                     e.preventDefault();
@@ -4396,32 +3372,14 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 max={frameInfo.total}
                                 value={frameInfo.current}
                                 onChange={handleScrub}
-                                style={{
-                                    flex: 1,
-                                    cursor: 'pointer',
-                                    height: '4px',
-                                    accentColor: '#00ccff',
-                                }}
+                                style={{ width: '100%', cursor: 'pointer', accentColor: '#00bfff' }}
                             />
                         </div>
 
-                        {/* Transport buttons + frame counter */}
-                        <div
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                            }}
-                        >
-                            <button onClick={() => { if (sphereRef) { goto_training_movie_frame(sphereRef, 1); setIsPlaying(false); setFrameInput('1'); } }} style={{ background: 'none', border: 'none', color: '#d0d0d0', fontSize: '16px', cursor: 'pointer', padding: '4px 6px', lineHeight: 1 }} title="First Frame">⏮</button>
-                            <button onClick={handleStepBackward} style={{ background: 'none', border: 'none', color: '#d0d0d0', fontSize: '16px', cursor: 'pointer', padding: '4px 6px', lineHeight: 1 }} title="Previous Frame">⏪</button>
-                            <button onClick={handlePlayPause} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '20px', cursor: 'pointer', padding: '4px 10px', lineHeight: 1 }} title={isPlaying ? 'Pause' : 'Play'}>{isPlaying ? '⏸' : '▶'}</button>
-                            <button onClick={handleStepForward} style={{ background: 'none', border: 'none', color: '#d0d0d0', fontSize: '16px', cursor: 'pointer', padding: '4px 6px', lineHeight: 1 }} title="Next Frame">⏩</button>
-                            <button onClick={() => { if (sphereRef && frameInfo) { goto_training_movie_frame(sphereRef, frameInfo.total); setIsPlaying(false); setFrameInput(frameInfo.total.toString()); } }} style={{ background: 'none', border: 'none', color: '#d0d0d0', fontSize: '16px', cursor: 'pointer', padding: '4px 6px', lineHeight: 1 }} title="Last Frame">⏭</button>
-                            <span style={{ color: '#b0b0b0', fontSize: '12px', marginLeft: '12px', fontFamily: 'monospace', whiteSpace: 'nowrap' as const }}>
-                                {frameInfo.current}/{frameInfo.total}{frameInfo.epoch ? ` E${frameInfo.epoch.toString().replace('epoch_', '')}` : ''}
-                            </span>
-                        </div>
+                        {/* Frame counter */}
+                        <span style={{ color: '#888', fontSize: '11px', fontFamily: 'system-ui, -apple-system, sans-serif', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                            {frameInfo.current}<span style={{ color: '#555' }}>/</span>{frameInfo.total}
+                        </span>
                     </div>
                 )}
                 </div>
@@ -4429,18 +3387,41 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
 
             {/* Floating Data Inspector */}
             {showDataInspector && selectedPoints.length > 0 && !isThumbnail && (
+                <>
+                {/* Tap-outside to dismiss overlay (mobile only) */}
+                {isMobile && (
+                    <div
+                        onClick={() => setShowDataInspector(false)}
+                        style={{
+                            position: 'fixed',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            background: 'rgba(0, 0, 0, 0.3)',
+                            zIndex: 19999,
+                        }}
+                    />
+                )}
                 <div
                     style={{
                         position: 'fixed',
-                        left: `${inspectorPosition.x}px`,
-                        top: `${inspectorPosition.y}px`,
+                        ...(isMobile ? {
+                            left: '8px',
+                            right: '8px',
+                            top: '60px',
+                            maxHeight: '60vh',
+                        } : {
+                            left: `${inspectorPosition.x}px`,
+                            top: `${inspectorPosition.y}px`,
+                            minWidth: '400px',
+                            maxWidth: '800px',
+                            maxHeight: '80vh',
+                        }),
                         background: 'rgba(20, 20, 20, 0.95)',
                         border: '2px solid #4c4',
                         borderRadius: '8px',
                         padding: '12px',
-                        minWidth: '400px',
-                        maxWidth: '800px',
-                        maxHeight: '80vh',
                         zIndex: 20000,
                         boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
                         display: 'flex',
@@ -4601,6 +3582,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         </table>
                     </div>
                 </div>
+                </>
             )}
 
             {/* Model Card Modal */}
@@ -4644,13 +3626,13 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             borderBottom: '1px solid #2a2a2a',
                             background: '#181818',
                         }}>
-                            <span style={{ fontSize: '14px', fontWeight: 600, color: '#e0e0e0' }}>Model Card</span>
+                            <span style={{ fontSize: '14px', fontWeight: 600, color: '#e6e6e6' }}>Model Card</span>
                             <button
                                 onClick={() => setShowModelCard(false)}
                                 style={{
                                     background: 'transparent',
                                     border: 'none',
-                                    color: '#b0b0b0',
+                                    color: '#b8b8b8',
                                     fontSize: '24px',
                                     cursor: 'pointer',
                                     padding: '0 4px',
@@ -4666,45 +3648,69 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             overflowY: 'auto',
                             padding: '20px',
                         }}>
-                            {/* Placeholder for ModelCard component */}
-                            <div style={{ color: '#b0b0b0', fontSize: '14px' }}>
-                                <div style={{ marginBottom: '16px' }}>
-                                    <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8a', marginBottom: '6px' }}>Session ID</div>
-                                    <div style={{ fontFamily: 'monospace', color: '#e0e0e0' }}>{sessionId}</div>
+                            {modelCardLoading && (
+                                <div style={{ color: '#b8b8b8', textAlign: 'center', padding: '40px' }}>
+                                    <div style={{
+                                        width: '30px',
+                                        height: '30px',
+                                        border: '3px solid #555',
+                                        borderTop: '3px solid #d0d0d0',
+                                        borderRadius: '50%',
+                                        animation: 'spin 1s linear infinite',
+                                        margin: '0 auto 16px'
+                                    }} />
+                                    Loading model card...
                                 </div>
-                                {frameInfo && (
+                            )}
+                            {modelCardError && (
+                                <div style={{ color: '#ff6b6b', textAlign: 'center', padding: '40px' }}>
+                                    <div style={{ marginBottom: '12px' }}>Failed to load model card</div>
+                                    <div style={{ fontSize: '12px', color: '#8f8f8f' }}>{modelCardError}</div>
+                                </div>
+                            )}
+                            {!modelCardLoading && !modelCardError && modelCardData && (
+                                <div ref={modelCardContainerRef} />
+                            )}
+                            {!modelCardLoading && !modelCardError && !modelCardData && (
+                                <div style={{ color: '#b8b8b8', fontSize: '14px' }}>
                                     <div style={{ marginBottom: '16px' }}>
-                                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8a', marginBottom: '6px' }}>Training Progress</div>
-                                        <div style={{ color: '#e0e0e0' }}>{frameInfo.total} epochs completed</div>
+                                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginBottom: '6px' }}>Session ID</div>
+                                        <div style={{ fontFamily: 'monospace', color: '#e6e6e6' }}>{sessionId}</div>
                                     </div>
-                                )}
-                                {trainingStatus && (
-                                    <div style={{ marginBottom: '16px' }}>
-                                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8a', marginBottom: '6px' }}>Status</div>
-                                        <div style={{ color: trainingStatus === 'completed' ? '#64b5f6' : '#e0e0e0' }}>
-                                            {trainingStatus === 'completed' ? 'Training Complete' : 'Training In Progress'}
+                                    {frameInfo && (
+                                        <div style={{ marginBottom: '16px' }}>
+                                            <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginBottom: '6px' }}>Training Progress</div>
+                                            <div style={{ color: '#e6e6e6' }}>{frameInfo.total} epochs completed</div>
                                         </div>
-                                    </div>
-                                )}
-                                {sphereRef?.recordList && (
-                                    <div style={{ marginBottom: '16px' }}>
-                                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8a', marginBottom: '6px' }}>Data Points</div>
-                                        <div style={{ color: '#e0e0e0' }}>{sphereRef.recordList.length} points</div>
-                                    </div>
-                                )}
-                                {frameInfo && frameInfo.visible > 0 && (
-                                    <div style={{ marginBottom: '16px' }}>
-                                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8a', marginBottom: '6px' }}>Clusters</div>
-                                        <div style={{ color: '#e0e0e0' }}>{frameInfo.visible} clusters identified</div>
-                                    </div>
-                                )}
-                                {lossData?.training_info?.model_parameters !== undefined && (
-                                    <div style={{ marginBottom: '16px' }}>
-                                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8a', marginBottom: '6px' }}>Model Parameters</div>
-                                        <div style={{ color: '#e0e0e0' }}>{lossData.training_info.model_parameters.toLocaleString()}</div>
-                                    </div>
-                                )}
-                            </div>
+                                    )}
+                                    {trainingStatus && (
+                                        <div style={{ marginBottom: '16px' }}>
+                                            <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginBottom: '6px' }}>Status</div>
+                                            <div style={{ color: trainingStatus === 'completed' ? '#64b5f6' : '#e6e6e6' }}>
+                                                {trainingStatus === 'completed' ? 'Training Complete' : 'Training In Progress'}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {sphereRef?.recordList && (
+                                        <div style={{ marginBottom: '16px' }}>
+                                            <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginBottom: '6px' }}>Data Points</div>
+                                            <div style={{ color: '#e6e6e6' }}>{sphereRef.recordList.length} points</div>
+                                        </div>
+                                    )}
+                                    {frameInfo && frameInfo.visible > 0 && (
+                                        <div style={{ marginBottom: '16px' }}>
+                                            <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginBottom: '6px' }}>Clusters</div>
+                                            <div style={{ color: '#e6e6e6' }}>{frameInfo.visible} clusters identified</div>
+                                        </div>
+                                    )}
+                                    {lossData?.training_info?.model_parameters !== undefined && (
+                                        <div style={{ marginBottom: '16px' }}>
+                                            <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginBottom: '6px' }}>Model Parameters</div>
+                                            <div style={{ color: '#e6e6e6' }}>{lossData.training_info.model_parameters.toLocaleString()}</div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </>

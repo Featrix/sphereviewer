@@ -254,6 +254,10 @@ export interface SphereData {
 
     // Set when user manually zooms - prevents auto-fit from overriding
     userHasZoomed?: boolean;
+
+    // Drag-pause state: track what was playing before drag started
+    wasPlayingMovieBeforeDrag?: boolean;
+    wasAutoRotatingBeforeDrag?: boolean;
 }
 
 export type SphereRecord = {
@@ -362,6 +366,8 @@ function create_new_sphere(container: HTMLElement): SphereData {
         embeddingHull: undefined,
         embeddingHullArea: undefined,
         showEmbeddingHull: false,
+        wasPlayingMovieBeforeDrag: false,
+        wasAutoRotatingBeforeDrag: false,
     } as SphereData
 
 
@@ -1006,9 +1012,17 @@ export function set_animation_options(sphere: SphereData, isRotating: boolean = 
 export function set_visual_options(sphere: SphereData, pointSize: number = 0.05, pointOpacity: number = 0.5) {
     sphere.pointSize = pointSize;
     sphere.pointOpacity = pointOpacity;
-    
+
     // Update all existing points with new visual properties
     update_all_point_visuals(sphere);
+}
+
+export function set_wireframe_opacity(sphere: SphereData, opacity: number) {
+    if (sphere.unitSphere && sphere.unitSphere.material) {
+        const material = sphere.unitSphere.material as THREE.LineBasicMaterial;
+        material.opacity = opacity;
+        material.needsUpdate = true;
+    }
 }
 
 export function update_all_point_visuals(sphere: SphereData) {
@@ -1093,18 +1107,24 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any, 
     const sessionCoords = fullSessionData?.coords || sphere.jsonData?.coords || [];
     const originalDataByRowOffset = new Map<number, any>();
 
+    // Check if we have a pre-built sourceDataByRowId map (from include_source_data=true fallback)
+    const sourceDataByRowId: Map<number, any> = fullSessionData?.sourceDataByRowId || new Map();
+
     // Build a map of original data by row_offset AND row_id for quick lookup
     // Some datasets use row_offset, others use row_id, so we need to support both
     sessionCoords.forEach((coord: any) => {
         const rowOffset = coord.__featrix_row_offset;
         const rowId = coord.__featrix_row_id;
-        
-        const originalData = {
-            ...(coord.set_columns || {}),
-            ...(coord.scalar_columns || {}),
-            ...(coord.string_columns || {})
-        };
-        
+
+        // Priority: source_data (from include_source_data=true) > traditional columns
+        const originalData = coord.source_data
+            ? { ...coord.source_data }  // Use source_data if available
+            : {
+                ...(coord.set_columns || {}),
+                ...(coord.scalar_columns || {}),
+                ...(coord.string_columns || {})
+            };
+
         // Map by row_offset if available
         if (rowOffset !== undefined && rowOffset !== null) {
             originalDataByRowOffset.set(rowOffset, originalData);
@@ -1148,12 +1168,22 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any, 
         // Try to get full dataset data to supplement missing fields
         // Try multiple lookup strategies since datasets may use different identifiers
         let fullDatasetData = originalDataByRowOffset.get(rowOffset);
-        
+
         // If not found by rowOffset, try to find by __featrix_row_id
         if (!fullDatasetData && rowId !== undefined && rowId !== null) {
             fullDatasetData = originalDataByRowOffset.get(rowId);
         }
-        
+
+        // If still not found, try sourceDataByRowId (from include_source_data=true fallback)
+        if (!fullDatasetData && sourceDataByRowId.size > 0 && rowId !== undefined && rowId !== null) {
+            fullDatasetData = sourceDataByRowId.get(rowId);
+        }
+
+        // Also check for source_data directly on the entry (from enriched coords)
+        if (!fullDatasetData && entry.source_data) {
+            fullDatasetData = entry.source_data;
+        }
+
         // Merge: epoch entry data takes priority (has important columns), full dataset supplements missing fields
         const originalData = {
             ...(fullDatasetData || {}),  // Full dataset as base
@@ -1447,8 +1477,12 @@ function animate_interpolation(sphere: SphereData) {
     const elapsed = Date.now() - sphere.interpolationStartTime;
     const progress = Math.min(elapsed / sphere.interpolationDuration, 1.0);
 
-    // Smooth ease-in-out for fluid frame-to-frame transitions
-    const easedProgress = -(Math.cos(Math.PI * progress) - 1) / 2;
+    // Store progress for trail rendering
+    sphere.interpolationProgress = progress;
+
+    // Use LINEAR progress - no ease-in/out that would cause "stop-start" at epoch boundaries
+    // The Hermite interpolation handles path smoothness; linear timing keeps constant speed
+    const easedProgress = progress;
 
     // Update all point positions using Hermite interpolation for velocity continuity
     sphere.pointObjectsByRecordID.forEach((mesh: any, recordId: string) => {
@@ -1514,6 +1548,25 @@ function stop_point_interpolation(sphere: SphereData) {
         cancelAnimationFrame(sphere.interpolationAnimationRef);
         sphere.interpolationAnimationRef = undefined;
     }
+
+    // CRITICAL: Snap points to their final target positions before clearing state
+    // This prevents any micro-jumps when starting the next interpolation
+    if (sphere.pointTargetPositions && sphere.isInterpolating) {
+        sphere.pointObjectsByRecordID.forEach((mesh: any, recordId: string) => {
+            const targetPos = sphere.pointTargetPositions?.get(recordId);
+            if (targetPos) {
+                mesh.position.copy(targetPos);
+
+                // Also store final velocity for next interpolation's continuity
+                const startPos = sphere.pointStartPositions?.get(recordId);
+                if (startPos) {
+                    const velocity = new THREE.Vector3().subVectors(targetPos, startPos).normalize();
+                    sphere.pointStartVelocities?.set(recordId, velocity);
+                }
+            }
+        });
+    }
+
     sphere.isInterpolating = false;
     sphere.pointTargetPositions = undefined;
     sphere.pointStartPositions = undefined;
@@ -1721,7 +1774,9 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
         // Calculate optimal interpolation duration based on frame timing
         // Fixed 1 second per frame (matches play_training_movie)
         const fixedFrameDuration = 1000; // 1 second per frame
-        const interpolationDuration = Math.max(50, fixedFrameDuration * 0.99); // 99% of frame delay for seamless flow
+        // Use full frame duration - the next interpolation will start when the timer fires,
+        // and will smoothly continue from wherever this one ends
+        const interpolationDuration = fixedFrameDuration;
         
         start_point_interpolation(sphere, targetPositions, interpolationDuration);
         
@@ -1800,20 +1855,25 @@ export function clear_colors(sphere: SphereData) {
     }
 }
 
-function createGreatCircleArc(start: THREE.Vector3, end: THREE.Vector3, segments: number = 16): THREE.Vector3[] {
+function createGreatCircleArc(start: THREE.Vector3, end: THREE.Vector3, segmentsHint: number = 16): THREE.Vector3[] {
     // Calculate great circle arc between two points on a sphere
     const points: THREE.Vector3[] = [];
-    
+
     // Get the average radius to scale the arc
     const avgRadius = (start.length() + end.length()) / 2;
-    
+
     // Normalize vectors to ensure they're on unit sphere
     const startNorm = start.clone().normalize();
     const endNorm = end.clone().normalize();
-    
+
     // Calculate the angle between the vectors
     const angle = startNorm.angleTo(endNorm);
-    
+
+    // Calculate segments based on arc proportion: ~1 segment per 15 degrees (π/12 radians)
+    // This ensures smooth curves proportional to the arc length
+    const arcProportionalSegments = Math.max(2, Math.ceil(angle / (Math.PI / 12)));
+    const segments = Math.min(arcProportionalSegments, 24); // Cap at 24 for performance
+
     // If points are very close, just return interpolated line
     if (angle < 0.01) {
         for (let i = 0; i <= segments; i++) {
@@ -1927,29 +1987,58 @@ export function update_memory_trails(sphere: SphereData) {
         const minDistance = Math.min(...distances);
         const distanceRange = maxDistance - minDistance;
         
+        // First: Draw "current movement" trail from start of interpolation to live position
+        // This makes the trail visibly chase the point during animation
+        const livePos = pointMesh.position.clone();
+        const startPos = history[0].clone(); // Where point was at start of this transition
+        const currentMoveDistance = livePos.distanceTo(startPos);
+
+        // Get interpolation progress (0 = just started, 1 = complete)
+        const progress = sphere.interpolationProgress || 0;
+
+        if (currentMoveDistance > 0.001) {
+            // Active segment fades as the point travels:
+            // At start (progress=0): bright (0.6)
+            // At end (progress=1): fades to match historical level (0.3)
+            const activeAlpha = 0.6 - (progress * 0.3);
+
+            const activeArcPoints = createGreatCircleArc(startPos, livePos, 8);
+            const activeLineGeometry = new THREE.BufferGeometry().setFromPoints(activeArcPoints);
+            const activeLineMaterial = new THREE.LineBasicMaterial({
+                color: pointColor.clone(),
+                transparent: true,
+                opacity: activeAlpha,
+                linewidth: 1
+            });
+            const activeLine = new THREE.Line(activeLineGeometry, activeLineMaterial);
+            sphere.memoryTrailsGroup.add(activeLine);
+        }
+
+        // Then: Draw historical trail segments (older positions fade out)
         for (let i = 0; i < maxSegments; i++) {
-            // For first segment (i=0): connect live position to history[1] (previous epoch)
-            // For subsequent segments: connect history[i] to history[i+1] (connecting historical positions)
-            const currentPos = (i === 0) ? pointMesh.position.clone() : history[i].clone();
+            // Connect history[i] to history[i+1] (older historical positions)
+            const currentPos = history[i].clone();
             const previousPos = history[i + 1].clone();
             const distance = distances[i];
-            
-            // Alpha decreases as distance increases (longer segments are lighter)
-            // Keep big jumps very translucent even for current epoch
-            // Shorter segments: alpha = 0.4 (reduced from 0.9)
-            // Longer segments: alpha = 0.05 (reduced from 0.2)
-            let alpha;
+
+            // Age-based fade: newest (i=0) is brightest, oldest fades out
+            // ageFactor goes from 0.8 (newest historical) to ~0.1 (oldest)
+            const ageFactor = 0.8 - (i / maxSegments) * 0.7;
+
+            // Distance-based alpha: longer segments are lighter
+            let distanceAlpha;
             if (distanceRange > 0.001) {
                 const normalizedDistance = (distance - minDistance) / distanceRange;
-                // More aggressive curve - big jumps stay very faint
-                const exponentialFactor = Math.pow(normalizedDistance, 1.5); // Make big jumps even fainter
-                alpha = 0.4 - (exponentialFactor * 0.35); // 0.4 to 0.05
+                const exponentialFactor = Math.pow(normalizedDistance, 1.5);
+                distanceAlpha = 0.5 - (exponentialFactor * 0.4); // 0.5 to 0.1
             } else {
-                alpha = 0.4; // All segments same distance - keep moderate
+                distanceAlpha = 0.5;
             }
-            
+
+            // Combine distance and age: multiply them together
+            const alpha = distanceAlpha * ageFactor;
+
             // Generate great circle arc points - REDUCED segments for performance
-            // Trail should go from previousPos to currentPos (forward in time, showing movement direction)
             const segments = Math.max(2, Math.min(8, Math.floor(distance * 4))); // Reduced: 2-8 segments (was 4-16)
             const arcPoints = createGreatCircleArc(previousPos, currentPos, segments);
 
@@ -1963,11 +2052,6 @@ export function update_memory_trails(sphere: SphereData) {
 
             const line = new THREE.Line(lineGeometry, lineMaterial);
             sphere.memoryTrailsGroup.add(line);
-
-            // PERFORMANCE: Skip arrows entirely - they're too expensive
-            // ArrowHelper creates multiple meshes per arrow, causing severe performance issues
-            // With 500 points * 5 trail segments = 2500 arrows = 7500+ Three.js objects
-            // Removing arrows saves ~90% of trail rendering cost
         }
     });
 }
@@ -2188,6 +2272,14 @@ const onMouseDown = (sphere: SphereData, event: MouseEvent) => {
     sphere.prevPos = { x: event.clientX, y: event.clientY };
     sphere.isDragging = true;
     sphere.firstPos = { x: event.clientX, y: event.clientY };
+
+    // Pause animations while dragging
+    sphere.wasPlayingMovieBeforeDrag = sphere.isPlayingMovie || false;
+    sphere.wasAutoRotatingBeforeDrag = sphere.autoRotationEnabled || false;
+    if (sphere.isPlayingMovie) {
+        pause_training_movie(sphere);
+    }
+    sphere.autoRotationEnabled = false;
 };
 
 
@@ -2214,10 +2306,20 @@ const onMouseMove = (sphere: SphereData, event: MouseEvent) => {
 const onMouseUp = (sphere: SphereData, event: MouseEvent) => {
     sphere.isDragging = false;
 
+    // Resume animations that were playing before drag
+    if (sphere.wasPlayingMovieBeforeDrag) {
+        resume_training_movie(sphere);
+    }
+    if (sphere.wasAutoRotatingBeforeDrag) {
+        sphere.autoRotationEnabled = true;
+    }
+    sphere.wasPlayingMovieBeforeDrag = false;
+    sphere.wasAutoRotatingBeforeDrag = false;
+
     const eventX = event.clientX;
     const eventY = event.clientY;
     const { left, top, width, height } = sphere.renderer.domElement.getBoundingClientRect();
-    
+
     sphere.mouse.x = ((eventX - left) / width) * 2 - 1;
     sphere.mouse.y = -((eventY - top) / height) * 2 + 1;
 
@@ -2242,7 +2344,15 @@ const onMouseUp = (sphere: SphereData, event: MouseEvent) => {
 
 const onTouchStart = (sphere: SphereData, event: TouchEvent) => {
     event.preventDefault();
-    
+
+    // Pause animations while touching/dragging
+    sphere.wasPlayingMovieBeforeDrag = sphere.isPlayingMovie || false;
+    sphere.wasAutoRotatingBeforeDrag = sphere.autoRotationEnabled || false;
+    if (sphere.isPlayingMovie) {
+        pause_training_movie(sphere);
+    }
+    sphere.autoRotationEnabled = false;
+
     if (event.touches.length === 1) {
         const eventX = event.touches[0].clientX;
         const eventY = event.touches[0].clientY;
@@ -2294,6 +2404,16 @@ const onTouchMove = (sphere: SphereData, event: TouchEvent) => {
 const onTouchEnd = (sphere: SphereData, event: TouchEvent) => {
     sphere.isDragging = false;
     sphere.prevPinchDistance = null;
+
+    // Resume animations that were playing before touch
+    if (sphere.wasPlayingMovieBeforeDrag) {
+        resume_training_movie(sphere);
+    }
+    if (sphere.wasAutoRotatingBeforeDrag) {
+        sphere.autoRotationEnabled = true;
+    }
+    sphere.wasPlayingMovieBeforeDrag = false;
+    sphere.wasAutoRotatingBeforeDrag = false;
 
     if (event.changedTouches.length === 1 && event.touches.length === 0) {
         const eventX = event.changedTouches[0].clientX;
@@ -3705,7 +3825,10 @@ export function toggle_great_circles(sphere: SphereData, show: boolean) {
             sphere.greatCirclesGroup = new THREE.Group();
             sphere.scene.add(sphere.greatCirclesGroup);
         }
-        
+
+        // Make sure group is visible
+        sphere.greatCirclesGroup.visible = true;
+
         // Clear existing great circles
         while (sphere.greatCirclesGroup.children.length > 0) {
             const child = sphere.greatCirclesGroup.children[0];
@@ -3769,44 +3892,13 @@ export function toggle_great_circles(sphere: SphereData, show: boolean) {
             sphere.greatCirclesGroup.add(circleLine);
         });
         
-        // Reduce point size to 0.01
-        sphere.pointSize = 0.01;
-        update_all_point_visuals(sphere);
-        
-        // Hide memory trails
-        if (sphere.memoryTrailsGroup) {
-            sphere.memoryTrailsGroup.visible = false;
-        }
-        
-        // Hide unit sphere wireframe
-        if (sphere.unitSphere) {
-            sphere.unitSphere.visible = false;
-        }
-        
+        // Note: Don't change point size - let user control it via the UI
+
     } else {
         // Hide great circles
         if (sphere.greatCirclesGroup) {
             sphere.greatCirclesGroup.visible = false;
         }
-        
-        // Restore original point size (use current pointSize from state, or default)
-        // Note: We don't store original size, so we'll use a reasonable default
-        // The UI controls will handle the actual size
-        if (sphere.pointSize === 0.01) {
-            sphere.pointSize = 0.05; // Default size
-            update_all_point_visuals(sphere);
-        }
-        
-        // Show memory trails (if they exist)
-        if (sphere.memoryTrailsGroup) {
-            sphere.memoryTrailsGroup.visible = true;
-        }
-        
-        // Show unit sphere wireframe
-        if (sphere.unitSphere) {
-            sphere.unitSphere.visible = true;
-        }
-        
     }
 
     render_sphere(sphere);
