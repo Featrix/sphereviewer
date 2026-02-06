@@ -6,16 +6,6 @@
 
 /**
  * @license
- * Featrix Sphere Viewer - Data Access Layer
- *
- * Copyright (c) 2024-2025 Featrix
- * Licensed under the MIT License
- *
- * Simplified data access for embeddable version
- */
-
-/**
- * @license
  * Featrix Sphere Viewer - Embeddable 3D Data Visualization Component
  *
  * Copyright (c) 2024-2025 Featrix

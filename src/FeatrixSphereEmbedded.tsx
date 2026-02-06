@@ -2655,9 +2655,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 <div style={{ fontSize: '13px', color: '#aaa', marginBottom: '8px' }}>
                                     Attempt {retryStatus.attempt} | Total wait: {Math.floor(retryStatus.totalElapsed / 60)}m {retryStatus.totalElapsed % 60}s
                                 </div>
-                                <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>
-                                    Will retry for up to 10 minutes
-                                </div>
                             </>
                         ) : (
                             <>
@@ -2733,9 +2730,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 </div>
                                 <div style={{ fontSize: '13px', color: '#aaa', marginBottom: '8px' }}>
                                     Attempt {retryStatus.attempt} | Total wait: {Math.floor(retryStatus.totalElapsed / 60)}m {retryStatus.totalElapsed % 60}s
-                                </div>
-                                <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>
-                                    Will retry for up to 10 minutes
                                 </div>
                             </>
                         ) : (
