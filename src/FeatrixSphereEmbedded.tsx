@@ -3087,6 +3087,151 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 </div>
                             </div>
                         </CollapsibleSection>
+
+                        {/* Panel 4: SEARCH */}
+                        <CollapsibleSection title="SEARCH" defaultOpen={false}>
+                            {columnTypes && Object.keys(columnTypes).length > 0 ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                    {/* Column selector */}
+                                    <label style={{ color: '#b8b8b8', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                        <span>Column</span>
+                                        <select
+                                            value={selectedSearchColumn}
+                                            onChange={(e) => setSelectedSearchColumn(e.target.value)}
+                                            style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: '#202020', color: '#e6e6e6', border: '1px solid #2a2a2a', borderRadius: '3px', cursor: 'pointer', width: '160px' }}
+                                        >
+                                            {Object.keys(columnTypes).map((col) => (
+                                                <option key={col} value={col}>{col}</option>
+                                            ))}
+                                        </select>
+                                    </label>
+
+                                    {/* Search input */}
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                        <input
+                                            type="text"
+                                            value={searchQuery}
+                                            onChange={handleSearchInput}
+                                            onKeyDown={handleSearchKeyDown}
+                                            placeholder="Search..."
+                                            style={{
+                                                flex: 1,
+                                                height: '32px',
+                                                background: '#202020',
+                                                border: '1px solid #2a2a2a',
+                                                color: '#e6e6e6',
+                                                padding: '0 10px',
+                                                borderRadius: '4px',
+                                                fontSize: '12px',
+                                            }}
+                                        />
+                                        <button
+                                            onClick={handleSearchSubmit}
+                                            disabled={!searchQuery.trim()}
+                                            style={{
+                                                width: '48px',
+                                                height: '32px',
+                                                background: searchQuery.trim() ? '#64b5f6' : '#202020',
+                                                border: '1px solid #2a2a2a',
+                                                color: searchQuery.trim() ? '#141414' : '#8f8f8f',
+                                                padding: '0',
+                                                borderRadius: '4px',
+                                                cursor: searchQuery.trim() ? 'pointer' : 'not-allowed',
+                                                fontSize: '11px',
+                                                fontWeight: 600,
+                                            }}
+                                        >
+                                            GO
+                                        </button>
+                                        {searchQuery && (
+                                            <button
+                                                onClick={() => {
+                                                    setSearchQuery('');
+                                                    setSearchResultStats(null);
+                                                    applyColorRules();
+                                                }}
+                                                style={{
+                                                    width: '32px',
+                                                    height: '32px',
+                                                    background: '#202020',
+                                                    border: '1px solid #2a2a2a',
+                                                    color: '#8f8f8f',
+                                                    padding: '0',
+                                                    borderRadius: '4px',
+                                                    cursor: 'pointer',
+                                                    fontSize: '12px',
+                                                }}
+                                            >
+                                                X
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* Color Rules (compact for mobile) */}
+                                    {colorRules.length > 0 && (
+                                        <div style={{ marginTop: '4px' }}>
+                                            <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginBottom: '4px' }}>
+                                                Color Rules ({colorRules.length})
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '100px', overflowY: 'auto' }}>
+                                                {colorRules.map((rule) => (
+                                                    <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px', background: '#181818', borderRadius: '3px' }}>
+                                                        <div style={{ width: '12px', height: '12px', background: rule.color, borderRadius: '2px', flexShrink: 0 }} />
+                                                        <div style={{ flex: 1, fontSize: '10px', color: '#b8b8b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                            {rule.column}: {rule.query} ({rule.recordIds.length})
+                                                        </div>
+                                                        <button
+                                                            onClick={() => setColorRules(prev => prev.filter(r => r.id !== rule.id))}
+                                                            style={{ background: 'transparent', border: 'none', color: '#b8b8b8', padding: '2px 4px', cursor: 'pointer', fontSize: '10px' }}
+                                                        >
+                                                            X
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <button
+                                                onClick={() => setColorRules([])}
+                                                style={{ marginTop: '4px', width: '100%', background: '#2a2a2a', border: 'none', color: '#b8b8b8', padding: '6px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px' }}
+                                            >
+                                                Clear All
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {/* Quick value selection for categorical columns */}
+                                    {columnVocabulary && columnVocabulary.type !== 'scalar' && columnVocabulary.vocabulary && (
+                                        <div style={{ marginTop: '4px' }}>
+                                            <div style={{ fontSize: '11px', color: '#b8b8b8', marginBottom: '4px' }}>Values:</div>
+                                            <div style={{ maxHeight: '80px', overflowY: 'auto', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                                {columnVocabulary.vocabulary.slice(0, 15).map((val, idx) => (
+                                                    <button
+                                                        key={idx}
+                                                        onClick={() => {
+                                                            setSearchQuery(val);
+                                                            const fakeEvent = { target: { value: val } } as React.ChangeEvent<HTMLInputElement>;
+                                                            handleSearchInput(fakeEvent);
+                                                        }}
+                                                        style={{
+                                                            background: '#222222',
+                                                            border: searchQuery === val ? '1px solid #64b5f6' : '1px solid #2a2a2a',
+                                                            color: searchQuery === val ? '#64b5f6' : '#b8b8b8',
+                                                            padding: '2px 6px',
+                                                            borderRadius: '3px',
+                                                            cursor: 'pointer',
+                                                            fontSize: '10px',
+                                                        }}
+                                                    >
+                                                        {val.length > 12 ? val.substring(0, 12) + '...' : val}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <div style={{ fontSize: '12px', color: '#b8b8b8' }}>No searchable columns</div>
+                            )}
+                        </CollapsibleSection>
                     </div>
                 </div>
             </>
@@ -3094,6 +3239,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
 
             {/* Sphere Container - fills remaining space */}
             <div style={{
+                gridColumn: isMobile || isThumbnail ? '1' : '2',
                 position: 'relative',
                 background: '#232323',
                 minHeight: 0,

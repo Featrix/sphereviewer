@@ -1031,10 +1031,14 @@ export function update_all_point_visuals(sphere: SphereData) {
         // Update geometry for size change
         mesh.geometry.dispose(); // Clean up old geometry
         mesh.geometry = new THREE.SphereGeometry(sphere.pointSize, 16, 16);
-        
+
+        // CRITICAL: Reset scale to 1.0 - dynamic point sizing may have changed it
+        mesh.scale.setScalar(1.0);
+
         // Update material for opacity change
         if (mesh.material instanceof THREE.MeshBasicMaterial) {
             mesh.material.opacity = sphere.pointOpacity;
+            mesh.material.transparent = sphere.pointOpacity < 1.0;
             mesh.material.needsUpdate = true;
         }
     });
@@ -1224,14 +1228,11 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
     if (!sphere.trainingMovieData || sphere.isPlayingMovie) return;
     
     sphere.isPlayingMovie = true;
-    
-    // CRITICAL: Stop auto-rotation during training movie to preserve manual rotation
-    // The user's manual rotation should be preserved, not overridden by auto-rotation
-    const wasAnimating = sphere.isAnimating;
-    if (wasAnimating) {
-        stop_animation(sphere);
-    }
-    
+
+    // Let auto-rotation continue during training movie - this gives a nice visual effect
+    // where the sphere slowly rotates while epochs are playing
+    // The animation loop handles rotation, training movie just updates point positions
+
     const epochKeys = Object.keys(sphere.trainingMovieData).sort((a, b) => {
         const epochA = parseInt(a.replace('epoch_', ''));
         const epochB = parseInt(b.replace('epoch_', ''));
@@ -1247,81 +1248,45 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
 
     
     sphere.currentEpoch = 0;
-    sphere.isInRotationPhase = false;
-    sphere.rotationStartTime = undefined;
-    // Preserve current camera angle instead of resetting it
-    // sphere.rotationStartAngle = undefined;
-    sphere.rotationStartAngle = sphere.angle; // Preserve current rotation
-    
+
     const animate = () => {
         if (!sphere.isPlayingMovie) return;
-        
-        if (!sphere.isInRotationPhase) {
-            // Training phase
-            const currentEpochKey = epochKeys[sphere.currentEpoch];
-            const epochData = sphere.trainingMovieData?.[currentEpochKey];
-            
-            // Check if this epoch has valid data before updating
-            if (epochData && epochData.coords && epochData.coords.length > 0) {
-                // Update frame
-                update_training_movie_frame(sphere, currentEpochKey);
-            } else {
-            }
-        } else {
-            // Rotation phase - 0.5 degrees per frame at 30fps
-            const frameRate = 30; // 30 fps
-            const degreesPerFrame = 0.5; // 0.5 degrees per frame
-            const elapsed = Date.now() - (sphere.rotationStartTime || 0);
-            
-            // Calculate how many frames should have passed
-            const expectedFrames = Math.floor((elapsed / 1000) * frameRate);
-            const currentAngle = expectedFrames * (degreesPerFrame * Math.PI / 180); // Convert degrees to radians
-            
-            // Update camera angle smoothly
-            sphere.angle = (sphere.rotationStartAngle || 0) + currentAngle;
-            
-            
-            render_sphere(sphere);
-            
-            // Update frame counter for rotation
+
+        // Update current frame
+        const currentEpochKey = epochKeys[sphere.currentEpoch];
+        const epochData = sphere.trainingMovieData?.[currentEpochKey];
+
+        // Check if this epoch has valid data before updating
+        if (epochData && epochData.coords && epochData.coords.length > 0) {
+            update_training_movie_frame(sphere, currentEpochKey);
+        }
+
+        // Increment epoch and check for completion
+        sphere.currentEpoch++;
+
+        if (sphere.currentEpoch >= totalFrames) {
+            // Training complete - set final state and stop movie timer
+            // Auto-rotation will continue naturally from the animation loop
+            const finalEpochKey = epochKeys[epochKeys.length - 1];
+            update_training_movie_frame(sphere, finalEpochKey, true); // Force final state
+
+            // Notify final frame
             if (sphere.frameUpdateCallback) {
                 sphere.frameUpdateCallback({
                     current: totalFrames,
                     total: totalFrames,
-                    visible: 12, // Show all clusters during rotation
-                    phase: `rotating (${(currentAngle * 180 / Math.PI).toFixed(0)}°)`
+                    visible: 12,
+                    phase: 'complete'
                 });
             }
-            
-            // Continue rotation indefinitely at 30fps
+
+            sphere.isPlayingMovie = false;
+            return; // Stop the training movie timer, auto-rotation continues
         }
-        
-        // Only increment epoch during training phase, not during rotation
-        if (!sphere.isInRotationPhase) {
-            sphere.currentEpoch++;
-            
-            if (sphere.currentEpoch >= totalFrames) {
-                // Training complete, start rotation phase
-                
-                // Set final converged state before rotation
-                const finalEpochKey = epochKeys[epochKeys.length - 1];
-                update_training_movie_frame(sphere, finalEpochKey, true); // Force final state
-                
-                sphere.isInRotationPhase = true;
-                sphere.rotationStartTime = Date.now();
-                sphere.rotationStartAngle = sphere.angle; // Current camera angle
-            }
-        }
-        
-        // Schedule next frame or rotation update
+
+        // Schedule next frame
         if (sphere.isPlayingMovie) {
-            if (sphere.isInRotationPhase) {
-                // 30fps for smooth rotation (33.33ms per frame)
-                sphere.movieAnimationRef = setTimeout(animate, 1000 / 30);
-            } else {
-                // Normal training frame rate
-                sphere.movieAnimationRef = setTimeout(animate, frameDelay);
-            }
+            sphere.movieAnimationRef = setTimeout(animate, frameDelay);
         }
     };
     
@@ -1366,13 +1331,7 @@ export function step_training_movie_frame(sphere: SphereData, direction: 'forwar
     if (!sphere.trainingMovieData) {
         return;
     }
-    
-    // Pause rotation and allow scrubbing
-    if (sphere.isInRotationPhase) {
-        pause_training_movie(sphere);
-        sphere.isInRotationPhase = false;
-    }
-    
+
     // Pause if currently playing
     if (sphere.isPlayingMovie) {
         pause_training_movie(sphere);
@@ -1403,13 +1362,7 @@ export function goto_training_movie_frame(sphere: SphereData, frameNumber: numbe
     if (!sphere.trainingMovieData) {
         return;
     }
-    
-    // Pause rotation and allow scrubbing
-    if (sphere.isInRotationPhase) {
-        pause_training_movie(sphere);
-        sphere.isInRotationPhase = false;
-    }
-    
+
     // Pause if currently playing
     if (sphere.isPlayingMovie) {
         pause_training_movie(sphere);
@@ -3206,11 +3159,12 @@ function update_dynamic_point_sizes(sphere: SphereData) {
 function reset_point_sizes_to_default(sphere: SphereData) {
     let pointsReset = 0;
     sphere.pointObjectsByRecordID.forEach((pointMesh, recordId) => {
-        // Reset to default scale and opacity
-        pointMesh.scale.setScalar(1.0); // Default scale
+        // Reset scale to 1.0 (geometry already has user's pointSize)
+        pointMesh.scale.setScalar(1.0);
+        // Restore user's opacity setting, not hardcoded 1.0
         if (pointMesh.material instanceof THREE.MeshBasicMaterial) {
-            pointMesh.material.transparent = false;
-            pointMesh.material.opacity = 1.0; // Fully opaque
+            pointMesh.material.opacity = sphere.pointOpacity;
+            pointMesh.material.transparent = sphere.pointOpacity < 1.0;
             pointMesh.material.needsUpdate = true;
         }
         pointsReset++;
