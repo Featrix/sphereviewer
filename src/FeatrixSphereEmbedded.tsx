@@ -14,6 +14,7 @@ import TrainingStatus from '../training_status';
 import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch, setRetryStatusCallback } from './embed-data-access';
 import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles, register_event_listener, set_cluster_color_mode, compute_epoch_movement_stats } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
+import CollapsibleSection from './components/CollapsibleSection';
 
 // Build timestamp for cache busting verification - set at module load time
 const BUILD_TIMESTAMP = new Date().toISOString();
@@ -2908,194 +2909,197 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 color: '#d0d0d0',
             }}>
                 {/* TRAINING STATUS */}
-                <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', margin: '0 0 8px 0' }}>TRAINING STATUS</div>
-                <div className="build-display" style={{ marginBottom: '16px' }}>
-                    <div style={{ color: '#666', fontSize: '11px' }}>v{BUILD_TIMESTAMP.slice(0, 19).replace('T', ' ')}</div>
-                    {trainingStatus === 'training' && (
-                        <div style={{ marginTop: '6px' }}>
-                            <div style={{ color: '#4caf50', fontSize: '12px', fontWeight: 500 }}>Training in progress</div>
-                            <div style={{ color: '#cfd8dc', fontSize: '11px', marginTop: '2px' }}>Checking for new frames in {nextCheckCountdown}s</div>
-                        </div>
-                    )}
-                    {trainingStatus === 'completed' && (
-                        <div style={{ marginTop: '6px' }}>
-                            <div style={{ color: '#4caf50', fontSize: '12px', fontWeight: 500 }}>Training Completed</div>
-                        </div>
-                    )}
-                    {frameInfo && (
-                        <div style={{ marginTop: '6px' }}>
-                            <div style={{ color: '#cfd8dc', fontSize: '12px' }}>Frame {frameInfo.current}/{frameInfo.total} | {frameInfo.visible} clusters</div>
-                            <div style={{ marginTop: '6px', background: '#2a2a2a', borderRadius: '3px', overflow: 'hidden', height: '4px', width: '100%' }}>
-                                <div style={{ background: '#4caf50', height: '100%', width: `${(frameInfo.current / frameInfo.total) * 100}%`, transition: 'width 0.2s ease' }} />
+                <CollapsibleSection title="TRAINING STATUS">
+                    <div className="build-display" style={{ marginBottom: '16px' }}>
+                        <div style={{ color: '#666', fontSize: '13px' }}>v{BUILD_TIMESTAMP.slice(0, 19).replace('T', ' ')}</div>
+                        {trainingStatus === 'training' && (
+                            <div style={{ marginTop: '6px' }}>
+                                <div style={{ color: '#4caf50', fontSize: '14px', fontWeight: 500 }}>Training in progress</div>
+                                <div style={{ color: '#cfd8dc', fontSize: '13px', marginTop: '2px' }}>Checking for new frames in {nextCheckCountdown}s</div>
                             </div>
-                            {frameInfo.epoch && <div style={{ color: '#cfd8dc', marginTop: '4px', fontSize: '12px' }}>Epoch {frameInfo.epoch}</div>}
-                            {frameInfo.validationLoss !== undefined && <div style={{ color: '#cfd8dc', marginTop: '2px', fontSize: '12px' }}>Loss: {frameInfo.validationLoss.toFixed(4)}</div>}
+                        )}
+                        {trainingStatus === 'completed' && (
+                            <div style={{ marginTop: '6px' }}>
+                                <div style={{ color: '#4caf50', fontSize: '14px', fontWeight: 500 }}>Training Completed</div>
+                            </div>
+                        )}
+                        {frameInfo && (
+                            <div style={{ marginTop: '6px' }}>
+                                <div style={{ color: '#cfd8dc', fontSize: '14px' }}>Frame {frameInfo.current}/{frameInfo.total} | {frameInfo.visible} clusters</div>
+                                <div style={{ marginTop: '6px', background: '#2a2a2a', borderRadius: '3px', overflow: 'hidden', height: '4px', width: '100%' }}>
+                                    <div style={{ background: '#4caf50', height: '100%', width: `${(frameInfo.current / frameInfo.total) * 100}%`, transition: 'width 0.2s ease' }} />
+                                </div>
+                                {frameInfo.epoch && <div style={{ color: '#cfd8dc', marginTop: '4px', fontSize: '14px' }}>Epoch {frameInfo.epoch}</div>}
+                                {frameInfo.validationLoss !== undefined && <div style={{ color: '#cfd8dc', marginTop: '2px', fontSize: '14px' }}>Loss: {frameInfo.validationLoss.toFixed(4)}</div>}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Loss Plot */}
+                    {lossData && (() => {
+                        let validationLossData = null;
+                        if (lossData.validation_loss && Array.isArray(lossData.validation_loss)) {
+                            validationLossData = lossData.validation_loss;
+                        } else if (lossData.training_info && lossData.training_info.loss_history) {
+                            validationLossData = lossData.training_info.loss_history.map((item: any) => ({
+                                epoch: item.epoch || item.epoch_number || 0,
+                                value: item.validation_loss || item.loss || 0
+                            }));
+                        } else if (Array.isArray(lossData)) {
+                            validationLossData = lossData;
+                        }
+                        if (!validationLossData || !Array.isArray(validationLossData) || validationLossData.length === 0) return null;
+
+                        let learningRateData = null;
+                        if (lossData.learning_rate && Array.isArray(lossData.learning_rate)) {
+                            learningRateData = lossData.learning_rate;
+                        } else if (lossData.training_info?.loss_history) {
+                            learningRateData = lossData.training_info.loss_history
+                                .filter((item: any) => item.current_learning_rate !== undefined || item.learning_rate !== undefined || item.lr !== undefined)
+                                .map((item: any) => ({ epoch: item.epoch || 0, value: item.current_learning_rate || item.learning_rate || item.lr || 0 }));
+                        }
+
+                        return (
+                            <div style={{ marginBottom: '16px' }}>
+                                <LossPlotOverlay
+                                    lossData={validationLossData}
+                                    learningRateData={learningRateData && learningRateData.length > 0 ? learningRateData : undefined}
+                                    currentEpoch={frameInfo?.epoch}
+                                    title="Validation Loss"
+                                    style={{ width: '100%', height: '120px', pointerEvents: 'none' }}
+                                />
+                            </div>
+                        );
+                    })()}
+
+                    {/* Movement Plot */}
+                    {showMovementPlot && movementData.length > 0 && (
+                        <div style={{ marginBottom: '16px' }}>
+                            <MovementPlotOverlay movementData={movementData} currentEpoch={frameInfo?.epoch} style={{ width: '100%', height: '120px', pointerEvents: 'none' }} />
                         </div>
                     )}
-                </div>
-
-                {/* Loss Plot */}
-                {lossData && (() => {
-                    let validationLossData = null;
-                    if (lossData.validation_loss && Array.isArray(lossData.validation_loss)) {
-                        validationLossData = lossData.validation_loss;
-                    } else if (lossData.training_info && lossData.training_info.loss_history) {
-                        validationLossData = lossData.training_info.loss_history.map((item: any) => ({
-                            epoch: item.epoch || item.epoch_number || 0,
-                            value: item.validation_loss || item.loss || 0
-                        }));
-                    } else if (Array.isArray(lossData)) {
-                        validationLossData = lossData;
-                    }
-                    if (!validationLossData || !Array.isArray(validationLossData) || validationLossData.length === 0) return null;
-
-                    let learningRateData = null;
-                    if (lossData.learning_rate && Array.isArray(lossData.learning_rate)) {
-                        learningRateData = lossData.learning_rate;
-                    } else if (lossData.training_info?.loss_history) {
-                        learningRateData = lossData.training_info.loss_history
-                            .filter((item: any) => item.current_learning_rate !== undefined || item.learning_rate !== undefined || item.lr !== undefined)
-                            .map((item: any) => ({ epoch: item.epoch || 0, value: item.current_learning_rate || item.learning_rate || item.lr || 0 }));
-                    }
-
-                    return (
-                        <div style={{ marginBottom: '16px' }}>
-                            <LossPlotOverlay
-                                lossData={validationLossData}
-                                learningRateData={learningRateData && learningRateData.length > 0 ? learningRateData : undefined}
-                                currentEpoch={frameInfo?.epoch}
-                                title="Validation Loss"
-                                style={{ width: '100%', height: '120px', pointerEvents: 'none' }}
-                            />
-                        </div>
-                    );
-                })()}
-
-                {/* Movement Plot */}
-                {showMovementPlot && movementData.length > 0 && (
-                    <div style={{ marginBottom: '16px' }}>
-                        <MovementPlotOverlay movementData={movementData} currentEpoch={frameInfo?.epoch} style={{ width: '100%', height: '120px', pointerEvents: 'none' }} />
-                    </div>
-                )}
+                </CollapsibleSection>
 
                 {/* SETTINGS */}
-                <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', margin: '20px 0 8px 0' }}>SETTINGS</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <label style={{ color: '#cfd8dc', fontSize: '13px', display: 'flex', alignItems: 'center' }}>
-                        Point Size:
-                        <select
-                            value={pointSize}
-                            onChange={(e) => {
-                                const newSize = parseFloat(e.target.value);
-                                setPointSize(newSize);
-                                if (sphereRef) {
-                                    set_visual_options(sphereRef, newSize, pointAlpha);
-                                    render_sphere(sphereRef);
-                                }
-                            }}
-                            style={{ marginLeft: '8px', fontSize: '12px', padding: '4px 6px', backgroundColor: '#2a2a2a', color: '#e0e0e0', border: '1px solid #333', borderRadius: '3px', cursor: 'pointer', flex: 1 }}
-                        >
-                            <option value={0.02}>0.02 (Tiny)</option>
-                            <option value={0.04}>0.04 (Small)</option>
-                            <option value={0.06}>0.06 (Medium)</option>
-                            <option value={0.08}>0.08 (Default)</option>
-                            <option value={0.10}>0.10 (Large)</option>
-                            <option value={0.15}>0.15 (X-Large)</option>
-                            <option value={0.20}>0.20 (Huge)</option>
-                        </select>
-                    </label>
-                    <label style={{ color: '#cfd8dc', fontSize: '13px', display: 'flex', alignItems: 'center' }}>
-                        Alpha:
-                        <select
-                            value={pointAlpha}
-                            onChange={(e) => {
-                                const newAlpha = parseFloat(e.target.value);
-                                setPointAlpha(newAlpha);
-                                if (sphereRef) {
-                                    set_visual_options(sphereRef, pointSize, newAlpha);
-                                    render_sphere(sphereRef);
-                                }
-                            }}
-                            style={{ marginLeft: '8px', fontSize: '12px', padding: '4px 6px', backgroundColor: '#2a2a2a', color: '#e0e0e0', border: '1px solid #333', borderRadius: '3px', cursor: 'pointer', flex: 1 }}
-                        >
-                            <option value={0.25}>25%</option>
-                            <option value={0.50}>50%</option>
-                            <option value={0.75}>75%</option>
-                            <option value={1.00}>100%</option>
-                        </select>
-                    </label>
-                    <label style={{ color: '#cfd8dc', fontSize: '13px', display: 'flex', alignItems: 'center' }}>
-                        Trail Length:
-                        <select
-                            value={trailLength}
-                            onChange={(e) => { const newLength = parseInt(e.target.value); setTrailLength(newLength); }}
-                            style={{ marginLeft: '8px', fontSize: '12px', padding: '4px 6px', backgroundColor: '#2a2a2a', color: '#e0e0e0', border: '1px solid #333', borderRadius: '3px', cursor: 'pointer', flex: 1 }}
-                        >
-                            <option value={2}>2 frames</option>
-                            <option value={5}>5 frames</option>
-                            <option value={8}>8 frames</option>
-                            <option value={10}>10 frames</option>
-                            <option value={15}>15 frames</option>
-                        </select>
-                    </label>
-                </div>
-                {/* SECTION 2: TOOLS */}
-                <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', margin: '20px 0 8px 0' }}>TOOLS</div>
-                <div style={{ marginBottom: '16px' }}>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <button onClick={() => setShowSearch(!showSearch)} style={{ background: showSearch ? '#4c4' : '#2a2a2a', border: 'none', color: '#e0e0e0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0, flex: 1 }} title="Toggle Search">Search</button>
-                        <button onClick={() => { setShowBoundsBox(!showBoundsBox); if (sphereRef) { toggle_bounds_box(sphereRef, !showBoundsBox); render_sphere(sphereRef); } }} style={{ background: showBoundsBox ? '#4c4' : '#2a2a2a', border: 'none', color: '#e0e0e0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0, flex: 1 }} title="Toggle Bounds Box">Bounds</button>
-                        <button onClick={() => {
-                            if (sphereRef) {
-                                toggle_embedding_hull(sphereRef, !sphereRef.showEmbeddingHull);
-                                render_sphere(sphereRef);
-                            }
-                        }} style={{ background: sphereRef?.showEmbeddingHull ? '#4c4' : '#2a2a2a', border: 'none', color: '#e0e0e0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0, flex: 1 }} title="Toggle Embedding Convex Hull">Hull</button>
+                <CollapsibleSection title="SETTINGS">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <label style={{ color: '#cfd8dc', fontSize: '13px', display: 'flex', alignItems: 'center' }}>
+                            Point Size:
+                            <select
+                                value={pointSize}
+                                onChange={(e) => {
+                                    const newSize = parseFloat(e.target.value);
+                                    setPointSize(newSize);
+                                    if (sphereRef) {
+                                        set_visual_options(sphereRef, newSize, pointAlpha);
+                                        render_sphere(sphereRef);
+                                    }
+                                }}
+                                style={{ marginLeft: '8px', fontSize: '14px', padding: '4px 6px', backgroundColor: '#2a2a2a', color: '#e0e0e0', border: '1px solid #333', borderRadius: '3px', cursor: 'pointer', flex: 1 }}
+                            >
+                                <option value={0.02}>0.02 (Tiny)</option>
+                                <option value={0.04}>0.04 (Small)</option>
+                                <option value={0.06}>0.06 (Medium)</option>
+                                <option value={0.08}>0.08 (Default)</option>
+                                <option value={0.10}>0.10 (Large)</option>
+                                <option value={0.15}>0.15 (X-Large)</option>
+                                <option value={0.20}>0.20 (Huge)</option>
+                            </select>
+                        </label>
+                        <label style={{ color: '#cfd8dc', fontSize: '13px', display: 'flex', alignItems: 'center' }}>
+                            Alpha:
+                            <select
+                                value={pointAlpha}
+                                onChange={(e) => {
+                                    const newAlpha = parseFloat(e.target.value);
+                                    setPointAlpha(newAlpha);
+                                    if (sphereRef) {
+                                        set_visual_options(sphereRef, pointSize, newAlpha);
+                                        render_sphere(sphereRef);
+                                    }
+                                }}
+                                style={{ marginLeft: '8px', fontSize: '14px', padding: '4px 6px', backgroundColor: '#2a2a2a', color: '#e0e0e0', border: '1px solid #333', borderRadius: '3px', cursor: 'pointer', flex: 1 }}
+                            >
+                                <option value={0.25}>25%</option>
+                                <option value={0.50}>50%</option>
+                                <option value={0.75}>75%</option>
+                                <option value={1.00}>100%</option>
+                            </select>
+                        </label>
+                        <label style={{ color: '#cfd8dc', fontSize: '13px', display: 'flex', alignItems: 'center' }}>
+                            Trail Length:
+                            <select
+                                value={trailLength}
+                                onChange={(e) => { const newLength = parseInt(e.target.value); setTrailLength(newLength); }}
+                                style={{ marginLeft: '8px', fontSize: '14px', padding: '4px 6px', backgroundColor: '#2a2a2a', color: '#e0e0e0', border: '1px solid #333', borderRadius: '3px', cursor: 'pointer', flex: 1 }}
+                            >
+                                <option value={2}>2 frames</option>
+                                <option value={5}>5 frames</option>
+                                <option value={8}>8 frames</option>
+                                <option value={10}>10 frames</option>
+                                <option value={15}>15 frames</option>
+                            </select>
+                        </label>
                     </div>
-                    {/* Loading Progress */}
-                    {loadingProgress && loadingProgress.loaded < loadingProgress.total && (
-                        <div style={{ marginTop: '8px', fontSize: '11px', color: '#8a8a8a' }}>
-                            Loading: {loadingProgress.loaded} / {loadingProgress.total} ({(loadingProgress.loaded / loadingProgress.total * 100).toFixed(1)}%)
+                </CollapsibleSection>
+
+                {/* SECTION 2: TOOLS */}
+                <CollapsibleSection title="TOOLS">
+                    <div style={{ marginBottom: '16px' }}>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <button onClick={() => setShowSearch(!showSearch)} style={{ background: showSearch ? '#4c4' : '#2a2a2a', border: 'none', color: '#e0e0e0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0, flex: 1 }} title="Toggle Search">Search</button>
+                            <button onClick={() => { setShowBoundsBox(!showBoundsBox); if (sphereRef) { toggle_bounds_box(sphereRef, !showBoundsBox); render_sphere(sphereRef); } }} style={{ background: showBoundsBox ? '#4c4' : '#2a2a2a', border: 'none', color: '#e0e0e0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0, flex: 1 }} title="Toggle Bounds Box">Bounds</button>
+                            <button onClick={() => {
+                                if (sphereRef) {
+                                    toggle_embedding_hull(sphereRef, !sphereRef.showEmbeddingHull);
+                                    render_sphere(sphereRef);
+                                }
+                            }} style={{ background: sphereRef?.showEmbeddingHull ? '#4c4' : '#2a2a2a', border: 'none', color: '#e0e0e0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0, flex: 1 }} title="Toggle Embedding Convex Hull">Hull</button>
                         </div>
-                    )}
-                    {showBoundsBox && sphereRef && sphereRef.boundsBoxVolumeUtilization !== undefined && (
-                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#cfd8dc' }}>
-                            Sphere Coverage: <strong>{sphereRef.boundsBoxVolumeUtilization.toFixed(2)}%</strong>
-                            <div style={{ fontSize: '11px', color: '#8a8a8a', marginTop: '2px' }}>
-                                {sphereRef.boundsBoxVolumeUtilization.toFixed(2)}% of unit sphere radius covered
+                        {/* Loading Progress */}
+                        {loadingProgress && loadingProgress.loaded < loadingProgress.total && (
+                            <div style={{ marginTop: '8px', fontSize: '13px', color: '#8a8a8a' }}>
+                                Loading: {loadingProgress.loaded} / {loadingProgress.total} ({(loadingProgress.loaded / loadingProgress.total * 100).toFixed(1)}%)
                             </div>
-                            <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <input
-                                    type="checkbox"
-                                    checked={showGreatCircles}
-                                    onChange={(e) => {
-                                        const enabled = e.target.checked;
-                                        setShowGreatCircles(enabled);
-                                        if (sphereRef) {
-                                            toggle_great_circles(sphereRef, enabled);
-                                        }
-                                    }}
-                                    style={{ cursor: 'pointer', width: '14px', height: '14px' }}
-                                    id="show-great-circles-checkbox"
-                                />
-                                <label
-                                    htmlFor="show-great-circles-checkbox"
-                                    style={{ fontSize: '12px', color: '#cfd8dc', cursor: 'pointer' }}
-                                >
-                                    Show great circles
-                                </label>
+                        )}
+                        {showBoundsBox && sphereRef && sphereRef.boundsBoxVolumeUtilization !== undefined && (
+                            <div style={{ marginTop: '8px', fontSize: '14px', color: '#cfd8dc' }}>
+                                Sphere Coverage: <strong>{sphereRef.boundsBoxVolumeUtilization.toFixed(2)}%</strong>
+                                <div style={{ fontSize: '13px', color: '#8a8a8a', marginTop: '2px' }}>
+                                    {sphereRef.boundsBoxVolumeUtilization.toFixed(2)}% of unit sphere radius covered
+                                </div>
+                                <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={showGreatCircles}
+                                        onChange={(e) => {
+                                            const enabled = e.target.checked;
+                                            setShowGreatCircles(enabled);
+                                            if (sphereRef) {
+                                                toggle_great_circles(sphereRef, enabled);
+                                            }
+                                        }}
+                                        style={{ cursor: 'pointer', width: '14px', height: '14px' }}
+                                        id="show-great-circles-checkbox"
+                                    />
+                                    <label
+                                        htmlFor="show-great-circles-checkbox"
+                                        style={{ fontSize: '14px', color: '#cfd8dc', cursor: 'pointer' }}
+                                    >
+                                        Show great circles
+                                    </label>
+                                </div>
                             </div>
-                        </div>
-                    )}
-                    {sphereRef?.showEmbeddingHull && sphereRef.embeddingHullArea !== undefined && (sphereRef as any).embeddingHullCoverage !== undefined && (
-                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#cfd8dc' }}>
-                            Convex Hull Area: <strong>{sphereRef.embeddingHullArea.toFixed(4)}</strong>
-                            <div style={{ fontSize: '11px', color: '#8a8a8a', marginTop: '2px' }}>
-                                Unit sphere area: {(4 * Math.PI).toFixed(4)} | Coverage: <strong>{(sphereRef as any).embeddingHullCoverage.toFixed(2)}%</strong>
+                        )}
+                        {sphereRef?.showEmbeddingHull && sphereRef.embeddingHullArea !== undefined && (sphereRef as any).embeddingHullCoverage !== undefined && (
+                            <div style={{ marginTop: '8px', fontSize: '14px', color: '#cfd8dc' }}>
+                                Convex Hull Area: <strong>{sphereRef.embeddingHullArea.toFixed(4)}</strong>
+                                <div style={{ fontSize: '13px', color: '#8a8a8a', marginTop: '2px' }}>
+                                    Unit sphere area: {(4 * Math.PI).toFixed(4)} | Coverage: <strong>{(sphereRef as any).embeddingHullCoverage.toFixed(2)}%</strong>
+                                </div>
                             </div>
-                        </div>
-                    )}
-                </div>
+                        )}
+                    </div>
 
                 {/* Search Panel */}
                 {showSearch && columnTypes && Object.keys(columnTypes).length > 0 && (
@@ -3423,6 +3427,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         </div>
                     </div>
                 )}
+                </CollapsibleSection>
+
                 {/* SECTION 4: VISUAL CONTROLS */}
                 {frameInfo && (
                     <div style={{ marginBottom: '16px' }}>
