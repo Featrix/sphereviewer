@@ -484,28 +484,18 @@ function add_floor_and_grid(sphere: SphereData) {
 }
 
 const kColorTable = [
-    0xe6194b,
-    0x3cb44b,
-    0xffe119,
-    0x4363d8,
-    0xf58231,
-    0x911eb4,
-    0x46f0f0,
-    0xf032e6,
-    0xbcf60c,
-    0xfabebe,
-    0x008080,
-    0xe6beff,
-    0x9a6324,
-    0xfffac8,
-    0x800000,
-    0xaaffc3,
-    0x808000,
-    0xffd8b1,
-    0x999999,
-    0x0000ff,
-    0x00ff00,
-    0xffcccc,
+    0x4C78A8, // C0 muted blue
+    0x72B7B2, // C1 teal
+    0xF58518, // C2 soft orange
+    0xE45756, // C3 muted red
+    0x54A24B, // C4 green
+    0xB279A2, // C5 purple
+    0xFF9DA6, // C6 dusty pink
+    0x9D755D, // C7 brown
+    0xBAB0AC, // C8 warm gray
+    0x79706E, // C9 cool gray
+    0xD37295, // C10 rose
+    0x8F6D31, // C11 ochre
 ];
 
 /**

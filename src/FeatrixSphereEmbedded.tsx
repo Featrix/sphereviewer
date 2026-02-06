@@ -29,7 +29,17 @@ const LossPlotOverlay: React.FC<{
 }> = ({ lossData, learningRateData, currentEpoch, title = 'Validation Loss', style }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const modalCanvasRef = useRef<HTMLCanvasElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
     const [showModal, setShowModal] = useState(false);
+
+    // Hover state for tooltip
+    const [hoverInfo, setHoverInfo] = useState<{
+        x: number;
+        y: number;
+        epoch: number;
+        loss: number;
+        lr?: number;
+    } | null>(null);
     
     // Zoom and pan state
     const [zoomState, setZoomState] = useState({
@@ -789,25 +799,134 @@ const LossPlotOverlay: React.FC<{
             drawGraph(modalCanvasRef.current, true);
         }
     }, [showModal, drawGraph]);
-    
+
+    // Handle hover for tooltip
+    const handleHover = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+        const canvas = canvasRef.current;
+        if (!canvas || !lossData || lossData.length === 0) {
+            setHoverInfo(null);
+            return;
+        }
+
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const x = (e.clientX - rect.left) * scaleX;
+        const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+        const leftPadding = 70;
+        const rightPadding = learningRateData && learningRateData.length > 0 ? 70 : 20;
+        const topPadding = 35;
+        const plotWidth = canvas.width - leftPadding - rightPadding;
+        const plotHeight = canvas.height - topPadding - 35;
+
+        // Check if mouse is over plot area
+        if (x < leftPadding || x > leftPadding + plotWidth || y < topPadding || y > topPadding + plotHeight) {
+            setHoverInfo(null);
+            return;
+        }
+
+        // Calculate epoch at mouse position
+        const epochs = lossData.map(d => typeof d.epoch === 'string' ? parseInt(d.epoch) : d.epoch);
+        const minEpoch = Math.min(...epochs);
+        const maxEpoch = Math.max(...epochs);
+        const epochAtMouse = minEpoch + ((x - leftPadding) / plotWidth) * (maxEpoch - minEpoch);
+
+        // Find closest data point
+        let closestPoint = lossData[0];
+        let closestDist = Infinity;
+        lossData.forEach(point => {
+            const epoch = typeof point.epoch === 'string' ? parseInt(point.epoch) : point.epoch;
+            const dist = Math.abs(epoch - epochAtMouse);
+            if (dist < closestDist) {
+                closestDist = dist;
+                closestPoint = point;
+            }
+        });
+
+        const closestEpoch = typeof closestPoint.epoch === 'string' ? parseInt(closestPoint.epoch) : closestPoint.epoch;
+
+        // Find learning rate at same epoch if available
+        let lrValue: number | undefined;
+        if (learningRateData && learningRateData.length > 0) {
+            const lrPoint = learningRateData.find(p => {
+                const e = typeof p.epoch === 'string' ? parseInt(p.epoch) : p.epoch;
+                return e === closestEpoch;
+            });
+            if (lrPoint) lrValue = lrPoint.value;
+        }
+
+        // Convert to screen coordinates for tooltip positioning
+        setHoverInfo({
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top,
+            epoch: closestEpoch,
+            loss: closestPoint.value,
+            lr: lrValue
+        });
+    }, [lossData, learningRateData]);
+
+    const handleMouseLeave = useCallback(() => {
+        setHoverInfo(null);
+    }, []);
+
     return (
         <>
-            <div 
-                style={{...style, cursor: 'pointer'}}
+            <div
+                ref={containerRef}
+                style={{...style, cursor: 'pointer', position: 'relative'}}
                 onClick={() => setShowModal(true)}
+                onMouseMove={handleHover}
+                onMouseLeave={handleMouseLeave}
                 title="Click to enlarge graph"
             >
-                <canvas 
+                <canvas
                     ref={canvasRef}
                     width="600"
                     height="150"
-                    style={{ 
-                        width: '100%', 
+                    style={{
+                        width: '100%',
                         height: '100%',
                         borderRadius: '6px',
                         border: '1px solid rgba(255,255,255,0.2)'
                     }}
                 />
+
+                {/* Vertical cursor line on hover */}
+                {hoverInfo && (
+                    <div style={{
+                        position: 'absolute',
+                        left: `${hoverInfo.x}px`,
+                        top: '23%',
+                        width: '1px',
+                        height: '54%',
+                        background: 'rgba(255,255,255,0.6)',
+                        pointerEvents: 'none'
+                    }} />
+                )}
+
+                {/* Tooltip on hover */}
+                {hoverInfo && (
+                    <div style={{
+                        position: 'absolute',
+                        left: `${Math.min(hoverInfo.x + 10, (containerRef.current?.offsetWidth || 200) - 120)}px`,
+                        top: `${Math.max(10, hoverInfo.y - 60)}px`,
+                        background: '#1e1e1e',
+                        border: '1px solid #2a2a2a',
+                        color: '#e0e0e0',
+                        fontSize: '11px',
+                        padding: '6px 8px',
+                        borderRadius: '4px',
+                        pointerEvents: 'none',
+                        zIndex: 100,
+                        whiteSpace: 'nowrap'
+                    }}>
+                        <div><strong>Epoch:</strong> {hoverInfo.epoch}</div>
+                        <div><strong>Loss:</strong> {hoverInfo.loss.toFixed(4)}</div>
+                        {hoverInfo.lr !== undefined && (
+                            <div><strong>LR:</strong> {hoverInfo.lr.toExponential(2)}</div>
+                        )}
+                    </div>
+                )}
             </div>
             
             {/* Modal Popover */}
@@ -887,6 +1006,15 @@ const MovementPlotOverlay: React.FC<{
     style?: React.CSSProperties
 }> = ({ movementData, currentEpoch, style }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [showModal, setShowModal] = useState(false);
+    const [hoverInfo, setHoverInfo] = useState<{
+        x: number;
+        epoch: number;
+        mean: number;
+        median: number;
+        p90: number;
+    } | null>(null);
 
     const drawGraph = useCallback((canvas: HTMLCanvasElement) => {
         if (!canvas || !movementData || movementData.length === 0) return;
@@ -1065,8 +1193,67 @@ const MovementPlotOverlay: React.FC<{
         }
     }, [drawGraph]);
 
+    // Hover handler
+    const handleHover = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+        const canvas = canvasRef.current;
+        if (!canvas || !movementData || movementData.length === 0) {
+            setHoverInfo(null);
+            return;
+        }
+
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const x = (e.clientX - rect.left) * scaleX;
+
+        const leftPadding = 60;
+        const rightPadding = 20;
+        const plotWidth = canvas.width - leftPadding - rightPadding;
+
+        if (x < leftPadding || x > leftPadding + plotWidth) {
+            setHoverInfo(null);
+            return;
+        }
+
+        const epochs = movementData.map(d => parseInt(d.epoch.replace('epoch_', '')));
+        const minEpoch = Math.min(...epochs);
+        const maxEpoch = Math.max(...epochs);
+        const epochRange = maxEpoch - minEpoch || 1;
+        const epochAtMouse = minEpoch + ((x - leftPadding) / plotWidth) * epochRange;
+
+        // Find closest data point
+        let closestIdx = 0;
+        let closestDist = Infinity;
+        epochs.forEach((epoch, i) => {
+            const dist = Math.abs(epoch - epochAtMouse);
+            if (dist < closestDist) {
+                closestDist = dist;
+                closestIdx = i;
+            }
+        });
+
+        const d = movementData[closestIdx];
+        setHoverInfo({
+            x: e.clientX - rect.left,
+            epoch: epochs[closestIdx],
+            mean: d.mean,
+            median: d.median,
+            p90: d.p90
+        });
+    }, [movementData]);
+
+    const handleMouseLeave = useCallback(() => {
+        setHoverInfo(null);
+    }, []);
+
     return (
-        <div style={{...style}}>
+        <div
+            ref={containerRef}
+            style={{...style, position: 'relative', cursor: 'pointer'}}
+            onMouseMove={handleHover}
+            onMouseLeave={handleMouseLeave}
+            onClick={() => setShowModal(true)}
+            title="Click to enlarge"
+        >
             <canvas
                 ref={canvasRef}
                 width="600"
@@ -1078,6 +1265,117 @@ const MovementPlotOverlay: React.FC<{
                     border: '1px solid rgba(255,255,255,0.2)'
                 }}
             />
+
+            {/* Vertical cursor line */}
+            {hoverInfo && (
+                <div style={{
+                    position: 'absolute',
+                    left: `${hoverInfo.x}px`,
+                    top: '20%',
+                    width: '1px',
+                    height: '60%',
+                    background: 'rgba(255,255,255,0.6)',
+                    pointerEvents: 'none'
+                }} />
+            )}
+
+            {/* Tooltip */}
+            {hoverInfo && (
+                <div style={{
+                    position: 'absolute',
+                    left: `${Math.min(hoverInfo.x + 10, (containerRef.current?.offsetWidth || 200) - 100)}px`,
+                    top: '10px',
+                    background: '#1e1e1e',
+                    border: '1px solid #2a2a2a',
+                    color: '#e0e0e0',
+                    fontSize: '11px',
+                    padding: '6px 8px',
+                    borderRadius: '4px',
+                    pointerEvents: 'none',
+                    zIndex: 100,
+                    whiteSpace: 'nowrap'
+                }}>
+                    <div><strong>Epoch:</strong> {hoverInfo.epoch}</div>
+                    <div style={{color: '#00ccff'}}><strong>Mean:</strong> {hoverInfo.mean.toFixed(4)}</div>
+                    <div style={{color: '#ffaa00'}}><strong>Median:</strong> {hoverInfo.median.toFixed(4)}</div>
+                    <div style={{color: 'rgba(255,100,100,0.9)'}}><strong>P90:</strong> {hoverInfo.p90.toFixed(4)}</div>
+                </div>
+            )}
+
+            {/* Modal */}
+            {showModal && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'rgba(0,0,0,0.9)',
+                        zIndex: 10000,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '40px'
+                    }}
+                    onClick={() => setShowModal(false)}
+                >
+                    <div
+                        style={{
+                            background: '#2a2a2a',
+                            borderRadius: '12px',
+                            padding: '20px',
+                            maxWidth: '90vw',
+                            position: 'relative',
+                            border: '2px solid #555'
+                        }}
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <button
+                            onClick={() => setShowModal(false)}
+                            style={{
+                                position: 'absolute',
+                                top: '10px',
+                                right: '10px',
+                                background: '#c44',
+                                border: '1px solid #666',
+                                color: '#fff',
+                                padding: '8px 12px',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '18px',
+                                fontWeight: 'bold'
+                            }}
+                        >
+                            ✕
+                        </button>
+                        <div style={{fontSize: '18px', fontWeight: 'bold', marginBottom: '16px', color: '#fff'}}>
+                            Point Movement (epoch-to-epoch)
+                        </div>
+                        <canvas
+                            ref={(el) => {
+                                if (el && showModal) {
+                                    // Draw enlarged graph
+                                    const ctx = el.getContext('2d');
+                                    if (ctx) {
+                                        el.width = 1000;
+                                        el.height = 400;
+                                        drawGraph(el);
+                                    }
+                                }
+                            }}
+                            width="1000"
+                            height="400"
+                            style={{
+                                width: '100%',
+                                maxWidth: '1000px',
+                                borderRadius: '6px',
+                                border: '1px solid rgba(255,255,255,0.2)'
+                            }}
+                        />
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
@@ -1114,7 +1412,7 @@ const DistributionChart: React.FC<{
             const x = padding + i * barWidth;
             const y = padding + chartHeight - barHeight;
             
-            ctx.fillStyle = '#4caf50';
+            ctx.fillStyle = '#64b5f6';
             ctx.fillRect(x, y, barWidth - 1, barHeight);
         });
         
@@ -1501,11 +1799,13 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     }, [isDraggingInspector, dragOffset]);
     const [showSidePanelInFullscreen, setShowSidePanelInFullscreen] = useState(false);
 
-    // Mobile detection
-    const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
+    // Mobile detection (<900px) and wide screen detection (≥1400px)
+    const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 900);
+    const [isWideScreen, setIsWideScreen] = useState(typeof window !== 'undefined' && window.innerWidth >= 1400);
     const [showMobilePanel, setShowMobilePanel] = useState(false);
 
     // Thumbnail mode - hide all controls when container is small
+    // Default to FALSE so sidebar shows immediately, ResizeObserver will hide if needed
     const [isThumbnail, setIsThumbnail] = useState(false);
 
     // Detect thumbnail mode from OUTER container size
@@ -1515,15 +1815,19 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
             const entry = entries[0];
             const width = entry.contentRect.width;
             const height = entry.contentRect.height;
-            console.log('📐 Container size:', width, 'x', height, '→ thumbnail:', width < 400 || height < 400);
-            setIsThumbnail(width < 400 || height < 400);
+            const isThumbnailMode = width < 800 || height < 600;
+            console.log('📐 Container size:', width, 'x', height, '→ thumbnail:', isThumbnailMode);
+            setIsThumbnail(isThumbnailMode);
         });
         resizeObserver.observe(outerContainerRef.current);
         return () => resizeObserver.disconnect();
     }, []);
 
     useEffect(() => {
-        const handleResize = () => setIsMobile(window.innerWidth < 768);
+        const handleResize = () => {
+            setIsMobile(window.innerWidth < 900);
+            setIsWideScreen(window.innerWidth >= 1400);
+        };
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
     }, []);
@@ -1554,6 +1858,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [overlayVisible, setOverlayVisible] = useState(false);
     const overlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const overlayInteractingRef = useRef(false);
+    const mobileLastTapRef = useRef<number>(0);
 
     const showOverlay = useCallback(() => {
         setOverlayVisible(true);
@@ -1566,6 +1871,30 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
             }, 2000);
         }
     }, []);
+
+    // Mobile: Show overlay briefly (3s auto-hide)
+    const showOverlayMobile = useCallback(() => {
+        setOverlayVisible(true);
+        if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
+        overlayTimerRef.current = setTimeout(() => {
+            setOverlayVisible(false);
+        }, 3000);
+    }, []);
+
+    // Mobile: Tap to toggle overlay
+    const handleCanvasTap = useCallback(() => {
+        const now = Date.now();
+        // Debounce rapid taps
+        if (now - mobileLastTapRef.current < 300) return;
+        mobileLastTapRef.current = now;
+
+        if (overlayVisible) {
+            setOverlayVisible(false);
+            if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
+        } else {
+            showOverlayMobile();
+        }
+    }, [overlayVisible, showOverlayMobile]);
 
     const handleCanvasMouseMove = useCallback(() => {
         showOverlay();
@@ -1605,6 +1934,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [showSearch, setShowSearch] = useState(false);
     const [showBoundsBox, setShowBoundsBox] = useState(false);
     const [showGreatCircles, setShowGreatCircles] = useState(false);
+    const [showModelCard, setShowModelCard] = useState(false);
     
     // Color rules state - each rule has a query, column, color, and record IDs
     const [colorRules, setColorRules] = useState<Array<{
@@ -2687,10 +3017,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 )}
                 {trainingStatus === 'training' && (
                     <>
-                        <div style={{ marginBottom: '20px', fontSize: '18px', color: '#00ff00' }}>
+                        <div style={{ marginBottom: '20px', fontSize: '18px', color: '#64b5f6' }}>
                             Training in progress
                         </div>
-                        <div style={{ fontSize: '14px', color: '#00ffff', marginBottom: '10px' }}>
+                        <div style={{ fontSize: '14px', color: '#b0b0b0', marginBottom: '10px' }}>
                             Will check for new frames in {nextCheckCountdown} seconds
                         </div>
                         <div style={{ fontSize: '12px', color: '#888', marginTop: '5px', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
@@ -2700,7 +3030,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 )}
                 {trainingStatus === 'completed' && (
                     <>
-                        <div style={{ marginBottom: '20px', fontSize: '18px', color: '#00ff00' }}>
+                        <div style={{ marginBottom: '20px', fontSize: '18px', color: '#64b5f6' }}>
                             Training Completed
                         </div>
                         <div style={{ fontSize: '14px', color: '#ccc', marginBottom: '10px' }}>
@@ -2820,11 +3150,11 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         <div ref={outerContainerRef} className="training-progress-display" style={{
             display: 'grid',
             gridTemplateRows: isThumbnail ? '1fr' : '44px 1fr',
-            gridTemplateColumns: isThumbnail || isMobile ? '1fr' : '320px 1fr',
+            gridTemplateColumns: isThumbnail || isMobile ? '1fr' : (isWideScreen ? '400px 1fr' : '360px 1fr'),
             width: '100%',
             height: '100vh',
-            background: '#141414',
-            color: '#d8d8d8',
+            background: '#1e1e1e',
+            color: '#e0e0e0',
             overflow: 'hidden',
             fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
         }}>
@@ -2839,77 +3169,177 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 alignItems: 'center',
                 padding: '0 16px',
             }}>
-                {/* Left: Session name */}
+                {/* Left: Panel button (mobile) or Session name (desktop) */}
                 <div style={{
                     flex: 1,
-                    fontFamily: 'monospace',
-                    fontSize: '12px',
-                    color: '#9aa0a6',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
                     overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
                 }}>
-                    {sessionId}
+                    {isMobile && (
+                        <button
+                            onClick={() => setShowMobilePanel(true)}
+                            style={{
+                                background: '#222222',
+                                border: '1px solid #2a2a2a',
+                                color: '#b0b0b0',
+                                padding: '6px 12px',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                flexShrink: 0,
+                            }}
+                        >
+                            <span style={{ fontSize: '14px' }}>☰</span>
+                            <span>Panel</span>
+                        </button>
+                    )}
+                    <span style={{
+                        fontFamily: 'monospace',
+                        fontSize: '12px',
+                        color: '#b0b0b0',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                    }}>
+                        {isMobile && sessionId.length > 20 ? sessionId.slice(0, 12) + '...' : sessionId}
+                    </span>
                 </div>
 
-                {/* Center: Epoch X/Y and status */}
+                {/* Center: Frame X/Y and status */}
                 <div style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: '12px',
                 }}>
-                    {frameInfo && (
-                        <span style={{ fontSize: '12px', color: '#d8d8d8' }}>
-                            Epoch {frameInfo.current} / {frameInfo.total}
+                    {frameInfo && !isMobile && (
+                        <span style={{ fontSize: '12px', color: '#e0e0e0' }}>
+                            Frame {frameInfo.current} / {frameInfo.total}
+                            {frameInfo.epoch && (
+                                <span style={{ color: '#b0b0b0', marginLeft: '8px' }}>
+                                    (Epoch {frameInfo.epoch.toString().replace('epoch_', '')})
+                                </span>
+                            )}
+                        </span>
+                    )}
+                    {frameInfo && isMobile && (
+                        <span style={{ fontSize: '11px', color: '#e0e0e0' }}>
+                            {frameInfo.current}/{frameInfo.total}
                         </span>
                     )}
                     {trainingStatus === 'training' && (
-                        <span style={{ fontSize: '11px', color: '#4caf50' }}>In Progress</span>
+                        <span style={{ fontSize: '11px', color: '#64b5f6' }}>In Progress</span>
                     )}
-                    {trainingStatus === 'completed' && (
-                        <span style={{ fontSize: '11px', color: '#9aa0a6' }}>Completed</span>
+                    {trainingStatus === 'completed' && !isMobile && (
+                        <span style={{ fontSize: '11px', color: '#b0b0b0' }}>Completed</span>
                     )}
                 </div>
 
-                {/* Right: Rotate toggle ONLY */}
-                <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
+                {/* Right: Play/Pause (mobile) + Rotate toggle */}
+                <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px' }}>
+                    {/* Mobile: Playback play/pause always visible */}
+                    {isMobile && (
+                        <button
+                            onClick={() => {
+                                if (isPlaying) {
+                                    pause_training_movie(sphereRef);
+                                    setIsPlaying(false);
+                                } else {
+                                    resume_training_movie(sphereRef);
+                                    setIsPlaying(true);
+                                }
+                            }}
+                            style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: isPlaying ? '#64b5f6' : '#b0b0b0',
+                                padding: '6px 10px',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '16px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                            }}
+                            title={isPlaying ? "Pause Playback" : "Play"}
+                        >
+                            {isPlaying ? '\u23F8' : '\u25B6'}
+                        </button>
+                    )}
                     <button
                         onClick={() => setRotationEnabled(!rotationEnabled)}
                         style={{
                             background: 'transparent',
                             border: 'none',
-                            color: rotationEnabled ? '#64b5f6' : '#9aa0a6',
+                            color: rotationEnabled ? '#64b5f6' : '#b0b0b0',
                             padding: '6px 10px',
                             borderRadius: '4px',
                             cursor: 'pointer',
-                            fontSize: '16px',
+                            fontSize: '14px',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                         }}
-                        title={rotationEnabled ? "Disable Rotation" : "Enable Rotation"}
+                        title={rotationEnabled ? "Pause Rotation" : "Resume Rotation"}
                     >
-                        {'\u21BB'}
+                        {rotationEnabled ? '\u21BB' : '\u21BA'}
                     </button>
                 </div>
             </div>
             )}
 
-            {/* Left Sidebar */}
+            {/* Left Sidebar - Desktop */}
             {!isMobile && !isThumbnail && (
             <div style={{
-                width: '320px',
-                background: '#1a1a1a',
+                width: isWideScreen ? '400px' : '360px',
+                background: '#181818',
                 borderRight: '1px solid #2a2a2a',
                 padding: 0,
                 overflowY: 'auto',
                 fontSize: '12px',
             }}>
-                {/* Panel 1: CLUSTER CONTROLS (default OPEN) */}
-                <CollapsibleSection title="CLUSTER CONTROLS" defaultOpen={true}>
+                {/* Header Bar - Always visible with current epoch */}
+                <div style={{
+                    padding: '12px 16px',
+                    background: '#1a1a1a',
+                    borderBottom: '1px solid #2a2a2a',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        {frameInfo && (
+                            <>
+                                <span style={{
+                                    fontSize: '13px',
+                                    fontWeight: 600,
+                                    color: '#e0e0e0',
+                                }}>
+                                    Epoch {frameInfo.epoch?.toLocaleString() ?? '—'}
+                                </span>
+                                <span style={{
+                                    fontSize: '11px',
+                                    color: '#8a8a8a',
+                                }}>
+                                    Frame {frameInfo.current} / {frameInfo.total}
+                                </span>
+                            </>
+                        )}
+                        {!frameInfo && (
+                            <span style={{ fontSize: '12px', color: '#8a8a8a' }}>Loading...</span>
+                        )}
+                    </div>
+                </div>
+
+                {/* Panel 1: CLUSTER CONTROLS */}
+                <CollapsibleSection title="CLUSTER CONTROLS" defaultOpen={false}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         {/* Cluster Coloring dropdown */}
-                        <label style={{ color: '#9aa0a6', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <label style={{ color: '#b0b0b0', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <span>Cluster Coloring</span>
                             <select
                                 value={clusterColorMode}
@@ -2917,8 +3347,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 style={{
                                     fontSize: '12px',
                                     padding: '4px 8px',
-                                    backgroundColor: '#2a2a2a',
-                                    color: '#d8d8d8',
+                                    backgroundColor: '#202020',
+                                    color: '#e0e0e0',
                                     border: '1px solid #2a2a2a',
                                     borderRadius: '3px',
                                     cursor: 'pointer',
@@ -2932,7 +3362,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
 
                         {/* Focus Cluster dropdown */}
                         {frameInfo && (
-                            <label style={{ color: '#9aa0a6', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <label style={{ color: '#b0b0b0', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                 <span>Focus Cluster</span>
                                 <select
                                     value={spotlightCluster}
@@ -2948,8 +3378,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     style={{
                                         fontSize: '12px',
                                         padding: '4px 8px',
-                                        backgroundColor: '#2a2a2a',
-                                        color: '#d8d8d8',
+                                        backgroundColor: '#202020',
+                                        color: '#e0e0e0',
                                         border: '1px solid #2a2a2a',
                                         borderRadius: '3px',
                                         cursor: 'pointer',
@@ -2966,7 +3396,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
 
                         {/* Show Cluster Spheres checkbox */}
                         {frameInfo && (
-                            <label style={{ color: '#9aa0a6', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                            <label style={{ color: '#b0b0b0', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                                 <input
                                     type="checkbox"
                                     checked={showDynamicHulls}
@@ -2974,24 +3404,24 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     disabled={frameInfo.visible < 4}
                                     style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#64b5f6' }}
                                 />
-                                <span style={{ color: frameInfo.visible >= 4 ? '#9aa0a6' : '#555' }}>Show Cluster Spheres</span>
+                                <span style={{ color: frameInfo.visible >= 4 ? '#b0b0b0' : '#555' }}>Show Cluster Spheres</span>
                             </label>
                         )}
 
                         {/* Cluster color swatches (if showColorLegend) */}
                         {showColorLegend && frameInfo && frameInfo.visible > 0 && (
                             <div style={{ marginTop: '8px' }}>
-                                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#9aa0a6', marginBottom: '8px' }}>Cluster Colors</div>
+                                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8a', marginBottom: '6px' }}>Cluster Colors</div>
                                 <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                                     {Array.from({length: frameInfo.visible}, (_, i) => {
-                                        const kColorTable = [0xe6194b, 0x3cb44b, 0xffe119, 0x4363d8, 0xf58231, 0x911eb4, 0x46f0f0, 0xf032e6, 0xbcf60c, 0xfabebe, 0x008080, 0xe6beff, 0x9a6324, 0xfffac8, 0x800000, 0xaaffc3, 0x808000, 0xffd8b1, 0x999999, 0x0000ff, 0x00ff00, 0xffcccc];
+                                        const kColorTable = [0x4C78A8, 0x72B7B2, 0xF58518, 0xE45756, 0x54A24B, 0xB279A2, 0xFF9DA6, 0x9D755D, 0xBAB0AC, 0x79706E, 0xD37295, 0x8F6D31];
                                         const defaultColorHex = kColorTable[i] || 0x999999;
                                         const customColorHex = sphereRef?.customClusterColors?.get(i);
                                         const colorHex = customColorHex || defaultColorHex;
                                         const color = '#' + colorHex.toString(16).padStart(6, '0');
                                         return (
                                             <div key={`cluster-${i}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-                                                <span style={{ fontSize: '10px', color: '#9aa0a6' }}>C{i}</span>
+                                                <span style={{ fontSize: '10px', color: '#b0b0b0' }}>C{i}</span>
                                                 <input
                                                     type="color"
                                                     value={color}
@@ -3028,7 +3458,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                         width: '100%',
                                         background: '#2a2a2a',
                                         border: 'none',
-                                        color: '#9aa0a6',
+                                        color: '#b0b0b0',
                                         padding: '6px',
                                         borderRadius: '4px',
                                         cursor: 'pointer',
@@ -3043,7 +3473,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         {/* Cluster inspector (if showClusterDebug) */}
                         {showClusterDebug && (
                             <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #2a2a2a' }}>
-                                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#9aa0a6', marginBottom: '8px' }}>Cluster Inspector</div>
+                                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8a', marginTop: '14px', marginBottom: '6px' }}>Cluster Inspector</div>
                                 {sphereRef && (() => {
                                     const clusterCounts = new Map<number, number>();
                                     let pointsWithoutCluster = 0;
@@ -3070,27 +3500,27 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     }
 
                                     if (clusterCounts.size === 0) {
-                                        return <div style={{ fontSize: '12px', color: '#9aa0a6' }}>No cluster data ({totalPoints} points)</div>;
+                                        return <div style={{ fontSize: '12px', color: '#b0b0b0' }}>No cluster data ({totalPoints} points)</div>;
                                     }
 
                                     return (
                                         <div style={{ fontSize: '11px', fontFamily: 'monospace', maxHeight: '120px', overflowY: 'auto' }}>
                                             {Array.from(clusterCounts.entries()).sort((a, b) => a[0] - b[0]).map(([cluster, count]) => (
-                                                <div key={cluster} style={{ marginBottom: '2px', color: '#9aa0a6' }}>
+                                                <div key={cluster} style={{ marginBottom: '2px', color: '#b0b0b0' }}>
                                                     C{cluster}: {count} points
                                                 </div>
                                             ))}
                                             {pointsWithoutCluster > 0 && (
-                                                <div style={{ marginTop: '4px', color: '#9aa0a6' }}>{pointsWithoutCluster} unassigned</div>
+                                                <div style={{ marginTop: '4px', color: '#b0b0b0' }}>{pointsWithoutCluster} unassigned</div>
                                             )}
                                         </div>
                                     );
                                 })()}
                                 {selectedPointInfo && (
                                     <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #2a2a2a', fontSize: '11px' }}>
-                                        <div style={{ color: '#d8d8d8', fontWeight: 'bold', marginBottom: '4px' }}>Selected Point</div>
-                                        <div style={{ color: '#9aa0a6' }}>Row: {selectedPointInfo.rowOffset}</div>
-                                        <div style={{ color: '#9aa0a6' }}>Cluster: {selectedPointInfo.clusterId}</div>
+                                        <div style={{ color: '#e0e0e0', fontWeight: 'bold', marginBottom: '4px' }}>Selected Point</div>
+                                        <div style={{ color: '#b0b0b0' }}>Row: {selectedPointInfo.rowOffset}</div>
+                                        <div style={{ color: '#b0b0b0' }}>Cluster: {selectedPointInfo.clusterId}</div>
                                     </div>
                                 )}
                             </div>
@@ -3102,9 +3532,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 <CollapsibleSection title="MODEL INFO" defaultOpen={false}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         {/* Training status text */}
-                        <div style={{ fontSize: '12px', color: '#9aa0a6' }}>
+                        <div style={{ fontSize: '12px', color: '#b0b0b0' }}>
                             {trainingStatus === 'training' && (
-                                <span style={{ color: '#4caf50' }}>Training in progress</span>
+                                <span style={{ color: '#64b5f6' }}>Training in progress</span>
                             )}
                             {trainingStatus === 'completed' && (
                                 <span>Training completed</span>
@@ -3114,7 +3544,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
 
                         {/* Frame X/Y count */}
                         {frameInfo && (
-                            <div style={{ fontSize: '12px', color: '#9aa0a6' }}>
+                            <div style={{ fontSize: '12px', color: '#b0b0b0' }}>
                                 Frame {frameInfo.current} / {frameInfo.total}
                             </div>
                         )}
@@ -3166,6 +3596,24 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 />
                             </div>
                         )}
+
+                        {/* View Model Card button */}
+                        <button
+                            onClick={() => setShowModelCard(true)}
+                            style={{
+                                marginTop: '8px',
+                                background: '#222222',
+                                border: '1px solid #2a2a2a',
+                                color: '#b0b0b0',
+                                padding: '8px 12px',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                                width: '100%',
+                            }}
+                        >
+                            View Model Card
+                        </button>
                     </div>
                 </CollapsibleSection>
 
@@ -3174,7 +3622,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                     {columnTypes && Object.keys(columnTypes).length > 0 ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                             {/* Column selector */}
-                            <label style={{ color: '#9aa0a6', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <label style={{ color: '#b0b0b0', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                 <span>Column</span>
                                 <select
                                     value={selectedSearchColumn}
@@ -3182,8 +3630,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     style={{
                                         fontSize: '12px',
                                         padding: '4px 8px',
-                                        backgroundColor: '#2a2a2a',
-                                        color: '#d8d8d8',
+                                        backgroundColor: '#202020',
+                                        color: '#e0e0e0',
                                         border: '1px solid #2a2a2a',
                                         borderRadius: '3px',
                                         cursor: 'pointer',
@@ -3208,7 +3656,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                         flex: 1,
                                         background: '#2a2a2a',
                                         border: '1px solid #2a2a2a',
-                                        color: '#d8d8d8',
+                                        color: '#e0e0e0',
                                         padding: '6px 10px',
                                         borderRadius: '3px',
                                         fontSize: '12px',
@@ -3220,7 +3668,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     style={{
                                         background: searchQuery.trim() ? '#64b5f6' : '#2a2a2a',
                                         border: 'none',
-                                        color: searchQuery.trim() ? '#141414' : '#9aa0a6',
+                                        color: searchQuery.trim() ? '#141414' : '#b0b0b0',
                                         padding: '6px 12px',
                                         borderRadius: '3px',
                                         cursor: searchQuery.trim() ? 'pointer' : 'not-allowed',
@@ -3240,7 +3688,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                         style={{
                                             background: '#2a2a2a',
                                             border: 'none',
-                                            color: '#9aa0a6',
+                                            color: '#b0b0b0',
                                             padding: '6px 8px',
                                             borderRadius: '3px',
                                             cursor: 'pointer',
@@ -3255,14 +3703,14 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             {/* Color Rules */}
                             {colorRules.length > 0 && (
                                 <div style={{ marginTop: '8px' }}>
-                                    <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#9aa0a6', marginBottom: '6px' }}>
+                                    <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8a', marginBottom: '6px' }}>
                                         Color Rules ({colorRules.length})
                                     </div>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '150px', overflowY: 'auto' }}>
                                         {colorRules.map((rule) => (
                                             <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px', background: '#181818', borderRadius: '3px' }}>
                                                 <div style={{ width: '14px', height: '14px', background: rule.color, borderRadius: '2px', flexShrink: 0 }} />
-                                                <div style={{ flex: 1, fontSize: '11px', color: '#9aa0a6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                <div style={{ flex: 1, fontSize: '11px', color: '#b0b0b0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                     {rule.column}: {rule.query} ({rule.recordIds.length})
                                                 </div>
                                                 <button
@@ -3270,7 +3718,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                                     style={{
                                                         background: 'transparent',
                                                         border: 'none',
-                                                        color: '#9aa0a6',
+                                                        color: '#b0b0b0',
                                                         padding: '2px 4px',
                                                         cursor: 'pointer',
                                                         fontSize: '10px',
@@ -3288,7 +3736,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                             width: '100%',
                                             background: '#2a2a2a',
                                             border: 'none',
-                                            color: '#9aa0a6',
+                                            color: '#b0b0b0',
                                             padding: '6px',
                                             borderRadius: '3px',
                                             cursor: 'pointer',
@@ -3303,7 +3751,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             {/* Column vocabulary for quick selection */}
                             {columnVocabulary && columnVocabulary.type !== 'scalar' && columnVocabulary.vocabulary && (
                                 <div style={{ marginTop: '4px' }}>
-                                    <div style={{ fontSize: '11px', color: '#9aa0a6', marginBottom: '4px' }}>Values:</div>
+                                    <div style={{ fontSize: '11px', color: '#b0b0b0', marginBottom: '4px' }}>Values:</div>
                                     <div style={{ maxHeight: '100px', overflowY: 'auto', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                                         {columnVocabulary.vocabulary.slice(0, 20).map((val, idx) => (
                                             <button
@@ -3314,9 +3762,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                                     handleSearchInput(fakeEvent);
                                                 }}
                                                 style={{
-                                                    background: searchQuery === val ? '#64b5f6' : '#2a2a2a',
-                                                    border: 'none',
-                                                    color: searchQuery === val ? '#141414' : '#9aa0a6',
+                                                    background: '#222222',
+                                                    border: searchQuery === val ? '1px solid #64b5f6' : '1px solid #2a2a2a',
+                                                    color: searchQuery === val ? '#64b5f6' : '#b0b0b0',
                                                     padding: '2px 6px',
                                                     borderRadius: '3px',
                                                     cursor: 'pointer',
@@ -3343,17 +3791,17 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             )}
                         </div>
                     ) : (
-                        <div style={{ fontSize: '12px', color: '#9aa0a6' }}>No searchable columns</div>
+                        <div style={{ fontSize: '12px', color: '#b0b0b0' }}>No searchable columns</div>
                     )}
                 </CollapsibleSection>
 
-                {/* Panel 4: SETTINGS (default OPEN) */}
-                <CollapsibleSection title="SETTINGS" defaultOpen={true}>
-                    {/* Rendering group */}
+                {/* Panel 4: SETTINGS */}
+                <CollapsibleSection title="SETTINGS" defaultOpen={false}>
+                    {/* Rendering group - first subgroup gets less top margin */}
                     <div style={{ marginBottom: '16px' }}>
-                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#9aa0a6', marginBottom: '10px' }}>Rendering</div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            <label style={{ color: '#9aa0a6', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8a', marginTop: '0', marginBottom: '6px' }}>Rendering</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <label style={{ color: '#b0b0b0', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                 <span>Point Size</span>
                                 <select
                                     value={pointSize}
@@ -3368,8 +3816,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     style={{
                                         fontSize: '12px',
                                         padding: '4px 8px',
-                                        backgroundColor: '#2a2a2a',
-                                        color: '#d8d8d8',
+                                        backgroundColor: '#202020',
+                                        color: '#e0e0e0',
                                         border: '1px solid #2a2a2a',
                                         borderRadius: '3px',
                                         cursor: 'pointer',
@@ -3385,7 +3833,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     <option value={0.15}>0.15</option>
                                 </select>
                             </label>
-                            <label style={{ color: '#9aa0a6', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <label style={{ color: '#b0b0b0', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                 <span>Alpha</span>
                                 <select
                                     value={pointAlpha}
@@ -3400,8 +3848,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     style={{
                                         fontSize: '12px',
                                         padding: '4px 8px',
-                                        backgroundColor: '#2a2a2a',
-                                        color: '#d8d8d8',
+                                        backgroundColor: '#202020',
+                                        color: '#e0e0e0',
                                         border: '1px solid #2a2a2a',
                                         borderRadius: '3px',
                                         cursor: 'pointer',
@@ -3414,7 +3862,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     <option value={1.00}>100%</option>
                                 </select>
                             </label>
-                            <label style={{ color: '#9aa0a6', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <label style={{ color: '#b0b0b0', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                 <span>Trail Length</span>
                                 <select
                                     value={trailLength}
@@ -3422,8 +3870,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     style={{
                                         fontSize: '12px',
                                         padding: '4px 8px',
-                                        backgroundColor: '#2a2a2a',
-                                        color: '#d8d8d8',
+                                        backgroundColor: '#202020',
+                                        color: '#e0e0e0',
                                         border: '1px solid #2a2a2a',
                                         borderRadius: '3px',
                                         cursor: 'pointer',
@@ -3440,11 +3888,11 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         </div>
                     </div>
 
-                    {/* Geometry Overlays group */}
+                    {/* Geometry Overlays group - subsequent subgroup gets more top margin */}
                     <div>
-                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#9aa0a6', marginBottom: '10px' }}>Geometry Overlays</div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            <div style={{ display: 'flex', gap: '8px' }}>
+                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8a', marginTop: '14px', marginBottom: '6px' }}>Geometry Overlays</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <div style={{ display: 'flex', gap: '6px', marginLeft: '4px' }}>
                                 <button
                                     onClick={() => {
                                         setShowBoundsBox(!showBoundsBox);
@@ -3455,9 +3903,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     }}
                                     style={{
                                         flex: 1,
-                                        background: showBoundsBox ? '#64b5f6' : '#2a2a2a',
-                                        border: 'none',
-                                        color: showBoundsBox ? '#141414' : '#9aa0a6',
+                                        background: '#222222',
+                                        border: showBoundsBox ? '1px solid #64b5f6' : '1px solid #2a2a2a',
+                                        color: showBoundsBox ? '#64b5f6' : '#b0b0b0',
                                         padding: '8px 12px',
                                         borderRadius: '4px',
                                         cursor: 'pointer',
@@ -3475,9 +3923,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     }}
                                     style={{
                                         flex: 1,
-                                        background: sphereRef?.showEmbeddingHull ? '#64b5f6' : '#2a2a2a',
-                                        border: 'none',
-                                        color: sphereRef?.showEmbeddingHull ? '#141414' : '#9aa0a6',
+                                        background: '#222222',
+                                        border: sphereRef?.showEmbeddingHull ? '1px solid #64b5f6' : '1px solid #2a2a2a',
+                                        color: sphereRef?.showEmbeddingHull ? '#64b5f6' : '#b0b0b0',
                                         padding: '8px 12px',
                                         borderRadius: '4px',
                                         cursor: 'pointer',
@@ -3490,7 +3938,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
 
                             {/* Show Great Circles checkbox (only when bounds is shown) */}
                             {showBoundsBox && (
-                                <label style={{ color: '#9aa0a6', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                                <label style={{ color: '#b0b0b0', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                                     <input
                                         type="checkbox"
                                         checked={showGreatCircles}
@@ -3509,8 +3957,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
 
                             {/* Sphere Coverage display (only when bounds is shown) */}
                             {showBoundsBox && sphereRef && sphereRef.boundsBoxVolumeUtilization !== undefined && (
-                                <div style={{ fontSize: '12px', color: '#9aa0a6', padding: '8px', background: '#181818', borderRadius: '4px' }}>
-                                    Sphere Coverage: <span style={{ color: '#d8d8d8' }}>{sphereRef.boundsBoxVolumeUtilization.toFixed(2)}%</span>
+                                <div style={{ fontSize: '12px', color: '#b0b0b0', padding: '8px', background: '#181818', borderRadius: '4px' }}>
+                                    Sphere Coverage: <span style={{ color: '#e0e0e0' }}>{sphereRef.boundsBoxVolumeUtilization.toFixed(2)}%</span>
                                 </div>
                             )}
                         </div>
@@ -3519,10 +3967,181 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
             </div>
             )}
 
+            {/* Mobile Slide-Over Drawer */}
+            {isMobile && !isThumbnail && (
+            <>
+                {/* Scrim overlay */}
+                {showMobilePanel && (
+                    <div
+                        onClick={() => setShowMobilePanel(false)}
+                        style={{
+                            position: 'fixed',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            background: 'rgba(0, 0, 0, 0.6)',
+                            zIndex: 9998,
+                        }}
+                    />
+                )}
+                {/* Drawer panel */}
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    width: '320px',
+                    maxWidth: '85vw',
+                    height: '100%',
+                    background: '#181818',
+                    borderRight: '1px solid #2a2a2a',
+                    zIndex: 9999,
+                    transform: showMobilePanel ? 'translateX(0)' : 'translateX(-100%)',
+                    transition: 'transform 250ms ease-out',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflowY: 'auto',
+                    fontSize: '12px',
+                }}>
+                    {/* Drawer header with close button and epoch info */}
+                    <div style={{
+                        minHeight: '44px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '8px 12px',
+                        background: '#141414',
+                        borderBottom: '1px solid #2a2a2a',
+                        flexShrink: 0,
+                    }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            {frameInfo ? (
+                                <>
+                                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#e0e0e0' }}>
+                                        Epoch {frameInfo.epoch?.toLocaleString() ?? '—'}
+                                    </span>
+                                    <span style={{ fontSize: '10px', color: '#8a8a8a' }}>
+                                        Frame {frameInfo.current} / {frameInfo.total}
+                                    </span>
+                                </>
+                            ) : (
+                                <span style={{ fontSize: '12px', fontWeight: 600, color: '#e0e0e0' }}>Controls</span>
+                            )}
+                        </div>
+                        <button
+                            onClick={() => setShowMobilePanel(false)}
+                            style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: '#b0b0b0',
+                                fontSize: '20px',
+                                cursor: 'pointer',
+                                padding: '4px 8px',
+                                lineHeight: 1,
+                            }}
+                        >
+                            ×
+                        </button>
+                    </div>
+                    {/* Same accordion content as desktop */}
+                    <div style={{ flex: 1, overflowY: 'auto' }}>
+                        {/* Panel 1: CLUSTER CONTROLS */}
+                        <CollapsibleSection title="CLUSTER CONTROLS" defaultOpen={false}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                <label style={{ color: '#b0b0b0', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <span>Cluster Coloring</span>
+                                    <select
+                                        value={clusterColorMode}
+                                        onChange={(e) => setClusterColorMode(e.target.value as 'final' | 'per-epoch')}
+                                        style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: '#202020', color: '#e0e0e0', border: '1px solid #2a2a2a', borderRadius: '3px', cursor: 'pointer', width: '120px' }}
+                                    >
+                                        <option value="final">Final Frame</option>
+                                        <option value="per-epoch">Per-Epoch</option>
+                                    </select>
+                                </label>
+                                {frameInfo && (
+                                    <label style={{ color: '#b0b0b0', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                        <span>Focus Cluster</span>
+                                        <select
+                                            value={spotlightCluster}
+                                            onChange={(e) => {
+                                                const cluster = parseInt(e.target.value);
+                                                setSpotlightCluster(cluster);
+                                                if (sphereRef) {
+                                                    sphereRef.spotlightCluster = cluster;
+                                                    update_cluster_spotlight(sphereRef);
+                                                    render_sphere(sphereRef);
+                                                }
+                                            }}
+                                            style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: '#202020', color: '#e0e0e0', border: '1px solid #2a2a2a', borderRadius: '3px', cursor: 'pointer', width: '120px' }}
+                                        >
+                                            <option value={-1}>None</option>
+                                            {frameInfo.visible > 0 && Array.from({length: frameInfo.visible}, (_, i) => (
+                                                <option key={i} value={i}>Cluster {i}</option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                )}
+                            </div>
+                        </CollapsibleSection>
+
+                        {/* Panel 2: SETTINGS */}
+                        <CollapsibleSection title="SETTINGS" defaultOpen={false}>
+                            <div style={{ marginBottom: '16px' }}>
+                                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8a', marginTop: '0', marginBottom: '6px' }}>Rendering</div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                    <label style={{ color: '#b0b0b0', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                        <span>Point Size</span>
+                                        <select
+                                            value={pointSize}
+                                            onChange={(e) => {
+                                                const newSize = parseFloat(e.target.value);
+                                                setPointSize(newSize);
+                                                if (sphereRef) {
+                                                    set_visual_options(sphereRef, newSize, pointAlpha);
+                                                    render_sphere(sphereRef);
+                                                }
+                                            }}
+                                            style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: '#202020', color: '#e0e0e0', border: '1px solid #2a2a2a', borderRadius: '3px', cursor: 'pointer', width: '80px' }}
+                                        >
+                                            <option value={0.01}>0.01</option>
+                                            <option value={0.02}>0.02</option>
+                                            <option value={0.04}>0.04</option>
+                                            <option value={0.06}>0.06</option>
+                                        </select>
+                                    </label>
+                                    <label style={{ color: '#b0b0b0', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                        <span>Alpha</span>
+                                        <select
+                                            value={pointAlpha}
+                                            onChange={(e) => {
+                                                const newAlpha = parseFloat(e.target.value);
+                                                setPointAlpha(newAlpha);
+                                                if (sphereRef) {
+                                                    set_visual_options(sphereRef, pointSize, newAlpha);
+                                                    render_sphere(sphereRef);
+                                                }
+                                            }}
+                                            style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: '#202020', color: '#e0e0e0', border: '1px solid #2a2a2a', borderRadius: '3px', cursor: 'pointer', width: '80px' }}
+                                        >
+                                            <option value={0.25}>25%</option>
+                                            <option value={0.50}>50%</option>
+                                            <option value={0.75}>75%</option>
+                                            <option value={1.00}>100%</option>
+                                        </select>
+                                    </label>
+                                </div>
+                            </div>
+                        </CollapsibleSection>
+                    </div>
+                </div>
+            </>
+            )}
+
             {/* Sphere Container - fills remaining space */}
             <div style={{
                 position: 'relative',
-                background: '#141414',
+                background: '#232323',
                 minHeight: 0,
                 overflow: 'hidden',
             }}>
@@ -3534,7 +4153,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         left: '50%',
                         transform: 'translate(-50%, -50%)',
                         background: 'rgba(20, 20, 20, 0.95)',
-                        color: '#d8d8d8',
+                        color: '#e0e0e0',
                         padding: '30px 50px',
                         borderRadius: '12px',
                         fontSize: '32px',
@@ -3593,8 +4212,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 {/* ACTUAL 3D SPHERE VIEWER - WebGL container ALWAYS FILLS AVAILABLE SPACE */}
                 <div
                     id="training-movie-3d-container"
-                    onMouseMove={handleCanvasMouseMove}
-                    onMouseLeave={handleCanvasMouseLeave}
+                    onMouseMove={!isMobile ? handleCanvasMouseMove : undefined}
+                    onMouseLeave={!isMobile ? handleCanvasMouseLeave : undefined}
+                    onClick={isMobile ? handleCanvasTap : undefined}
                     style={{
                         width: '100%',
                         height: '100%',
@@ -3721,13 +4341,16 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 )}
 
                 {/* Playback Overlay - YouTube/QuickTime style floating controls */}
-                {frameInfo && frameInfo.total > 0 && (
+                {/* Hide on mobile when drawer is open */}
+                {frameInfo && frameInfo.total > 0 && !(isMobile && showMobilePanel) && (
                     <div
-                        onMouseEnter={handleOverlayInteractionStart}
-                        onMouseLeave={handleOverlayInteractionEnd}
+                        onMouseEnter={!isMobile ? handleOverlayInteractionStart : undefined}
+                        onMouseLeave={!isMobile ? handleOverlayInteractionEnd : undefined}
+                        onTouchStart={isMobile ? handleOverlayInteractionStart : undefined}
+                        onTouchEnd={isMobile ? handleOverlayInteractionEnd : undefined}
                         style={{
                             position: 'absolute',
-                            bottom: '24px',
+                            bottom: isMobile ? 'calc(24px + env(safe-area-inset-bottom, 0px))' : '24px',
                             left: '50%',
                             transform: 'translateX(-50%)',
                             zIndex: 100,
@@ -3738,7 +4361,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             flexDirection: 'column',
                             alignItems: 'center',
                             gap: '6px',
-                            width: 'min(90%, 600px)',
+                            width: isMobile ? 'calc(100% - 32px)' : 'min(90%, 600px)',
+                            maxWidth: '600px',
                             background: 'rgba(0, 0, 0, 0.55)',
                             backdropFilter: 'blur(8px)',
                             borderRadius: '10px',
@@ -3794,8 +4418,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             <button onClick={handlePlayPause} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '20px', cursor: 'pointer', padding: '4px 10px', lineHeight: 1 }} title={isPlaying ? 'Pause' : 'Play'}>{isPlaying ? '⏸' : '▶'}</button>
                             <button onClick={handleStepForward} style={{ background: 'none', border: 'none', color: '#d0d0d0', fontSize: '16px', cursor: 'pointer', padding: '4px 6px', lineHeight: 1 }} title="Next Frame">⏩</button>
                             <button onClick={() => { if (sphereRef && frameInfo) { goto_training_movie_frame(sphereRef, frameInfo.total); setIsPlaying(false); setFrameInput(frameInfo.total.toString()); } }} style={{ background: 'none', border: 'none', color: '#d0d0d0', fontSize: '16px', cursor: 'pointer', padding: '4px 6px', lineHeight: 1 }} title="Last Frame">⏭</button>
-                            <span style={{ color: '#9aa0a6', fontSize: '12px', marginLeft: '12px', fontFamily: 'monospace', whiteSpace: 'nowrap' as const }}>
-                                {frameInfo.current} / {frameInfo.total}
+                            <span style={{ color: '#b0b0b0', fontSize: '12px', marginLeft: '12px', fontFamily: 'monospace', whiteSpace: 'nowrap' as const }}>
+                                {frameInfo.current}/{frameInfo.total}{frameInfo.epoch ? ` E${frameInfo.epoch.toString().replace('epoch_', '')}` : ''}
                             </span>
                         </div>
                     </div>
@@ -3977,6 +4601,113 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         </table>
                     </div>
                 </div>
+            )}
+
+            {/* Model Card Modal */}
+            {showModelCard && (
+                <>
+                    {/* Scrim */}
+                    <div
+                        onClick={() => setShowModelCard(false)}
+                        style={{
+                            position: 'fixed',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            background: 'rgba(0, 0, 0, 0.7)',
+                            zIndex: 10000,
+                        }}
+                    />
+                    {/* Modal Dialog */}
+                    <div style={{
+                        position: 'fixed',
+                        top: '50%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)',
+                        background: '#1e1e1e',
+                        border: '1px solid #2a2a2a',
+                        borderRadius: '8px',
+                        zIndex: 10001,
+                        width: 'min(90vw, 800px)',
+                        maxHeight: '85vh',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        overflow: 'hidden',
+                    }}>
+                        {/* Modal Header */}
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '16px 20px',
+                            borderBottom: '1px solid #2a2a2a',
+                            background: '#181818',
+                        }}>
+                            <span style={{ fontSize: '14px', fontWeight: 600, color: '#e0e0e0' }}>Model Card</span>
+                            <button
+                                onClick={() => setShowModelCard(false)}
+                                style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: '#b0b0b0',
+                                    fontSize: '24px',
+                                    cursor: 'pointer',
+                                    padding: '0 4px',
+                                    lineHeight: 1,
+                                }}
+                            >
+                                ×
+                            </button>
+                        </div>
+                        {/* Modal Body */}
+                        <div style={{
+                            flex: 1,
+                            overflowY: 'auto',
+                            padding: '20px',
+                        }}>
+                            {/* Placeholder for ModelCard component */}
+                            <div style={{ color: '#b0b0b0', fontSize: '14px' }}>
+                                <div style={{ marginBottom: '16px' }}>
+                                    <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8a', marginBottom: '6px' }}>Session ID</div>
+                                    <div style={{ fontFamily: 'monospace', color: '#e0e0e0' }}>{sessionId}</div>
+                                </div>
+                                {frameInfo && (
+                                    <div style={{ marginBottom: '16px' }}>
+                                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8a', marginBottom: '6px' }}>Training Progress</div>
+                                        <div style={{ color: '#e0e0e0' }}>{frameInfo.total} epochs completed</div>
+                                    </div>
+                                )}
+                                {trainingStatus && (
+                                    <div style={{ marginBottom: '16px' }}>
+                                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8a', marginBottom: '6px' }}>Status</div>
+                                        <div style={{ color: trainingStatus === 'completed' ? '#64b5f6' : '#e0e0e0' }}>
+                                            {trainingStatus === 'completed' ? 'Training Complete' : 'Training In Progress'}
+                                        </div>
+                                    </div>
+                                )}
+                                {sphereRef?.recordList && (
+                                    <div style={{ marginBottom: '16px' }}>
+                                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8a', marginBottom: '6px' }}>Data Points</div>
+                                        <div style={{ color: '#e0e0e0' }}>{sphereRef.recordList.length} points</div>
+                                    </div>
+                                )}
+                                {frameInfo && frameInfo.visible > 0 && (
+                                    <div style={{ marginBottom: '16px' }}>
+                                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8a', marginBottom: '6px' }}>Clusters</div>
+                                        <div style={{ color: '#e0e0e0' }}>{frameInfo.visible} clusters identified</div>
+                                    </div>
+                                )}
+                                {lossData?.training_info?.model_parameters !== undefined && (
+                                    <div style={{ marginBottom: '16px' }}>
+                                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8a', marginBottom: '6px' }}>Model Parameters</div>
+                                        <div style={{ color: '#e0e0e0' }}>{lossData.training_info.model_parameters.toLocaleString()}</div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </>
             )}
         </div>
     );

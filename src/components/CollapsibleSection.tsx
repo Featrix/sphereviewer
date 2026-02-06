@@ -33,13 +33,13 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
                     fontSize: '11px',
                     fontWeight: 600,
                     letterSpacing: '0.08em',
-                    color: '#d8d8d8',
+                    color: '#b0b0b0',
                     textTransform: 'uppercase',
                 }}>
                     {title}
                 </span>
                 <span style={{
-                    color: '#9aa0a6',
+                    color: '#8a8a8a',
                     fontSize: '10px',
                     transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)',
                     transition: 'transform 150ms ease',
@@ -48,7 +48,13 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
                 </span>
             </div>
             {isOpen && (
-                <div style={{ padding: '12px' }}>
+                <div style={{
+                    paddingLeft: '16px',
+                    paddingRight: '12px',
+                    paddingTop: '8px',
+                    paddingBottom: '16px',
+                    background: '#1f1f1f',
+                }}>
                     {children}
                 </div>
             )}
