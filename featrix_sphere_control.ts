@@ -230,7 +230,8 @@ export interface SphereData {
     
     // Animation controls
     rotationSpeed: number;
-    rotationControlsEnabled: boolean; // Controls both auto-rotation and mouse dragging
+    rotationControlsEnabled: boolean; // Controls mouse dragging (always true)
+    autoRotationEnabled: boolean; // Controls auto-rotation animation
     animateClusters: boolean;
     clusterAnimationRef: number;
     currentCluster: number;
@@ -339,7 +340,8 @@ function create_new_sphere(container: HTMLElement): SphereData {
         
         // Animation controls
         rotationSpeed: 0.1,
-        rotationControlsEnabled: true, // Default enabled
+        rotationControlsEnabled: true, // Default enabled - controls mouse drag
+        autoRotationEnabled: true, // Default enabled - controls auto-rotation
         animateClusters: false,
         clusterAnimationRef: 0,
         currentCluster: 2,
@@ -950,10 +952,10 @@ export function start_animation(sphere: SphereData) {
         }
 
         // revolutions per second - configurable
-        // Only auto-rotate if rotation controls are enabled
-    if (sphere.rotationControlsEnabled) {
-        sphere.angle += sphere.rotationSpeed * dt / 1000  * Math.PI;
-    }
+        // Only auto-rotate if auto-rotation is enabled (separate from mouse controls)
+        if (sphere.autoRotationEnabled) {
+            sphere.angle += sphere.rotationSpeed * dt / 1000  * Math.PI;
+        }
         render_sphere(sphere);
 
         sphere.cancelAnimationRef = requestAnimationFrame(animate);
@@ -980,7 +982,10 @@ export function toggle_animation(sphere: SphereData) {
 // New animation control functions
 export function set_animation_options(sphere: SphereData, isRotating: boolean = true, rotationSpeed: number = 0.1, animateClusters: boolean = false, jsonData?: any) {
     sphere.rotationSpeed = rotationSpeed;
-    sphere.rotationControlsEnabled = isRotating; // Control both auto-rotation and mouse dragging
+    // Mouse drag rotation should ALWAYS be enabled
+    sphere.rotationControlsEnabled = true;
+    // Auto-rotation is controlled separately by isRotating parameter
+    sphere.autoRotationEnabled = isRotating;
     sphere.animateClusters = animateClusters;
     sphere.jsonData = jsonData;
     
@@ -1393,70 +1398,114 @@ export function goto_training_movie_frame(sphere: SphereData, frameNumber: numbe
     update_training_movie_frame(sphere, epochKey);
 }
 
-// Smooth interpolation functions
+// Smooth interpolation functions with velocity continuity
 function start_point_interpolation(sphere: SphereData, targetPositions: Map<string, THREE.Vector3>, duration: number = 300) {
-    // Starting smooth interpolation
-    
     // Initialize interpolation state
     sphere.pointTargetPositions = targetPositions;
     sphere.pointStartPositions = new Map();
+    sphere.pointStartVelocities = sphere.pointStartVelocities || new Map();
     sphere.interpolationStartTime = Date.now();
     sphere.interpolationDuration = duration;
     sphere.isInterpolating = true;
-    
-    // Store current positions as start positions
+
+    // Store current positions and calculate incoming velocities
     sphere.pointObjectsByRecordID.forEach((mesh: any, recordId: string) => {
         sphere.pointStartPositions?.set(recordId, mesh.position.clone());
+
+        // Use previous velocity if available, otherwise zero
+        if (!sphere.pointStartVelocities?.has(recordId)) {
+            sphere.pointStartVelocities?.set(recordId, new THREE.Vector3(0, 0, 0));
+        }
     });
-    
+
     // Start interpolation animation loop
     animate_interpolation(sphere);
+}
+
+// Hermite interpolation for smooth velocity-continuous motion
+function hermiteInterpolate(p0: THREE.Vector3, v0: THREE.Vector3, p1: THREE.Vector3, v1: THREE.Vector3, t: number): THREE.Vector3 {
+    // Hermite basis functions
+    const t2 = t * t;
+    const t3 = t2 * t;
+    const h00 = 2*t3 - 3*t2 + 1;  // position at p0
+    const h10 = t3 - 2*t2 + t;     // tangent at p0
+    const h01 = -2*t3 + 3*t2;      // position at p1
+    const h11 = t3 - t2;           // tangent at p1
+
+    return new THREE.Vector3(
+        h00 * p0.x + h10 * v0.x + h01 * p1.x + h11 * v1.x,
+        h00 * p0.y + h10 * v0.y + h01 * p1.y + h11 * v1.y,
+        h00 * p0.z + h10 * v0.z + h01 * p1.z + h11 * v1.z
+    );
 }
 
 function animate_interpolation(sphere: SphereData) {
     if (!sphere.isInterpolating || !sphere.interpolationStartTime || !sphere.interpolationDuration) {
         return;
     }
-    
+
     const elapsed = Date.now() - sphere.interpolationStartTime;
     const progress = Math.min(elapsed / sphere.interpolationDuration, 1.0);
-    
-    // Ease-out interpolation for smoother movement
-    const easedProgress = 1 - Math.pow(1 - progress, 3);
-    
-    // Update all point positions
+
+    // Smooth ease-in-out for fluid frame-to-frame transitions
+    const easedProgress = -(Math.cos(Math.PI * progress) - 1) / 2;
+
+    // Update all point positions using Hermite interpolation for velocity continuity
     sphere.pointObjectsByRecordID.forEach((mesh: any, recordId: string) => {
         const startPos = sphere.pointStartPositions?.get(recordId);
         const targetPos = sphere.pointTargetPositions?.get(recordId);
-        
+        const startVel = sphere.pointStartVelocities?.get(recordId);
+
         if (startPos && targetPos) {
-            // Interpolate between start and target positions
-            mesh.position.lerpVectors(startPos, targetPos, easedProgress);
+            // Calculate the displacement for tangent scaling
+            const displacement = new THREE.Vector3().subVectors(targetPos, startPos);
+            const distance = displacement.length();
+
+            // Scale incoming velocity to match the displacement magnitude
+            // This prevents overshooting while maintaining direction continuity
+            const inVel = startVel ? startVel.clone().multiplyScalar(distance * 0.5) : new THREE.Vector3(0, 0, 0);
+
+            // Outgoing velocity points toward next target (we'll calculate properly at end)
+            // For now, use displacement direction scaled down for smooth arrival
+            const outVel = displacement.clone().multiplyScalar(0.5);
+
+            // Use Hermite interpolation for smooth velocity-continuous motion
+            const newPos = hermiteInterpolate(startPos, inVel, targetPos, outVel, easedProgress);
+            mesh.position.copy(newPos);
         }
     });
-    
+
     // Update memory trails during interpolation so arcs chase the points
     update_memory_trails(sphere);
-    
+
     // Re-render the sphere
     render_sphere(sphere);
-    
+
     // Continue animation or finish
     if (progress < 1.0) {
         sphere.interpolationAnimationRef = requestAnimationFrame(() => animate_interpolation(sphere));
     } else {
-        // Interpolation complete - store final positions in memory trail history
+        // Interpolation complete - calculate and store final velocities for next frame
         sphere.pointObjectsByRecordID.forEach((mesh: any, recordId: string) => {
+            const startPos = sphere.pointStartPositions?.get(recordId);
+            const targetPos = sphere.pointTargetPositions?.get(recordId);
+
+            if (startPos && targetPos) {
+                // Store normalized velocity direction for next interpolation
+                const velocity = new THREE.Vector3().subVectors(targetPos, startPos).normalize();
+                sphere.pointStartVelocities?.set(recordId, velocity);
+            }
+
             store_point_position_in_history(sphere, recordId, mesh.position);
         });
-        
+
         // Final update of memory trails with new positions
         update_memory_trails(sphere);
-        
+
         sphere.isInterpolating = false;
         sphere.pointTargetPositions = undefined;
         sphere.pointStartPositions = undefined;
-    
+        // Keep pointStartVelocities for next frame's continuity
     }
 }
 
@@ -1672,7 +1721,7 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
         // Calculate optimal interpolation duration based on frame timing
         // Fixed 1 second per frame (matches play_training_movie)
         const fixedFrameDuration = 1000; // 1 second per frame
-        const interpolationDuration = Math.max(50, fixedFrameDuration * 0.8); // 80% of frame delay to finish before next frame
+        const interpolationDuration = Math.max(50, fixedFrameDuration * 0.99); // 99% of frame delay for seamless flow
         
         start_point_interpolation(sphere, targetPositions, interpolationDuration);
         
