@@ -1446,6 +1446,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     }
     const [sphereRef, setSphereRef] = useState<any>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const outerContainerRef = useRef<HTMLDivElement>(null);
     const [frameInfo, setFrameInfo] = useState<{ current: number, total: number, visible: number, epoch?: string, validationLoss?: number } | null>(null);
     const [isPlaying, setIsPlaying] = useState(true); // Start playing automatically
     const [frameInput, setFrameInput] = useState<string>('');
@@ -1505,16 +1506,17 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     // Thumbnail mode - hide all controls when container is small
     const [isThumbnail, setIsThumbnail] = useState(false);
 
-    // Detect thumbnail mode from container size
+    // Detect thumbnail mode from OUTER container size
     useEffect(() => {
-        if (!containerRef.current) return;
+        if (!outerContainerRef.current) return;
         const resizeObserver = new ResizeObserver((entries) => {
             const entry = entries[0];
             const width = entry.contentRect.width;
             const height = entry.contentRect.height;
+            console.log('📐 Container size:', width, 'x', height, '→ thumbnail:', width < 400 || height < 400);
             setIsThumbnail(width < 400 || height < 400);
         });
-        resizeObserver.observe(containerRef.current);
+        resizeObserver.observe(outerContainerRef.current);
         return () => resizeObserver.disconnect();
     }, []);
 
@@ -2748,11 +2750,11 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     }
 
     return (
-        <div className="training-progress-display" style={{
+        <div ref={outerContainerRef} className="training-progress-display" style={{
             display: 'flex',
             flexDirection: 'column',
             width: '100%',
-            height: '100vh',
+            height: '100%',
             background: '#2a2a2a',
             color: '#d0d0d0',
             overflow: 'hidden'
@@ -2972,6 +2974,601 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         </select>
                     </label>
                 </div>
+                {/* SECTION 2: TOOLS */}
+                <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', margin: '20px 0 8px 0' }}>TOOLS</div>
+                <div style={{ marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <button onClick={() => setShowSearch(!showSearch)} style={{ background: showSearch ? '#4c4' : '#2a2a2a', border: 'none', color: '#e0e0e0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0, flex: 1 }} title="Toggle Search">Search</button>
+                        <button onClick={() => { setShowBoundsBox(!showBoundsBox); if (sphereRef) { toggle_bounds_box(sphereRef, !showBoundsBox); render_sphere(sphereRef); } }} style={{ background: showBoundsBox ? '#4c4' : '#2a2a2a', border: 'none', color: '#e0e0e0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0, flex: 1 }} title="Toggle Bounds Box">Bounds</button>
+                        <button onClick={() => {
+                            if (sphereRef) {
+                                toggle_embedding_hull(sphereRef, !sphereRef.showEmbeddingHull);
+                                render_sphere(sphereRef);
+                            }
+                        }} style={{ background: sphereRef?.showEmbeddingHull ? '#4c4' : '#2a2a2a', border: 'none', color: '#e0e0e0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0, flex: 1 }} title="Toggle Embedding Convex Hull">Hull</button>
+                    </div>
+                    {/* Loading Progress */}
+                    {loadingProgress && loadingProgress.loaded < loadingProgress.total && (
+                        <div style={{ marginTop: '8px', fontSize: '11px', color: '#8a8a8a' }}>
+                            Loading: {loadingProgress.loaded} / {loadingProgress.total} ({(loadingProgress.loaded / loadingProgress.total * 100).toFixed(1)}%)
+                        </div>
+                    )}
+                    {showBoundsBox && sphereRef && sphereRef.boundsBoxVolumeUtilization !== undefined && (
+                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#cfd8dc' }}>
+                            Sphere Coverage: <strong>{sphereRef.boundsBoxVolumeUtilization.toFixed(2)}%</strong>
+                            <div style={{ fontSize: '11px', color: '#8a8a8a', marginTop: '2px' }}>
+                                {sphereRef.boundsBoxVolumeUtilization.toFixed(2)}% of unit sphere radius covered
+                            </div>
+                            <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={showGreatCircles}
+                                    onChange={(e) => {
+                                        const enabled = e.target.checked;
+                                        setShowGreatCircles(enabled);
+                                        if (sphereRef) {
+                                            toggle_great_circles(sphereRef, enabled);
+                                        }
+                                    }}
+                                    style={{ cursor: 'pointer', width: '14px', height: '14px' }}
+                                    id="show-great-circles-checkbox"
+                                />
+                                <label
+                                    htmlFor="show-great-circles-checkbox"
+                                    style={{ fontSize: '12px', color: '#cfd8dc', cursor: 'pointer' }}
+                                >
+                                    Show great circles
+                                </label>
+                            </div>
+                        </div>
+                    )}
+                    {sphereRef?.showEmbeddingHull && sphereRef.embeddingHullArea !== undefined && (sphereRef as any).embeddingHullCoverage !== undefined && (
+                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#cfd8dc' }}>
+                            Convex Hull Area: <strong>{sphereRef.embeddingHullArea.toFixed(4)}</strong>
+                            <div style={{ fontSize: '11px', color: '#8a8a8a', marginTop: '2px' }}>
+                                Unit sphere area: {(4 * Math.PI).toFixed(4)} | Coverage: <strong>{(sphereRef as any).embeddingHullCoverage.toFixed(2)}%</strong>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Search Panel */}
+                {showSearch && columnTypes && Object.keys(columnTypes).length > 0 && (
+                    <div style={{ marginBottom: '16px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <label style={{ color: '#d0d0d0', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '14px' }}>
+                                    Column:
+                                    <select value={selectedSearchColumn} onChange={(e) => setSelectedSearchColumn(e.target.value)} style={{ marginLeft: '4px', fontSize: '13px', padding: '4px 6px', backgroundColor: '#555', color: '#d0d0d0', border: '1px solid #666', borderRadius: '3px', cursor: 'pointer' }}>
+                                        {Object.keys(columnTypes).map((col) => (<option key={col} value={col}>{col}</option>))}
+                                    </select>
+                                </label>
+                                {(() => {
+                                    // Get placeholder text based on column type
+                                    const colType = selectedSearchColumn ? columnTypes[selectedSearchColumn] : null;
+                                    let placeholder = 'Type to search...';
+                                    if (colType === 'set') {
+                                        placeholder = 'Type exact value...';
+                                    } else if (colType === 'scalar') {
+                                        placeholder = 'Use: =5, >10, <5, !=null, null, etc.';
+                                    }
+                                    
+                                    // Check if column contains boolean-like values
+                                    let hasBooleanValues = false;
+                                    if (sphereRef && sphereRef.current && sphereRef.current.pointRecordsByID && selectedSearchColumn) {
+                                        const sampleValues = new Set<string>();
+                                        for (const record of sphereRef.current.pointRecordsByID.values()) {
+                                            const val = record.original[selectedSearchColumn];
+                                            if (val !== undefined) {
+                                                if (isBooleanLike(val)) {
+                                                    hasBooleanValues = true;
+                                                    break;
+                                                }
+                                                sampleValues.add(String(val));
+                                                if (sampleValues.size >= 10) break;
+                                            }
+                                        }
+                                    }
+                                    
+                                    return (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
+                                            <input
+                                                type="text"
+                                                value={searchQuery}
+                                                onChange={handleSearchInput}
+                                                onKeyDown={handleSearchKeyDown}
+                                                placeholder={placeholder + ' (Press Enter or click Go)'}
+                                                style={{ background: '#2a2a2a', border: '2px solid #0088ff', color: '#ffffff', padding: '6px 10px', borderRadius: '3px', fontSize: '14px', flex: 1, minWidth: '150px' }} 
+                                            />
+                                            <button 
+                                                onClick={() => {
+                                                    handleSearchSubmit();
+                                                }}
+                                                disabled={!searchQuery.trim()}
+                                                style={{ 
+                                                    background: searchQuery.trim() ? '#4a4' : '#555', 
+                                                    border: '1px solid #666', 
+                                                    color: '#d0d0d0', 
+                                                    padding: '6px 12px', 
+                                                    borderRadius: '3px', 
+                                                    cursor: searchQuery.trim() ? 'pointer' : 'not-allowed', 
+                                                    fontSize: '13px',
+                                                    fontWeight: 'bold',
+                                                    opacity: searchQuery.trim() ? 1 : 0.5
+                                                }} 
+                                                title="Create color rule from search"
+                                            >
+                                                GO
+                                            </button>
+                                        </div>
+                                    );
+                                })()}
+                                {searchQuery && (<button onClick={() => { 
+                                    setSearchQuery(''); 
+                                    setSearchResultStats(null);
+                                    applyColorRules();
+                                }} style={{ background: '#633', border: '1px solid #666', color: '#d0d0d0', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '13px', marginLeft: '4px' }} title="Clear Search">✕</button>)}
+                            </div>
+                            
+                            {/* Color Rules List - Always show, even when empty */}
+                            <div style={{ marginTop: '12px', padding: '8px', background: 'rgba(42, 42, 42, 0.8)', border: '1px solid #666', borderRadius: '4px' }}>
+                                    <div style={{ color: '#d0d0d0', fontWeight: 'bold', marginBottom: '8px', fontSize: '13px' }}>
+                                        Color Rules ({colorRules.length}):
+                                        {colorRules.length === 0 && (
+                                            <span style={{ fontSize: '11px', color: '#888', fontWeight: 'normal', marginLeft: '8px' }}>
+                                                (Type search and press Enter to create)
+                                            </span>
+                                        )}
+                                    </div>
+                                    {colorRules.length > 0 ? (
+                                        <>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '200px', overflowY: 'auto' }}>
+                                                {colorRules.map((rule) => (
+                                                    <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px', background: 'rgba(0,0,0,0.3)', borderRadius: '3px' }}>
+                                                        <div style={{ width: '20px', height: '20px', background: rule.color, border: '1px solid #666', borderRadius: '3px', flexShrink: 0 }}></div>
+                                                        <div style={{ flex: 1, fontSize: '12px', color: '#d0d0d0' }}>
+                                                            <strong>{rule.column}</strong>: "{rule.query}" ({rule.recordIds.length} records)
+                                                        </div>
+                                                        <button 
+                                                            onClick={() => {
+                                                                setColorRules(prev => prev.filter(r => r.id !== rule.id));
+                                                            }}
+                                                            style={{ 
+                                                                background: '#633', 
+                                                                border: '1px solid #666', 
+                                                                color: '#d0d0d0', 
+                                                                padding: '4px 8px', 
+                                                                borderRadius: '3px', 
+                                                                cursor: 'pointer', 
+                                                                fontSize: '11px',
+                                                                flexShrink: 0
+                                                            }} 
+                                                            title="Delete Rule"
+                                                        >
+                                                            ✕
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <button 
+                                                onClick={() => {
+                                                    setColorRules([]);
+                                                }}
+                                                style={{ 
+                                                    marginTop: '8px', 
+                                                    width: '100%', 
+                                                    background: '#633', 
+                                                    border: '1px solid #666', 
+                                                    color: '#d0d0d0', 
+                                                    padding: '6px', 
+                                                    borderRadius: '3px', 
+                                                    cursor: 'pointer', 
+                                                    fontSize: '12px' 
+                                                }}
+                                            >
+                                                Clear All Rules
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <div style={{ fontSize: '11px', color: '#888', fontStyle: 'italic', padding: '8px', textAlign: 'center' }}>
+                                            No color rules yet. Search and press Enter to create one.
+                                        </div>
+                                    )}
+                                </div>
+                            
+                            {/* Help text for boolean columns */}
+                            {(() => {
+                                if (!selectedSearchColumn || !sphereRef || !sphereRef.current || !sphereRef.current.pointRecordsByID) return null;
+                                
+                                // Check if this column has boolean-like values
+                                const sampleValues = new Set<string>();
+                                let hasBoolean = false;
+                                for (const record of sphereRef.current.pointRecordsByID.values()) {
+                                    const val = record.original[selectedSearchColumn];
+                                    if (val !== undefined) {
+                                        if (isBooleanLike(val)) {
+                                            hasBoolean = true;
+                                        }
+                                        sampleValues.add(String(val));
+                                        if (sampleValues.size >= 20) break;
+                                    }
+                                }
+                                
+                                if (hasBoolean) {
+                                    return (
+                                        <div style={{ padding: '8px', background: 'rgba(76, 175, 80, 0.1)', border: '1px solid rgba(76, 175, 80, 0.3)', borderRadius: '4px', fontSize: '12px', color: '#4caf50' }}>
+                                            <strong>Boolean column detected:</strong> Try: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px' }}>true</code>, <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px' }}>1</code>, <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px' }}>yes</code> or <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px' }}>false</code>, <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px' }}>0</code>, <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px' }}>no</code>
+                                        </div>
+                                    );
+                                }
+                                return null;
+                            })()}
+                            
+                            {/* Color Key for Boolean Search Results */}
+                            {searchResultStats && searchResultStats.isBoolean && (
+                                <div style={{ padding: '8px', background: 'rgba(42, 42, 42, 0.8)', border: '1px solid #666', borderRadius: '4px', fontSize: '12px' }}>
+                                    <div style={{ color: '#d0d0d0', fontWeight: 'bold', marginBottom: '6px' }}>Search Results:</div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <div style={{ width: '16px', height: '16px', background: '#00ff00', border: '1px solid #666', borderRadius: '2px' }}></div>
+                                            <span style={{ color: '#d0d0d0' }}>Yes/True: <strong>{searchResultStats.yes}</strong></span>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <div style={{ width: '16px', height: '16px', background: '#ff0000', border: '1px solid #666', borderRadius: '2px' }}></div>
+                                            <span style={{ color: '#d0d0d0' }}>No/False: <strong>{searchResultStats.no}</strong></span>
+                                        </div>
+                                        {searchResultStats.unknown > 0 && (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <div style={{ width: '16px', height: '16px', background: '#888888', border: '1px solid #666', borderRadius: '2px' }}></div>
+                                                <span style={{ color: '#d0d0d0' }}>Unknown: <strong>{searchResultStats.unknown}</strong></span>
+                                                <label style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '11px' }}>
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={hideUnknown} 
+                                                        onChange={(e) => setHideUnknown(e.target.checked)}
+                                                        style={{ cursor: 'pointer', width: '14px', height: '14px' }}
+                                                    />
+                                                    Hide
+                                                </label>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                            
+                            {/* Column Distribution/Vocabulary */}
+                            {columnVocabulary && (
+                                <div style={{ padding: '8px', background: 'rgba(42, 42, 42, 0.8)', border: '1px solid #666', borderRadius: '4px', fontSize: '12px' }}>
+                                    {columnVocabulary.type === 'scalar' && columnVocabulary.distribution && (
+                                        <div>
+                                            <div style={{ color: '#d0d0d0', fontWeight: 'bold', marginBottom: '6px' }}>
+                                                Distribution
+                                                {columnVocabulary.min !== undefined && columnVocabulary.max !== undefined && (
+                                                    <span style={{ fontSize: '11px', fontWeight: 'normal', color: '#aaa', marginLeft: '8px' }}>
+                                                        ({columnVocabulary.min.toFixed(2)} - {columnVocabulary.max.toFixed(2)})
+                                                    </span>
+                                                )}
+                                            </div>
+                                            {columnVocabulary.mean !== undefined && columnVocabulary.median !== undefined && (
+                                                <div style={{ fontSize: '11px', color: '#aaa', marginBottom: '6px' }}>
+                                                    Mean: {columnVocabulary.mean.toFixed(2)} | Median: {columnVocabulary.median.toFixed(2)}
+                                                </div>
+                                            )}
+                                            <DistributionChart 
+                                                distribution={columnVocabulary.distribution}
+                                                min={columnVocabulary.min || 0}
+                                                max={columnVocabulary.max || 0}
+                                                searchValue={searchQuery ? parseFloat(searchQuery) : null}
+                                            />
+                                        </div>
+                                    )}
+                                    {columnVocabulary.type !== 'scalar' && columnVocabulary.vocabulary && (
+                                        <div>
+                                            <div style={{ color: '#d0d0d0', fontWeight: 'bold', marginBottom: '6px' }}>
+                                                Vocabulary ({columnVocabulary.vocabulary.length} unique values)
+                                            </div>
+                                            <div style={{ maxHeight: '150px', overflowY: 'auto', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                                {columnVocabulary.vocabulary.map((val, idx) => (
+                                                    <button
+                                                        key={idx}
+                                                        onClick={() => {
+                                                            setSearchQuery(val);
+                                                            const fakeEvent = { target: { value: val } } as React.ChangeEvent<HTMLInputElement>;
+                                                            handleSearchInput(fakeEvent);
+                                                        }}
+                                                        style={{
+                                                            background: searchQuery === val ? '#4c4' : '#555',
+                                                            border: '1px solid #666',
+                                                            color: '#d0d0d0',
+                                                            padding: '2px 6px',
+                                                            borderRadius: '3px',
+                                                            cursor: 'pointer',
+                                                            fontSize: '11px',
+                                                            whiteSpace: 'nowrap'
+                                                        }}
+                                                        title={`Click to search for: ${val}`}
+                                                    >
+                                                        {val.length > 20 ? val.substring(0, 20) + '...' : val}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                            
+                            {/* Example Queries */}
+                            <div style={{ borderTop: '1px solid #666', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <div style={{ color: '#aaa', fontSize: '13px', marginBottom: '4px' }}>Example values from data:</div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                    {(() => {
+                                        const examples: string[] = [];
+                                        if (selectedSearchColumn && columnTypes[selectedSearchColumn]) {
+                                            const colType = columnTypes[selectedSearchColumn];
+                                            const sampleValues = new Set<string>();
+
+                                            // Try pointRecordsByID first
+                                            if (sphereRef && sphereRef.current && sphereRef.current.pointRecordsByID) {
+                                                for (const record of sphereRef.current.pointRecordsByID.values()) {
+                                                    const val = record.original[selectedSearchColumn];
+                                                    if (val !== undefined) {
+                                                        sampleValues.add(String(val));
+                                                        if (sampleValues.size >= 10) break;
+                                                    }
+                                                }
+                                            }
+
+                                            // Fallback to jsonData if pointRecordsByID empty
+                                            if (sampleValues.size === 0 && sphereRef && sphereRef.current && sphereRef.current.jsonData) {
+                                                const coords = sphereRef.current.jsonData.coords || sphereRef.current.jsonData.projections;
+                                                if (coords && Array.isArray(coords)) {
+                                                    for (const point of coords.slice(0, 20)) {
+                                                        const val = point.original?.[selectedSearchColumn];
+                                                        if (val !== undefined) {
+                                                            sampleValues.add(String(val));
+                                                            if (sampleValues.size >= 10) break;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            
+                                            if (colType === 'set' || colType === 'scalar') {
+                                                // For set/scalar, show actual values
+                                                examples.push(...Array.from(sampleValues).slice(0, 8));
+                                            } else if (colType === 'string') {
+                                                // For strings, show first few unique values
+                                                examples.push(...Array.from(sampleValues).slice(0, 5));
+                                            }
+                                        }
+                                        return examples.length > 0 ? examples.map((ex, idx) => (
+                                            <button key={idx} onClick={() => { 
+                                                setSearchQuery(ex); 
+                                                // Trigger search using the same handler
+                                                if (sphereRef && columnTypes && selectedSearchColumn) {
+                                                    const fakeEvent = { target: { value: ex } } as React.ChangeEvent<HTMLInputElement>;
+                                                    handleSearchInput(fakeEvent);
+                                                }
+                                            }} style={{ background: '#555', border: '1px solid #777', color: '#d0d0d0', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '13px' }} title={`Click to search for: ${ex}`}>{ex.length > 15 ? ex.substring(0, 15) + '...' : ex}</button>
+                                        )) : (
+                                            <div style={{ color: '#888', fontSize: '12px', fontStyle: 'italic' }}>No sample values found</div>
+                                        );
+                                    })()}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                {/* SECTION 4: VISUAL CONTROLS */}
+                {frameInfo && (
+                    <div style={{ marginBottom: '16px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', margin: '20px 0 8px 0' }}>VISUAL CONTROLS</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {/* Dropdowns first */}
+                            <label style={{ color: '#cfd8dc', fontSize: '13px', display: 'flex', alignItems: 'center' }}>
+                                Cluster Coloring:
+                                <select value={clusterColorMode} onChange={(e) => setClusterColorMode(e.target.value as 'final' | 'per-epoch')} style={{ marginLeft: '8px', fontSize: '12px', padding: '4px 6px', backgroundColor: '#2a2a2a', color: '#e0e0e0', border: '1px solid #333', borderRadius: '3px', cursor: 'pointer', flex: 1 }}>
+                                    <option value="final">Final Frame Clusters</option>
+                                    <option value="per-epoch">Per-Epoch Clusters</option>
+                                </select>
+                            </label>
+                            <div style={{ fontSize: '11px', color: '#8a8a8a', paddingLeft: '4px', marginTop: '-4px' }}>
+                                {clusterColorMode === 'final'
+                                    ? 'Colors locked to final-frame neighbors. Watch them converge.'
+                                    : 'Colors from each epoch\'s own clustering. Watch clusters evolve.'}
+                            </div>
+                            <label style={{ color: '#cfd8dc', fontSize: '13px', display: 'flex', alignItems: 'center' }}>
+                                Focus Cluster:
+                                <select value={spotlightCluster} onChange={(e) => { const cluster = parseInt(e.target.value); setSpotlightCluster(cluster); if (sphereRef) { sphereRef.spotlightCluster = cluster; update_cluster_spotlight(sphereRef); render_sphere(sphereRef); } }} style={{ marginLeft: '8px', fontSize: '12px', padding: '4px 6px', backgroundColor: '#2a2a2a', color: '#e0e0e0', border: '1px solid #333', borderRadius: '3px', cursor: 'pointer', flex: 1 }}>
+                                    <option value={-1}>Off</option>
+                                    {frameInfo.visible > 0 && Array.from({length: frameInfo.visible}, (_, i) => (<option key={i} value={i}>C{i}</option>))}
+                                </select>
+                            </label>
+
+                            {/* Toggles second */}
+                            <div style={{ height: '1px', background: '#2a2a2a', margin: '4px 0' }} />
+                            <label style={{ color: frameInfo.visible >= 4 ? '#cfd8dc' : '#555', fontSize: '13px', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                                <input type="checkbox" checked={showDynamicHulls} onChange={(e) => { setShowDynamicHulls(e.target.checked); }} style={{ marginRight: '8px', cursor: 'pointer', width: '14px', height: '14px' }} disabled={frameInfo.visible < 4} />
+                                Show Cluster Spheres
+                                <span style={{ fontSize: '11px', color: '#8a8a8a', marginLeft: '8px' }}>({frameInfo.visible})</span>
+                            </label>
+                        </div>
+                    </div>
+                )}
+                {/* SECTION 5: SYSTEM */}
+                <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', margin: '28px 0 8px 0' }}>SYSTEM</div>
+                <div style={{ marginBottom: '16px', fontSize: '11px', color: '#8a8a8a' }}>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        <button onClick={() => setShowMovementPlot(!showMovementPlot)} style={{ background: showMovementPlot ? '#4c4' : '#2a2a2a', border: 'none', color: '#8a8a8a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title="Toggle Movement Histogram">Move</button>
+                        <button onClick={() => setShowClusterDebug(!showClusterDebug)} style={{ background: showClusterDebug ? '#4c4' : '#2a2a2a', border: 'none', color: '#8a8a8a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title="Toggle Cluster Inspector">Debug</button>
+                        <button onClick={() => setShowColorLegend(!showColorLegend)} style={{ background: showColorLegend ? '#4c4' : '#2a2a2a', border: 'none', color: '#8a8a8a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title="Toggle Color Legend">Colors</button>
+                        {!isMobile && <button onClick={toggleFullscreen} style={{ background: isFullscreen ? '#4c4' : '#2a2a2a', border: 'none', color: '#8a8a8a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}>{isFullscreen ? 'Exit' : 'Full'}</button>}
+                        <button onClick={() => setRotationEnabled(!rotationEnabled)} style={{ background: rotationEnabled ? '#4c4' : '#c44', border: 'none', color: '#8a8a8a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title={rotationEnabled ? "Disable Rotation" : "Enable Rotation"}>{rotationEnabled ? 'On' : 'Off'}</button>
+                    </div>
+                    {/* Session info merged into System */}
+                    {lossData && (
+                        <div style={{ marginTop: '10px', color: '#666', fontSize: '10px', fontFamily: 'monospace' }}>
+                            <div style={{ marginBottom: '2px' }}>Session: {sessionId}</div>
+                            {lossData.training_info && lossData.training_info.featrix_version && (
+                                <div style={{ marginBottom: '2px' }}>Featrix: {lossData.training_info.featrix_version}</div>
+                            )}
+                            {lossData.training_info && lossData.training_info.software_version && (
+                                <div style={{ marginBottom: '2px' }}>Software: {lossData.training_info.software_version}</div>
+                            )}
+                            {frameInfo && (
+                                <div>Epochs: {frameInfo.total}</div>
+                            )}
+                        </div>
+                    )}
+                </div>
+                {/* Color Legend - Inline in side panel */}
+                {showColorLegend && frameInfo && (
+                    <div style={{ marginBottom: '16px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', marginBottom: '8px' }}>CLUSTER COLORS</div>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+                            {frameInfo.visible > 0 && Array.from({length: frameInfo.visible}, (_, i) => {
+                                // Clusters are 0-based, so cluster 0 uses color index 0
+                                const kColorTable = [0xe6194b, 0x3cb44b, 0xffe119, 0x4363d8, 0xf58231, 0x911eb4, 0x46f0f0, 0xf032e6, 0xbcf60c, 0xfabebe, 0x008080, 0xe6beff, 0x9a6324, 0xfffac8, 0x800000, 0xaaffc3, 0x808000, 0xffd8b1, 0x999999, 0x0000ff, 0x00ff00, 0xffcccc];
+                                const defaultColorHex = kColorTable[i] || 0x999999;
+                                // Check for custom color
+                                const customColorHex = sphereRef?.customClusterColors?.get(i);
+                                const colorHex = customColorHex || defaultColorHex;
+                                const color = '#' + colorHex.toString(16).padStart(6, '0');
+                                return (
+                                    <div key={`cluster-${i}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                                        <span style={{ fontSize: '12px' }}>C{i}</span>
+                                        <input
+                                            type="color"
+                                            value={color}
+                                            onChange={(e) => {
+                                                if (sphereRef && sphereRef.current) {
+                                                    const newColor = e.target.value;
+                                                    set_cluster_color(sphereRef.current, i, newColor);
+                                                    render_sphere(sphereRef.current);
+                                                    // Force component re-render
+                                                    setShowColorLegend(prev => prev);
+                                                } else {
+                                                }
+                                            }}
+                                            style={{ 
+                                                width: '30px', 
+                                                height: '30px', 
+                                                border: '1px solid #555', 
+                                                borderRadius: '3px',
+                                                cursor: 'pointer',
+                                                padding: 0
+                                            }}
+                                            title={`Change color for cluster ${i}`}
+                                        />
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        <button
+                            onClick={() => {
+                                if (sphereRef && sphereRef.current) {
+                                    clear_cluster_colors(sphereRef.current);
+                                    render_sphere(sphereRef.current);
+                                    setShowColorLegend(prev => prev);
+                                }
+                            }}
+                            style={{ 
+                                marginTop: '8px',
+                                width: '100%',
+                                background: '#2a2a2a',
+                                border: 'none',
+                                color: '#8a8a8a',
+                                padding: '6px',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '11px'
+                            }}
+                        >
+                            Reset to Default Colors
+                        </button>
+                    </div>
+                )}
+
+                {/* Cluster Debug Panel - Inline in side panel */}
+                {showClusterDebug && (
+                    <div style={{ marginBottom: '16px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', marginBottom: '8px' }}>CLUSTER INSPECTOR</div>
+                        {frameInfo && (<div style={{ marginBottom: '8px', fontSize: '14px' }}><div>Frame: {frameInfo.current}/{frameInfo.total}</div><div>Visible Clusters: {frameInfo.visible}</div><div>Epoch: {frameInfo.epoch || 'unknown'}</div></div>)}
+
+                        {/* Cluster member counts */}
+                        {sphereRef && (() => {
+                            // Count points per cluster
+                            const clusterCounts = new Map<number, number>();
+                            let pointsWithoutCluster = 0;
+                            let totalPoints = 0;
+
+                            if (sphereRef.pointObjectsByRecordID && sphereRef.pointRecordsByID) {
+                                sphereRef.pointObjectsByRecordID.forEach((mesh: any, recordId: string) => {
+                                    totalPoints++;
+                                    const record = sphereRef.pointRecordsByID.get(recordId);
+
+                                    // Try to get cluster from finalClusterResults
+                                    let cluster = -1;
+                                    const activeClusterKey = get_active_cluster_count_key(sphereRef);
+                                    if (activeClusterKey !== null && sphereRef.finalClusterResults?.[activeClusterKey]?.cluster_labels) {
+                                        const rowOffset = record?.featrix_meta?.__featrix_row_offset;
+                                        if (rowOffset !== undefined && rowOffset < sphereRef.finalClusterResults[activeClusterKey].cluster_labels.length) {
+                                            cluster = sphereRef.finalClusterResults[activeClusterKey].cluster_labels[rowOffset];
+                                        }
+                                    }
+
+                                    if (cluster === -1) {
+                                        pointsWithoutCluster++;
+                                    } else {
+                                        clusterCounts.set(cluster, (clusterCounts.get(cluster) || 0) + 1);
+                                    }
+                                });
+                            }
+
+                            if (clusterCounts.size === 0) {
+                                return (<div style={{ fontSize: '12px', color: '#c44', marginTop: '8px' }}>⚠️ No cluster data available ({totalPoints} points)</div>);
+                            }
+
+                            return (
+                                <div style={{ marginTop: '8px', borderTop: '1px solid #444', paddingTop: '8px' }}>
+                                    <div style={{ color: '#4cf', fontWeight: 'bold', marginBottom: '4px', fontSize: '13px' }}>Cluster Members:</div>
+                                    <div style={{ fontSize: '11px', fontFamily: 'monospace', maxHeight: '150px', overflowY: 'auto' }}>
+                                        {Array.from(clusterCounts.entries()).sort((a, b) => a[0] - b[0]).map(([cluster, count]) => (
+                                            <div key={cluster} style={{ marginBottom: '2px' }}>
+                                                <span style={{ color: '#888' }}>C{cluster}:</span> <span style={{ color: '#ddd' }}>{count} points</span>
+                                            </div>
+                                        ))}
+                                        {pointsWithoutCluster > 0 && (
+                                            <div style={{ marginTop: '4px', color: '#c44' }}>⚠️ {pointsWithoutCluster} points without cluster</div>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })()}
+                        {selectedPointInfo && (
+                            <div style={{ marginTop: '8px', borderTop: '1px solid #444', paddingTop: '8px', fontSize: '13px' }}>
+                                <div style={{ color: '#ff4', fontWeight: 'bold', marginBottom: '6px' }}>Selected Point:</div>
+                                <div>Record ID: {selectedPointInfo.recordId}</div>
+                                <div>Row Offset: {selectedPointInfo.rowOffset}</div>
+                                <div>Cluster ID: {selectedPointInfo.clusterId}</div>
+                                <div>Color: <span style={{ background: selectedPointInfo.color, padding: '2px 6px', borderRadius: '2px' }}>{selectedPointInfo.color}</span></div>
+                                <div>Position: {selectedPointInfo.position}</div>
+                                {selectedPointInfo.data && (
+                                    <div style={{ marginTop: '8px', borderTop: '1px solid #333', paddingTop: '8px' }}>
+                                        <div style={{ color: '#4cf', fontWeight: 'bold', marginBottom: '4px' }}>Data:</div>
+                                        <div style={{ maxHeight: '200px', overflowY: 'auto', fontSize: '12px', fontFamily: 'monospace' }}>
+                                            {Object.entries(selectedPointInfo.data).map(([key, value]) => (
+                                                <div key={key} style={{ marginBottom: '2px' }}>
+                                                    <span style={{ color: '#888' }}>{key}:</span> <span style={{ color: '#ddd' }}>{String(value)}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        <div style={{ marginTop: '8px', fontSize: '13px', color: '#888' }}>Click points on sphere to inspect</div>
+                    </div>
+                )}
             </div>
             )}
 
