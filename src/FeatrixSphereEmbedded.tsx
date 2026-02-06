@@ -1502,6 +1502,22 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
     const [showMobilePanel, setShowMobilePanel] = useState(false);
 
+    // Thumbnail mode - hide all controls when container is small
+    const [isThumbnail, setIsThumbnail] = useState(false);
+
+    // Detect thumbnail mode from container size
+    useEffect(() => {
+        if (!containerRef.current) return;
+        const resizeObserver = new ResizeObserver((entries) => {
+            const entry = entries[0];
+            const width = entry.contentRect.width;
+            const height = entry.contentRect.height;
+            setIsThumbnail(width < 400 || height < 400);
+        });
+        resizeObserver.observe(containerRef.current);
+        return () => resizeObserver.disconnect();
+    }, []);
+
     useEffect(() => {
         const handleResize = () => setIsMobile(window.innerWidth < 768);
         window.addEventListener('resize', handleResize);
@@ -1522,8 +1538,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [rotationEnabled, setRotationEnabled] = useState(true); // Default enabled
     
     // Point visual controls - optimized for performance
-    const [pointSize, setPointSize] = useState(0.02); // Smaller points for better performance
-    const [pointAlpha, setPointAlpha] = useState(0.4); // Lower alpha for better performance
+    const [pointSize, setPointSize] = useState(0.04); // Default small point size
+    const [pointAlpha, setPointAlpha] = useState(0.50); // 50% alpha
     const [loadingProgress, setLoadingProgress] = useState<{ loaded: number, total: number } | null>(null);
     
     // Movement histogram state
@@ -1654,8 +1670,56 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 setLoadingStep('Fetching training epochs...');
                 setLoadingDetail('');
 
-                // TRAINING MOVIE: Load from API - ignore deprecated cluster_pre, use finalClusterResults
-                const apiTrainingData = await fetch_training_metrics(sessionId, apiBaseUrl, 10000);
+                // Helper to format bytes
+                const formatBytes = (bytes: number) => {
+                    if (bytes < 1024) return `${bytes} B`;
+                    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+                    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+                };
+
+                // TRAINING MOVIE: Load from API with retry logic for 504/500 errors
+                let apiTrainingData;
+                let retryCount = 0;
+                const maxRetries = 3;
+
+                while (retryCount <= maxRetries) {
+                    try {
+                        apiTrainingData = await fetch_training_metrics(
+                            sessionId,
+                            apiBaseUrl,
+                            10000,
+                            (info) => {
+                                if (info.phase === 'downloading') {
+                                    const progress = info.totalBytes
+                                        ? `${formatBytes(info.bytesLoaded)} / ${formatBytes(info.totalBytes)}`
+                                        : `Downloaded ${formatBytes(info.bytesLoaded)}`;
+                                    setLoadingDetail(progress);
+                                } else if (info.phase === 'parsing') {
+                                    setLoadingStep('Parsing epoch data...');
+                                    setLoadingDetail(formatBytes(info.bytesLoaded));
+                                }
+                            }
+                        );
+                        break; // Success
+                    } catch (err: any) {
+                        const is504 = err.message?.includes('504') || err.message?.includes('Gateway Timeout');
+                        const is500 = err.message?.includes('500') || err.message?.includes('Internal Server Error');
+                        if ((is504 || is500) && retryCount < maxRetries) {
+                            retryCount++;
+                            const waitTime = retryCount * 5;
+                            setLoadingStep(`Server timeout, retrying (${retryCount}/${maxRetries})...`);
+                            for (let i = waitTime; i > 0; i--) {
+                                setLoadingDetail(`Retrying in ${i}s...`);
+                                await new Promise(resolve => setTimeout(resolve, 1000));
+                            }
+                            setLoadingStep('Fetching training epochs...');
+                            setLoadingDetail('');
+                        } else {
+                            throw err;
+                        }
+                    }
+                }
+                if (!apiTrainingData) throw new Error('Failed to load training data after retries');
 
                 if (apiTrainingData && apiTrainingData.epoch_projections) {
                     const epochCount = Object.keys(apiTrainingData.epoch_projections).length;
@@ -2686,52 +2750,241 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     return (
         <div className="training-progress-display" style={{
             display: 'flex',
-            flexDirection: isMobile ? 'column' : 'row',
+            flexDirection: 'column',
             width: '100%',
             height: '100vh',
-            minHeight: isMobile ? '0' : '800px',
             background: '#2a2a2a',
             color: '#d0d0d0',
             overflow: 'hidden'
         }}>
-            {/* Build Timestamp - Hidden */}
-            
-            {/* Sphere Container - ALWAYS FILLS AVAILABLE SPACE */}
+            {/* Top Control Strip */}
+            {!isThumbnail && (
             <div style={{
-                flex: (isMobile || (isFullscreen && !showSidePanelInFullscreen)) ? '1 1 100%' : '1 1 75%',
-                width: (isMobile || (isFullscreen && !showSidePanelInFullscreen)) ? '100%' : '75%',
+                height: '44px',
+                minHeight: '44px',
+                background: '#141414',
+                borderBottom: '1px solid #2a2a2a',
+                display: 'flex',
+                alignItems: 'center',
+                padding: '0 16px',
+                gap: '12px',
+            }}>
+                <button onClick={() => setRotationEnabled(!rotationEnabled)} style={{
+                    background: rotationEnabled ? '#4c4' : '#c44',
+                    border: 'none',
+                    color: '#e0e0e0',
+                    padding: '6px 16px',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    fontWeight: 'bold'
+                }} title={rotationEnabled ? "Disable Rotation" : "Enable Rotation"}>
+                    Rotate {rotationEnabled ? 'On' : 'Off'}
+                </button>
+
+                {/* Session ID Badge with Copy Button */}
+                <div style={{
+                    marginLeft: 'auto',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: '#2a2a2a',
+                    borderRadius: '4px',
+                    padding: '4px 10px',
+                }}>
+                    <span style={{ color: '#888', fontSize: '11px' }}>Session:</span>
+                    <span style={{ color: '#ccc', fontSize: '12px', fontFamily: 'monospace', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {sessionId.length > 20 ? sessionId.slice(0, 8) + '...' + sessionId.slice(-8) : sessionId}
+                    </span>
+                    <button
+                        onClick={() => {
+                            navigator.clipboard.writeText(sessionId);
+                            // Brief visual feedback
+                            const btn = document.activeElement as HTMLButtonElement;
+                            if (btn) {
+                                const originalText = btn.innerText;
+                                btn.innerText = '✓';
+                                setTimeout(() => { btn.innerText = originalText; }, 1000);
+                            }
+                        }}
+                        style={{
+                            background: 'transparent',
+                            border: '1px solid #555',
+                            color: '#aaa',
+                            padding: '2px 6px',
+                            borderRadius: '3px',
+                            cursor: 'pointer',
+                            fontSize: '11px',
+                        }}
+                        title="Copy session ID to clipboard"
+                    >
+                        Copy
+                    </button>
+                </div>
+            </div>
+            )}
+
+            {/* Content Row: Left Sidebar + Canvas */}
+            <div style={{ display: 'flex', flexDirection: 'row', flex: 1, overflow: 'hidden' }}>
+
+            {/* Left Sidebar */}
+            {!isMobile && !isThumbnail && (
+            <div style={{
+                width: '320px',
+                minWidth: '320px',
+                background: '#1a1a1a',
+                borderRight: '1px solid #2a2a2a',
+                padding: '12px',
+                overflowY: 'auto',
+                fontFamily: 'monospace',
+                fontSize: '14px',
+                color: '#d0d0d0',
+            }}>
+                {/* TRAINING STATUS */}
+                <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', margin: '0 0 8px 0' }}>TRAINING STATUS</div>
+                <div className="build-display" style={{ marginBottom: '16px' }}>
+                    <div style={{ color: '#666', fontSize: '11px' }}>v{BUILD_TIMESTAMP.slice(0, 19).replace('T', ' ')}</div>
+                    {trainingStatus === 'training' && (
+                        <div style={{ marginTop: '6px' }}>
+                            <div style={{ color: '#4caf50', fontSize: '12px', fontWeight: 500 }}>Training in progress</div>
+                            <div style={{ color: '#cfd8dc', fontSize: '11px', marginTop: '2px' }}>Checking for new frames in {nextCheckCountdown}s</div>
+                        </div>
+                    )}
+                    {trainingStatus === 'completed' && (
+                        <div style={{ marginTop: '6px' }}>
+                            <div style={{ color: '#4caf50', fontSize: '12px', fontWeight: 500 }}>Training Completed</div>
+                        </div>
+                    )}
+                    {frameInfo && (
+                        <div style={{ marginTop: '6px' }}>
+                            <div style={{ color: '#cfd8dc', fontSize: '12px' }}>Frame {frameInfo.current}/{frameInfo.total} | {frameInfo.visible} clusters</div>
+                            <div style={{ marginTop: '6px', background: '#2a2a2a', borderRadius: '3px', overflow: 'hidden', height: '4px', width: '100%' }}>
+                                <div style={{ background: '#4caf50', height: '100%', width: `${(frameInfo.current / frameInfo.total) * 100}%`, transition: 'width 0.2s ease' }} />
+                            </div>
+                            {frameInfo.epoch && <div style={{ color: '#cfd8dc', marginTop: '4px', fontSize: '12px' }}>Epoch {frameInfo.epoch}</div>}
+                            {frameInfo.validationLoss !== undefined && <div style={{ color: '#cfd8dc', marginTop: '2px', fontSize: '12px' }}>Loss: {frameInfo.validationLoss.toFixed(4)}</div>}
+                        </div>
+                    )}
+                </div>
+
+                {/* Loss Plot */}
+                {lossData && (() => {
+                    let validationLossData = null;
+                    if (lossData.validation_loss && Array.isArray(lossData.validation_loss)) {
+                        validationLossData = lossData.validation_loss;
+                    } else if (lossData.training_info && lossData.training_info.loss_history) {
+                        validationLossData = lossData.training_info.loss_history.map((item: any) => ({
+                            epoch: item.epoch || item.epoch_number || 0,
+                            value: item.validation_loss || item.loss || 0
+                        }));
+                    } else if (Array.isArray(lossData)) {
+                        validationLossData = lossData;
+                    }
+                    if (!validationLossData || !Array.isArray(validationLossData) || validationLossData.length === 0) return null;
+
+                    let learningRateData = null;
+                    if (lossData.learning_rate && Array.isArray(lossData.learning_rate)) {
+                        learningRateData = lossData.learning_rate;
+                    } else if (lossData.training_info?.loss_history) {
+                        learningRateData = lossData.training_info.loss_history
+                            .filter((item: any) => item.current_learning_rate !== undefined || item.learning_rate !== undefined || item.lr !== undefined)
+                            .map((item: any) => ({ epoch: item.epoch || 0, value: item.current_learning_rate || item.learning_rate || item.lr || 0 }));
+                    }
+
+                    return (
+                        <div style={{ marginBottom: '16px' }}>
+                            <LossPlotOverlay
+                                lossData={validationLossData}
+                                learningRateData={learningRateData && learningRateData.length > 0 ? learningRateData : undefined}
+                                currentEpoch={frameInfo?.epoch}
+                                title="Validation Loss"
+                                style={{ width: '100%', height: '120px', pointerEvents: 'none' }}
+                            />
+                        </div>
+                    );
+                })()}
+
+                {/* Movement Plot */}
+                {showMovementPlot && movementData.length > 0 && (
+                    <div style={{ marginBottom: '16px' }}>
+                        <MovementPlotOverlay movementData={movementData} currentEpoch={frameInfo?.epoch} style={{ width: '100%', height: '120px', pointerEvents: 'none' }} />
+                    </div>
+                )}
+
+                {/* SETTINGS */}
+                <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', margin: '20px 0 8px 0' }}>SETTINGS</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label style={{ color: '#cfd8dc', fontSize: '13px', display: 'flex', alignItems: 'center' }}>
+                        Point Size:
+                        <select
+                            value={pointSize}
+                            onChange={(e) => {
+                                const newSize = parseFloat(e.target.value);
+                                setPointSize(newSize);
+                                if (sphereRef) {
+                                    set_visual_options(sphereRef, newSize, pointAlpha);
+                                    render_sphere(sphereRef);
+                                }
+                            }}
+                            style={{ marginLeft: '8px', fontSize: '12px', padding: '4px 6px', backgroundColor: '#2a2a2a', color: '#e0e0e0', border: '1px solid #333', borderRadius: '3px', cursor: 'pointer', flex: 1 }}
+                        >
+                            <option value={0.02}>0.02 (Tiny)</option>
+                            <option value={0.04}>0.04 (Small)</option>
+                            <option value={0.06}>0.06 (Medium)</option>
+                            <option value={0.08}>0.08 (Default)</option>
+                            <option value={0.10}>0.10 (Large)</option>
+                            <option value={0.15}>0.15 (X-Large)</option>
+                            <option value={0.20}>0.20 (Huge)</option>
+                        </select>
+                    </label>
+                    <label style={{ color: '#cfd8dc', fontSize: '13px', display: 'flex', alignItems: 'center' }}>
+                        Alpha:
+                        <select
+                            value={pointAlpha}
+                            onChange={(e) => {
+                                const newAlpha = parseFloat(e.target.value);
+                                setPointAlpha(newAlpha);
+                                if (sphereRef) {
+                                    set_visual_options(sphereRef, pointSize, newAlpha);
+                                    render_sphere(sphereRef);
+                                }
+                            }}
+                            style={{ marginLeft: '8px', fontSize: '12px', padding: '4px 6px', backgroundColor: '#2a2a2a', color: '#e0e0e0', border: '1px solid #333', borderRadius: '3px', cursor: 'pointer', flex: 1 }}
+                        >
+                            <option value={0.25}>25%</option>
+                            <option value={0.50}>50%</option>
+                            <option value={0.75}>75%</option>
+                            <option value={1.00}>100%</option>
+                        </select>
+                    </label>
+                    <label style={{ color: '#cfd8dc', fontSize: '13px', display: 'flex', alignItems: 'center' }}>
+                        Trail Length:
+                        <select
+                            value={trailLength}
+                            onChange={(e) => { const newLength = parseInt(e.target.value); setTrailLength(newLength); }}
+                            style={{ marginLeft: '8px', fontSize: '12px', padding: '4px 6px', backgroundColor: '#2a2a2a', color: '#e0e0e0', border: '1px solid #333', borderRadius: '3px', cursor: 'pointer', flex: 1 }}
+                        >
+                            <option value={2}>2 frames</option>
+                            <option value={5}>5 frames</option>
+                            <option value={8}>8 frames</option>
+                            <option value={10}>10 frames</option>
+                            <option value={15}>15 frames</option>
+                        </select>
+                    </label>
+                </div>
+            </div>
+            )}
+
+            {/* Sphere Container */}
+            <div style={{
+                flex: 1,
                 height: '100%',
-                minHeight: isMobile ? '100vh' : '100vh',
                 position: 'relative',
                 background: '#2a2a2a',
                 display: 'flex',
                 alignItems: 'stretch',
                 justifyContent: 'stretch'
             }}>
-                {/* Toggle side panel button in fullscreen mode */}
-                {isFullscreen && (
-                    <button
-                        onClick={() => setShowSidePanelInFullscreen(!showSidePanelInFullscreen)}
-                        style={{
-                            position: 'fixed',
-                            top: '10px',
-                            right: showSidePanelInFullscreen ? 'calc(25% + 10px)' : '10px',
-                            zIndex: 10000,
-                            background: 'rgba(42, 42, 42, 0.8)',
-                            border: '1px solid #666',
-                            color: '#d0d0d0',
-                            padding: '8px 12px',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: '14px',
-                            fontWeight: 'bold',
-                            transition: 'right 0.3s ease'
-                        }}
-                        title={showSidePanelInFullscreen ? "Hide Controls" : "Show Controls"}
-                    >
-                        {showSidePanelInFullscreen ? '< Hide' : '> Show'}
-                    </button>
-                )}
                 {/* Countdown Overlay - only temporary, positioned over sphere */}
                 {showCountdown && (
                     <div style={{
@@ -2757,7 +3010,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 )}
                 
                 {/* Gesture hints overlay for mobile */}
-                {showGestureHints && isMobile && (
+                {showGestureHints && isMobile && !isThumbnail && (
                     <div
                         onClick={() => setShowGestureHints(false)}
                         style={{
@@ -3008,955 +3261,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 )}
                 </div>
             </div>
-            
-            {/* Mobile Controls Toggle Button */}
-            {isMobile && (
-                <button
-                    onClick={() => setShowMobilePanel(!showMobilePanel)}
-                    style={{
-                        position: 'fixed',
-                        bottom: showMobilePanel ? 'calc(60vh + 8px)' : '16px',
-                        left: '50%',
-                        transform: 'translateX(-50%)',
-                        zIndex: 10001,
-                        background: 'rgba(42, 42, 42, 0.9)',
-                        border: '1px solid #666',
-                        color: '#d0d0d0',
-                        padding: '10px 24px',
-                        borderRadius: '20px',
-                        cursor: 'pointer',
-                        fontSize: '14px',
-                        fontWeight: 'bold',
-                        transition: 'bottom 0.3s ease',
-                        boxShadow: '0 2px 10px rgba(0,0,0,0.5)'
-                    }}
-                >
-                    {showMobilePanel ? '▼ Hide Controls' : '▲ Controls'}
-                </button>
-            )}
-
-            {/* Controls Side Panel - Right side on desktop, bottom sheet on mobile */}
-            {(isMobile ? showMobilePanel : (!isFullscreen || showSidePanelInFullscreen)) && (
-            <div style={{
-                ...(isMobile ? {
-                    position: 'fixed' as const,
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    height: '60vh',
-                    zIndex: 10000,
-                    borderTop: '2px solid #666',
-                    borderRadius: '16px 16px 0 0',
-                } : {
-                    flex: '0 0 25%',
-                    width: '25%',
-                    height: '100vh',
-                    borderLeft: '1px solid #555',
-                }),
-                background: '#181818',
-                overflowY: 'auto',
-                padding: '16px 14px',
-                fontFamily: 'monospace',
-                fontSize: '14px',
-                color: '#d0d0d0',
-                transition: isFullscreen ? 'transform 0.3s ease' : 'none',
-                transform: isFullscreen && !showSidePanelInFullscreen ? 'translateX(100%)' : 'translateX(0)'
-            }}>
-                {/* Mobile drag handle */}
-                {isMobile && (
-                    <div style={{
-                        width: '40px',
-                        height: '4px',
-                        background: '#888',
-                        borderRadius: '2px',
-                        margin: '0 auto 12px',
-                    }} />
-                )}
-
-                {/* SECTION 1: TRAINING STATUS */}
-                <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', margin: '0 0 8px 0' }}>TRAINING STATUS</div>
-                <div className="build-display" style={{ marginBottom: '16px' }}>
-                    <div style={{ color: '#666', fontSize: '11px' }}>v{BUILD_TIMESTAMP.slice(0, 19).replace('T', ' ')}</div>
-                    {/* Training Status */}
-                    {trainingStatus === 'training' && (
-                        <div style={{ marginTop: '6px' }}>
-                            <div style={{ color: '#4caf50', fontSize: '12px', fontWeight: 500 }}>
-                                Training in progress
-                            </div>
-                            <div style={{ color: '#cfd8dc', fontSize: '11px', marginTop: '2px' }}>
-                                Checking for new frames in {nextCheckCountdown}s
-                            </div>
-                        </div>
-                    )}
-                    {trainingStatus === 'completed' && (
-                        <div style={{ marginTop: '6px' }}>
-                            <div style={{ color: '#4caf50', fontSize: '12px', fontWeight: 500 }}>
-                                Training Completed
-                            </div>
-                        </div>
-                    )}
-                    {frameInfo && (
-                        <div style={{ marginTop: '6px' }}>
-                            <div style={{ color: '#cfd8dc', fontSize: '12px' }}>
-                                Frame {frameInfo.current}/{frameInfo.total} | {frameInfo.visible} clusters
-                            </div>
-
-                            {/* Progress Bar */}
-                            <div style={{
-                                marginTop: '6px',
-                                background: '#2a2a2a',
-                                borderRadius: '3px',
-                                overflow: 'hidden',
-                                height: '4px',
-                                width: '100%'
-                            }}>
-                                <div style={{
-                                    background: '#4caf50',
-                                    height: '100%',
-                                    width: `${(frameInfo.current / frameInfo.total) * 100}%`,
-                                    transition: 'width 0.2s ease'
-                                }} />
-                            </div>
-
-                            {frameInfo.epoch && (
-                                <div style={{ color: '#cfd8dc', marginTop: '4px', fontSize: '12px' }}>
-                                    Epoch {frameInfo.epoch}
-                                </div>
-                            )}
-                            {frameInfo.validationLoss !== undefined && (
-                                <div style={{ color: '#cfd8dc', marginTop: '2px', fontSize: '12px' }}>
-                                    Loss: {frameInfo.validationLoss.toFixed(4)}
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </div>
-
-                {/* Loss Plot with Dual Y-Axis (Validation Loss + Learning Rate) */}
-                {lossData && (() => {
-                    
-                    // Try different possible structures for validation loss
-                    let validationLossData = null;
-                    if (lossData.validation_loss && Array.isArray(lossData.validation_loss)) {
-                        validationLossData = lossData.validation_loss;
-                    } else if (lossData.training_info && lossData.training_info.loss_history) {
-                        // Handle structure from API: training_metrics.training_info.loss_history
-                        validationLossData = lossData.training_info.loss_history.map((item: any) => ({
-                            epoch: item.epoch || item.epoch_number || 0,
-                            value: item.validation_loss || item.loss || 0
-                        }));
-                    } else if (Array.isArray(lossData)) {
-                        // If lossData itself is an array
-                        validationLossData = lossData;
-                    }
-                    
-                    if (!validationLossData || !Array.isArray(validationLossData) || validationLossData.length === 0) {
-                        return null;
-                    }
-                    
-                    // Extract learning rate data for dual Y-axis - COMPREHENSIVE EXTRACTION
-                    let learningRateData = null;
-                    
-                    
-                    // Try ALL possible structures from API
-                    if (lossData.learning_rate && Array.isArray(lossData.learning_rate)) {
-                        learningRateData = lossData.learning_rate;
-                    } else if (lossData.training_info) {
-                        // Check training_info.loss_history
-                        if (lossData.training_info.loss_history && Array.isArray(lossData.training_info.loss_history)) {
-                            const lossHistory = lossData.training_info.loss_history;
-                            
-                            learningRateData = lossHistory
-                                .filter((item: any) => 
-                                    item.current_learning_rate !== undefined || 
-                                    item.learning_rate !== undefined ||
-                                    item.lr !== undefined
-                                )
-                                .map((item: any) => ({
-                                    epoch: item.epoch || item.epoch_number || item.epoch_num || 0,
-                                    value: item.current_learning_rate || item.learning_rate || item.lr || 0
-                                }));
-                        }
-                        
-                        // Also check training_info.learning_rate_schedule
-                        if ((!learningRateData || learningRateData.length === 0) && lossData.training_info.learning_rate_schedule) {
-                            const lrSchedule = lossData.training_info.learning_rate_schedule;
-                            if (Array.isArray(lrSchedule)) {
-                                learningRateData = lrSchedule.map((item: any) => ({
-                                    epoch: item.epoch || item.epoch_number || 0,
-                                    value: item.value || item.lr || item.learning_rate || 0
-                                }));
-                            }
-                        }
-                    } else if (Array.isArray(lossData) && lossData.length > 0) {
-                        // If lossData is an array of loss_history items
-                        const firstItem = lossData[0];
-                        if (firstItem.current_learning_rate !== undefined || firstItem.learning_rate !== undefined || firstItem.lr !== undefined) {
-                            learningRateData = lossData
-                                .filter((item: any) => 
-                                    item.current_learning_rate !== undefined || 
-                                    item.learning_rate !== undefined ||
-                                    item.lr !== undefined
-                                )
-                                .map((item: any) => ({
-                                    epoch: item.epoch || item.epoch_number || item.epoch_num || 0,
-                                    value: item.current_learning_rate || item.learning_rate || item.lr || 0
-                                }));
-                        }
-                    }
-                    
-                    // Check if lossData itself IS training_metrics (common case)
-                    if ((!learningRateData || learningRateData.length === 0)) {
-                        // Try direct access - lossData might BE training_metrics
-                        if (lossData.learning_rate && Array.isArray(lossData.learning_rate)) {
-                            learningRateData = lossData.learning_rate;
-                        }
-                        
-                        // Check nested training_metrics
-                        if ((!learningRateData || learningRateData.length === 0) && lossData.training_metrics) {
-                            const tm = lossData.training_metrics;
-                            if (tm.learning_rate && Array.isArray(tm.learning_rate)) {
-                                learningRateData = tm.learning_rate;
-                            } else if (tm.training_info && tm.training_info.loss_history) {
-                                const lossHistory = tm.training_info.loss_history;
-                                learningRateData = lossHistory
-                                    .filter((item: any) => 
-                                        item.current_learning_rate !== undefined || 
-                                        item.learning_rate !== undefined ||
-                                        item.lr !== undefined
-                                    )
-                                    .map((item: any) => ({
-                                        epoch: item.epoch || item.epoch_number || 0,
-                                        value: item.current_learning_rate || item.learning_rate || item.lr || 0
-                                    }));
-                            }
-                        }
-                        
-                        // Deep search in nested objects
-                        if ((!learningRateData || learningRateData.length === 0)) {
-                            const deepSearch = (obj: any, depth = 0): any[] => {
-                                if (depth > 3) return [];
-                                if (!obj || typeof obj !== 'object') return [];
-                                
-                                // Check if this object has learning rate data
-                                if (Array.isArray(obj) && obj.length > 0) {
-                                    const first = obj[0];
-                                    if (first && (first.current_learning_rate !== undefined || first.learning_rate !== undefined || first.lr !== undefined)) {
-                                        return obj
-                                            .filter((item: any) => 
-                                                item.current_learning_rate !== undefined || 
-                                                item.learning_rate !== undefined ||
-                                                item.lr !== undefined
-                                            )
-                                            .map((item: any) => ({
-                                                epoch: item.epoch || item.epoch_number || item.epoch_num || 0,
-                                                value: item.current_learning_rate || item.learning_rate || item.lr || 0
-                                            }));
-                                    }
-                                }
-                                
-                                // Recursively search
-                                for (const key in obj) {
-                                    if (key.toLowerCase().includes('learning') || key.toLowerCase().includes('lr') || key.toLowerCase().includes('rate')) {
-                                        const result = deepSearch(obj[key], depth + 1);
-                                        if (result && result.length > 0) return result;
-                                    }
-                                }
-                                
-                                return [];
-                            };
-                            
-                            const deepResult = deepSearch(lossData);
-                            if (deepResult && deepResult.length > 0) {
-                                learningRateData = deepResult;
-                            }
-                        }
-                    }
-                    
-                    return (
-                        <div style={{ marginBottom: '16px' }}>
-                            <LossPlotOverlay
-                                lossData={validationLossData}
-                                learningRateData={learningRateData && learningRateData.length > 0 ? learningRateData : undefined}
-                                currentEpoch={frameInfo?.epoch}
-                                title="Validation Loss"
-                                style={{
-                                    width: '100%',
-                                    height: '120px',
-                                    pointerEvents: 'none'
-                                }}
-                            />
-                        </div>
-                    );
-                })()}
-
-                {/* Movement Plot - shows point movement per epoch for convergence evaluation */}
-                {showMovementPlot && movementData.length > 0 && (
-                    <div style={{ marginBottom: '16px' }}>
-                        <MovementPlotOverlay
-                            movementData={movementData}
-                            currentEpoch={frameInfo?.epoch}
-                            style={{
-                                width: '100%',
-                                height: '120px',
-                                pointerEvents: 'none'
-                            }}
-                        />
-                    </div>
-                )}
-
-                {/* SECTION 2: TOOLS */}
-                <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', margin: '20px 0 8px 0' }}>TOOLS</div>
-                <div style={{ marginBottom: '16px' }}>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <button onClick={() => setShowSearch(!showSearch)} style={{ background: showSearch ? '#4c4' : '#2a2a2a', border: 'none', color: '#e0e0e0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0, flex: 1 }} title="Toggle Search">Search</button>
-                        <button onClick={() => { setShowBoundsBox(!showBoundsBox); if (sphereRef) { toggle_bounds_box(sphereRef, !showBoundsBox); render_sphere(sphereRef); } }} style={{ background: showBoundsBox ? '#4c4' : '#2a2a2a', border: 'none', color: '#e0e0e0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0, flex: 1 }} title="Toggle Bounds Box">Bounds</button>
-                        <button onClick={() => {
-                            if (sphereRef) {
-                                toggle_embedding_hull(sphereRef, !sphereRef.showEmbeddingHull);
-                                render_sphere(sphereRef);
-                            }
-                        }} style={{ background: sphereRef?.showEmbeddingHull ? '#4c4' : '#2a2a2a', border: 'none', color: '#e0e0e0', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', flexShrink: 0, flex: 1 }} title="Toggle Embedding Convex Hull">Hull</button>
-                    </div>
-                    {/* Loading Progress */}
-                    {loadingProgress && loadingProgress.loaded < loadingProgress.total && (
-                        <div style={{ marginTop: '8px', fontSize: '11px', color: '#8a8a8a' }}>
-                            Loading: {loadingProgress.loaded} / {loadingProgress.total} ({(loadingProgress.loaded / loadingProgress.total * 100).toFixed(1)}%)
-                        </div>
-                    )}
-                    {showBoundsBox && sphereRef && sphereRef.boundsBoxVolumeUtilization !== undefined && (
-                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#cfd8dc' }}>
-                            Sphere Coverage: <strong>{sphereRef.boundsBoxVolumeUtilization.toFixed(2)}%</strong>
-                            <div style={{ fontSize: '11px', color: '#8a8a8a', marginTop: '2px' }}>
-                                {sphereRef.boundsBoxVolumeUtilization.toFixed(2)}% of unit sphere radius covered
-                            </div>
-                            <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <input
-                                    type="checkbox"
-                                    checked={showGreatCircles}
-                                    onChange={(e) => {
-                                        const enabled = e.target.checked;
-                                        setShowGreatCircles(enabled);
-                                        if (sphereRef) {
-                                            toggle_great_circles(sphereRef, enabled);
-                                        }
-                                    }}
-                                    style={{ cursor: 'pointer', width: '14px', height: '14px' }}
-                                    id="show-great-circles-checkbox"
-                                />
-                                <label
-                                    htmlFor="show-great-circles-checkbox"
-                                    style={{ fontSize: '12px', color: '#cfd8dc', cursor: 'pointer' }}
-                                >
-                                    Show great circles
-                                </label>
-                            </div>
-                        </div>
-                    )}
-                    {sphereRef?.showEmbeddingHull && sphereRef.embeddingHullArea !== undefined && (sphereRef as any).embeddingHullCoverage !== undefined && (
-                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#cfd8dc' }}>
-                            Convex Hull Area: <strong>{sphereRef.embeddingHullArea.toFixed(4)}</strong>
-                            <div style={{ fontSize: '11px', color: '#8a8a8a', marginTop: '2px' }}>
-                                Unit sphere area: {(4 * Math.PI).toFixed(4)} | Coverage: <strong>{(sphereRef as any).embeddingHullCoverage.toFixed(2)}%</strong>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Search Panel */}
-                {showSearch && columnTypes && Object.keys(columnTypes).length > 0 && (
-                    <div style={{ marginBottom: '16px' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                <label style={{ color: '#d0d0d0', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '14px' }}>
-                                    Column:
-                                    <select value={selectedSearchColumn} onChange={(e) => setSelectedSearchColumn(e.target.value)} style={{ marginLeft: '4px', fontSize: '13px', padding: '4px 6px', backgroundColor: '#555', color: '#d0d0d0', border: '1px solid #666', borderRadius: '3px', cursor: 'pointer' }}>
-                                        {Object.keys(columnTypes).map((col) => (<option key={col} value={col}>{col}</option>))}
-                                    </select>
-                                </label>
-                                {(() => {
-                                    // Get placeholder text based on column type
-                                    const colType = selectedSearchColumn ? columnTypes[selectedSearchColumn] : null;
-                                    let placeholder = 'Type to search...';
-                                    if (colType === 'set') {
-                                        placeholder = 'Type exact value...';
-                                    } else if (colType === 'scalar') {
-                                        placeholder = 'Use: =5, >10, <5, !=null, null, etc.';
-                                    }
-                                    
-                                    // Check if column contains boolean-like values
-                                    let hasBooleanValues = false;
-                                    if (sphereRef && sphereRef.current && sphereRef.current.pointRecordsByID && selectedSearchColumn) {
-                                        const sampleValues = new Set<string>();
-                                        for (const record of sphereRef.current.pointRecordsByID.values()) {
-                                            const val = record.original[selectedSearchColumn];
-                                            if (val !== undefined) {
-                                                if (isBooleanLike(val)) {
-                                                    hasBooleanValues = true;
-                                                    break;
-                                                }
-                                                sampleValues.add(String(val));
-                                                if (sampleValues.size >= 10) break;
-                                            }
-                                        }
-                                    }
-                                    
-                                    return (
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
-                                            <input
-                                                type="text"
-                                                value={searchQuery}
-                                                onChange={handleSearchInput}
-                                                onKeyDown={handleSearchKeyDown}
-                                                placeholder={placeholder + ' (Press Enter or click Go)'}
-                                                style={{ background: '#2a2a2a', border: '2px solid #0088ff', color: '#ffffff', padding: '6px 10px', borderRadius: '3px', fontSize: '14px', flex: 1, minWidth: '150px' }} 
-                                            />
-                                            <button 
-                                                onClick={() => {
-                                                    handleSearchSubmit();
-                                                }}
-                                                disabled={!searchQuery.trim()}
-                                                style={{ 
-                                                    background: searchQuery.trim() ? '#4a4' : '#555', 
-                                                    border: '1px solid #666', 
-                                                    color: '#d0d0d0', 
-                                                    padding: '6px 12px', 
-                                                    borderRadius: '3px', 
-                                                    cursor: searchQuery.trim() ? 'pointer' : 'not-allowed', 
-                                                    fontSize: '13px',
-                                                    fontWeight: 'bold',
-                                                    opacity: searchQuery.trim() ? 1 : 0.5
-                                                }} 
-                                                title="Create color rule from search"
-                                            >
-                                                GO
-                                            </button>
-                                        </div>
-                                    );
-                                })()}
-                                {searchQuery && (<button onClick={() => { 
-                                    setSearchQuery(''); 
-                                    setSearchResultStats(null);
-                                    applyColorRules();
-                                }} style={{ background: '#633', border: '1px solid #666', color: '#d0d0d0', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '13px', marginLeft: '4px' }} title="Clear Search">✕</button>)}
-                            </div>
-                            
-                            {/* Color Rules List - Always show, even when empty */}
-                            <div style={{ marginTop: '12px', padding: '8px', background: 'rgba(42, 42, 42, 0.8)', border: '1px solid #666', borderRadius: '4px' }}>
-                                    <div style={{ color: '#d0d0d0', fontWeight: 'bold', marginBottom: '8px', fontSize: '13px' }}>
-                                        Color Rules ({colorRules.length}):
-                                        {colorRules.length === 0 && (
-                                            <span style={{ fontSize: '11px', color: '#888', fontWeight: 'normal', marginLeft: '8px' }}>
-                                                (Type search and press Enter to create)
-                                            </span>
-                                        )}
-                                    </div>
-                                    {colorRules.length > 0 ? (
-                                        <>
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '200px', overflowY: 'auto' }}>
-                                                {colorRules.map((rule) => (
-                                                    <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px', background: 'rgba(0,0,0,0.3)', borderRadius: '3px' }}>
-                                                        <div style={{ width: '20px', height: '20px', background: rule.color, border: '1px solid #666', borderRadius: '3px', flexShrink: 0 }}></div>
-                                                        <div style={{ flex: 1, fontSize: '12px', color: '#d0d0d0' }}>
-                                                            <strong>{rule.column}</strong>: "{rule.query}" ({rule.recordIds.length} records)
-                                                        </div>
-                                                        <button 
-                                                            onClick={() => {
-                                                                setColorRules(prev => prev.filter(r => r.id !== rule.id));
-                                                            }}
-                                                            style={{ 
-                                                                background: '#633', 
-                                                                border: '1px solid #666', 
-                                                                color: '#d0d0d0', 
-                                                                padding: '4px 8px', 
-                                                                borderRadius: '3px', 
-                                                                cursor: 'pointer', 
-                                                                fontSize: '11px',
-                                                                flexShrink: 0
-                                                            }} 
-                                                            title="Delete Rule"
-                                                        >
-                                                            ✕
-                                                        </button>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                            <button 
-                                                onClick={() => {
-                                                    setColorRules([]);
-                                                }}
-                                                style={{ 
-                                                    marginTop: '8px', 
-                                                    width: '100%', 
-                                                    background: '#633', 
-                                                    border: '1px solid #666', 
-                                                    color: '#d0d0d0', 
-                                                    padding: '6px', 
-                                                    borderRadius: '3px', 
-                                                    cursor: 'pointer', 
-                                                    fontSize: '12px' 
-                                                }}
-                                            >
-                                                Clear All Rules
-                                            </button>
-                                        </>
-                                    ) : (
-                                        <div style={{ fontSize: '11px', color: '#888', fontStyle: 'italic', padding: '8px', textAlign: 'center' }}>
-                                            No color rules yet. Search and press Enter to create one.
-                                        </div>
-                                    )}
-                                </div>
-                            
-                            {/* Help text for boolean columns */}
-                            {(() => {
-                                if (!selectedSearchColumn || !sphereRef || !sphereRef.current || !sphereRef.current.pointRecordsByID) return null;
-                                
-                                // Check if this column has boolean-like values
-                                const sampleValues = new Set<string>();
-                                let hasBoolean = false;
-                                for (const record of sphereRef.current.pointRecordsByID.values()) {
-                                    const val = record.original[selectedSearchColumn];
-                                    if (val !== undefined) {
-                                        if (isBooleanLike(val)) {
-                                            hasBoolean = true;
-                                        }
-                                        sampleValues.add(String(val));
-                                        if (sampleValues.size >= 20) break;
-                                    }
-                                }
-                                
-                                if (hasBoolean) {
-                                    return (
-                                        <div style={{ padding: '8px', background: 'rgba(76, 175, 80, 0.1)', border: '1px solid rgba(76, 175, 80, 0.3)', borderRadius: '4px', fontSize: '12px', color: '#4caf50' }}>
-                                            <strong>Boolean column detected:</strong> Try: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px' }}>true</code>, <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px' }}>1</code>, <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px' }}>yes</code> or <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px' }}>false</code>, <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px' }}>0</code>, <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px' }}>no</code>
-                                        </div>
-                                    );
-                                }
-                                return null;
-                            })()}
-                            
-                            {/* Color Key for Boolean Search Results */}
-                            {searchResultStats && searchResultStats.isBoolean && (
-                                <div style={{ padding: '8px', background: 'rgba(42, 42, 42, 0.8)', border: '1px solid #666', borderRadius: '4px', fontSize: '12px' }}>
-                                    <div style={{ color: '#d0d0d0', fontWeight: 'bold', marginBottom: '6px' }}>Search Results:</div>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                            <div style={{ width: '16px', height: '16px', background: '#00ff00', border: '1px solid #666', borderRadius: '2px' }}></div>
-                                            <span style={{ color: '#d0d0d0' }}>Yes/True: <strong>{searchResultStats.yes}</strong></span>
-                                        </div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                            <div style={{ width: '16px', height: '16px', background: '#ff0000', border: '1px solid #666', borderRadius: '2px' }}></div>
-                                            <span style={{ color: '#d0d0d0' }}>No/False: <strong>{searchResultStats.no}</strong></span>
-                                        </div>
-                                        {searchResultStats.unknown > 0 && (
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                <div style={{ width: '16px', height: '16px', background: '#888888', border: '1px solid #666', borderRadius: '2px' }}></div>
-                                                <span style={{ color: '#d0d0d0' }}>Unknown: <strong>{searchResultStats.unknown}</strong></span>
-                                                <label style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '11px' }}>
-                                                    <input 
-                                                        type="checkbox" 
-                                                        checked={hideUnknown} 
-                                                        onChange={(e) => setHideUnknown(e.target.checked)}
-                                                        style={{ cursor: 'pointer', width: '14px', height: '14px' }}
-                                                    />
-                                                    Hide
-                                                </label>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-                            
-                            {/* Column Distribution/Vocabulary */}
-                            {columnVocabulary && (
-                                <div style={{ padding: '8px', background: 'rgba(42, 42, 42, 0.8)', border: '1px solid #666', borderRadius: '4px', fontSize: '12px' }}>
-                                    {columnVocabulary.type === 'scalar' && columnVocabulary.distribution && (
-                                        <div>
-                                            <div style={{ color: '#d0d0d0', fontWeight: 'bold', marginBottom: '6px' }}>
-                                                Distribution
-                                                {columnVocabulary.min !== undefined && columnVocabulary.max !== undefined && (
-                                                    <span style={{ fontSize: '11px', fontWeight: 'normal', color: '#aaa', marginLeft: '8px' }}>
-                                                        ({columnVocabulary.min.toFixed(2)} - {columnVocabulary.max.toFixed(2)})
-                                                    </span>
-                                                )}
-                                            </div>
-                                            {columnVocabulary.mean !== undefined && columnVocabulary.median !== undefined && (
-                                                <div style={{ fontSize: '11px', color: '#aaa', marginBottom: '6px' }}>
-                                                    Mean: {columnVocabulary.mean.toFixed(2)} | Median: {columnVocabulary.median.toFixed(2)}
-                                                </div>
-                                            )}
-                                            <DistributionChart 
-                                                distribution={columnVocabulary.distribution}
-                                                min={columnVocabulary.min || 0}
-                                                max={columnVocabulary.max || 0}
-                                                searchValue={searchQuery ? parseFloat(searchQuery) : null}
-                                            />
-                                        </div>
-                                    )}
-                                    {columnVocabulary.type !== 'scalar' && columnVocabulary.vocabulary && (
-                                        <div>
-                                            <div style={{ color: '#d0d0d0', fontWeight: 'bold', marginBottom: '6px' }}>
-                                                Vocabulary ({columnVocabulary.vocabulary.length} unique values)
-                                            </div>
-                                            <div style={{ maxHeight: '150px', overflowY: 'auto', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                                {columnVocabulary.vocabulary.map((val, idx) => (
-                                                    <button
-                                                        key={idx}
-                                                        onClick={() => {
-                                                            setSearchQuery(val);
-                                                            const fakeEvent = { target: { value: val } } as React.ChangeEvent<HTMLInputElement>;
-                                                            handleSearchInput(fakeEvent);
-                                                        }}
-                                                        style={{
-                                                            background: searchQuery === val ? '#4c4' : '#555',
-                                                            border: '1px solid #666',
-                                                            color: '#d0d0d0',
-                                                            padding: '2px 6px',
-                                                            borderRadius: '3px',
-                                                            cursor: 'pointer',
-                                                            fontSize: '11px',
-                                                            whiteSpace: 'nowrap'
-                                                        }}
-                                                        title={`Click to search for: ${val}`}
-                                                    >
-                                                        {val.length > 20 ? val.substring(0, 20) + '...' : val}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                            
-                            {/* Example Queries */}
-                            <div style={{ borderTop: '1px solid #666', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                <div style={{ color: '#aaa', fontSize: '13px', marginBottom: '4px' }}>Example values from data:</div>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                    {(() => {
-                                        const examples: string[] = [];
-                                        if (selectedSearchColumn && columnTypes[selectedSearchColumn]) {
-                                            const colType = columnTypes[selectedSearchColumn];
-                                            const sampleValues = new Set<string>();
-
-                                            // Try pointRecordsByID first
-                                            if (sphereRef && sphereRef.current && sphereRef.current.pointRecordsByID) {
-                                                for (const record of sphereRef.current.pointRecordsByID.values()) {
-                                                    const val = record.original[selectedSearchColumn];
-                                                    if (val !== undefined) {
-                                                        sampleValues.add(String(val));
-                                                        if (sampleValues.size >= 10) break;
-                                                    }
-                                                }
-                                            }
-
-                                            // Fallback to jsonData if pointRecordsByID empty
-                                            if (sampleValues.size === 0 && sphereRef && sphereRef.current && sphereRef.current.jsonData) {
-                                                const coords = sphereRef.current.jsonData.coords || sphereRef.current.jsonData.projections;
-                                                if (coords && Array.isArray(coords)) {
-                                                    for (const point of coords.slice(0, 20)) {
-                                                        const val = point.original?.[selectedSearchColumn];
-                                                        if (val !== undefined) {
-                                                            sampleValues.add(String(val));
-                                                            if (sampleValues.size >= 10) break;
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            
-                                            if (colType === 'set' || colType === 'scalar') {
-                                                // For set/scalar, show actual values
-                                                examples.push(...Array.from(sampleValues).slice(0, 8));
-                                            } else if (colType === 'string') {
-                                                // For strings, show first few unique values
-                                                examples.push(...Array.from(sampleValues).slice(0, 5));
-                                            }
-                                        }
-                                        return examples.length > 0 ? examples.map((ex, idx) => (
-                                            <button key={idx} onClick={() => { 
-                                                setSearchQuery(ex); 
-                                                // Trigger search using the same handler
-                                                if (sphereRef && columnTypes && selectedSearchColumn) {
-                                                    const fakeEvent = { target: { value: ex } } as React.ChangeEvent<HTMLInputElement>;
-                                                    handleSearchInput(fakeEvent);
-                                                }
-                                            }} style={{ background: '#555', border: '1px solid #777', color: '#d0d0d0', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '13px' }} title={`Click to search for: ${ex}`}>{ex.length > 15 ? ex.substring(0, 15) + '...' : ex}</button>
-                                        )) : (
-                                            <div style={{ color: '#888', fontSize: '12px', fontStyle: 'italic' }}>No sample values found</div>
-                                        );
-                                    })()}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* SECTION 4: VISUAL CONTROLS */}
-                {frameInfo && (
-                    <div style={{ marginBottom: '16px' }}>
-                        <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', margin: '20px 0 8px 0' }}>VISUAL CONTROLS</div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            {/* Dropdowns first */}
-                            <label style={{ color: '#cfd8dc', fontSize: '13px', display: 'flex', alignItems: 'center' }}>
-                                Cluster Coloring:
-                                <select value={clusterColorMode} onChange={(e) => setClusterColorMode(e.target.value as 'final' | 'per-epoch')} style={{ marginLeft: '8px', fontSize: '12px', padding: '4px 6px', backgroundColor: '#2a2a2a', color: '#e0e0e0', border: '1px solid #333', borderRadius: '3px', cursor: 'pointer', flex: 1 }}>
-                                    <option value="final">Final Frame Clusters</option>
-                                    <option value="per-epoch">Per-Epoch Clusters</option>
-                                </select>
-                            </label>
-                            <div style={{ fontSize: '11px', color: '#8a8a8a', paddingLeft: '4px', marginTop: '-4px' }}>
-                                {clusterColorMode === 'final'
-                                    ? 'Colors locked to final-frame neighbors. Watch them converge.'
-                                    : 'Colors from each epoch\'s own clustering. Watch clusters evolve.'}
-                            </div>
-                            <label style={{ color: '#cfd8dc', fontSize: '13px', display: 'flex', alignItems: 'center' }}>
-                                Focus Cluster:
-                                <select value={spotlightCluster} onChange={(e) => { const cluster = parseInt(e.target.value); setSpotlightCluster(cluster); if (sphereRef) { sphereRef.spotlightCluster = cluster; update_cluster_spotlight(sphereRef); render_sphere(sphereRef); } }} style={{ marginLeft: '8px', fontSize: '12px', padding: '4px 6px', backgroundColor: '#2a2a2a', color: '#e0e0e0', border: '1px solid #333', borderRadius: '3px', cursor: 'pointer', flex: 1 }}>
-                                    <option value={-1}>Off</option>
-                                    {frameInfo.visible > 0 && Array.from({length: frameInfo.visible}, (_, i) => (<option key={i} value={i}>C{i}</option>))}
-                                </select>
-                            </label>
-
-                            {/* Toggles second */}
-                            <div style={{ height: '1px', background: '#2a2a2a', margin: '4px 0' }} />
-                            <label style={{ color: frameInfo.visible >= 4 ? '#cfd8dc' : '#555', fontSize: '13px', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                                <input type="checkbox" checked={showDynamicHulls} onChange={(e) => { setShowDynamicHulls(e.target.checked); }} style={{ marginRight: '8px', cursor: 'pointer', width: '14px', height: '14px' }} disabled={frameInfo.visible < 4} />
-                                Show Cluster Spheres
-                                <span style={{ fontSize: '11px', color: '#8a8a8a', marginLeft: '8px' }}>({frameInfo.visible})</span>
-                            </label>
-
-                            {/* Sliders last */}
-                            <div style={{ height: '1px', background: '#2a2a2a', margin: '4px 0' }} />
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <label style={{ fontSize: '13px', color: '#cfd8dc', minWidth: '80px' }}>Point Size:</label>
-                                <input
-                                    type="range"
-                                    min="0.01"
-                                    max="0.2"
-                                    step="0.01"
-                                    value={pointSize}
-                                    onChange={(e) => {
-                                        const newSize = parseFloat(e.target.value);
-                                        setPointSize(newSize);
-                                        if (sphereRef) {
-                                            set_visual_options(sphereRef, newSize, pointAlpha);
-                                            render_sphere(sphereRef);
-                                        }
-                                    }}
-                                    style={{ flex: 1, cursor: 'pointer' }}
-                                />
-                                <span style={{ fontSize: '11px', color: '#8a8a8a', minWidth: '35px', textAlign: 'right' }}>{pointSize.toFixed(2)}</span>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <label style={{ fontSize: '13px', color: '#cfd8dc', minWidth: '80px' }}>Alpha:</label>
-                                <input
-                                    type="range"
-                                    min="0"
-                                    max="1"
-                                    step="0.01"
-                                    value={pointAlpha}
-                                    onChange={(e) => {
-                                        const newAlpha = parseFloat(e.target.value);
-                                        setPointAlpha(newAlpha);
-                                        if (sphereRef) {
-                                            set_visual_options(sphereRef, pointSize, newAlpha);
-                                            render_sphere(sphereRef);
-                                        }
-                                    }}
-                                    style={{ flex: 1, cursor: 'pointer' }}
-                                />
-                                <span style={{ fontSize: '11px', color: '#8a8a8a', minWidth: '35px', textAlign: 'right' }}>{pointAlpha.toFixed(2)}</span>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <label style={{ fontSize: '13px', color: '#cfd8dc', minWidth: '80px' }}>Trail Length:</label>
-                                <input type="range" min="2" max="15" value={trailLength} onChange={(e) => { const newLength = parseInt(e.target.value); setTrailLength(newLength); }} style={{ flex: 1, cursor: 'pointer' }} />
-                                <span style={{ fontSize: '11px', color: '#8a8a8a', minWidth: '35px', textAlign: 'right' }}>{trailLength}</span>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* SECTION 5: SYSTEM */}
-                <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', margin: '28px 0 8px 0' }}>SYSTEM</div>
-                <div style={{ marginBottom: '16px', fontSize: '11px', color: '#8a8a8a' }}>
-                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                        <button onClick={() => setShowMovementPlot(!showMovementPlot)} style={{ background: showMovementPlot ? '#4c4' : '#2a2a2a', border: 'none', color: '#8a8a8a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title="Toggle Movement Histogram">Move</button>
-                        <button onClick={() => setShowClusterDebug(!showClusterDebug)} style={{ background: showClusterDebug ? '#4c4' : '#2a2a2a', border: 'none', color: '#8a8a8a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title="Toggle Cluster Inspector">Debug</button>
-                        <button onClick={() => setShowColorLegend(!showColorLegend)} style={{ background: showColorLegend ? '#4c4' : '#2a2a2a', border: 'none', color: '#8a8a8a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title="Toggle Color Legend">Colors</button>
-                        {!isMobile && <button onClick={toggleFullscreen} style={{ background: isFullscreen ? '#4c4' : '#2a2a2a', border: 'none', color: '#8a8a8a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}>{isFullscreen ? 'Exit' : 'Full'}</button>}
-                        <button onClick={() => setRotationEnabled(!rotationEnabled)} style={{ background: rotationEnabled ? '#4c4' : '#c44', border: 'none', color: '#8a8a8a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title={rotationEnabled ? "Disable Rotation" : "Enable Rotation"}>{rotationEnabled ? 'On' : 'Off'}</button>
-                    </div>
-                    {/* Session info merged into System */}
-                    {lossData && (
-                        <div style={{ marginTop: '10px', color: '#666', fontSize: '10px', fontFamily: 'monospace' }}>
-                            <div style={{ marginBottom: '2px' }}>Session: {sessionId}</div>
-                            {lossData.training_info && lossData.training_info.featrix_version && (
-                                <div style={{ marginBottom: '2px' }}>Featrix: {lossData.training_info.featrix_version}</div>
-                            )}
-                            {lossData.training_info && lossData.training_info.software_version && (
-                                <div style={{ marginBottom: '2px' }}>Software: {lossData.training_info.software_version}</div>
-                            )}
-                            {frameInfo && (
-                                <div>Epochs: {frameInfo.total}</div>
-                            )}
-                        </div>
-                    )}
-                </div>
-
-                {/* Color Legend - Inline in side panel */}
-                {showColorLegend && frameInfo && (
-                    <div style={{ marginBottom: '16px' }}>
-                        <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', marginBottom: '8px' }}>CLUSTER COLORS</div>
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
-                            {frameInfo.visible > 0 && Array.from({length: frameInfo.visible}, (_, i) => {
-                                // Clusters are 0-based, so cluster 0 uses color index 0
-                                const kColorTable = [0xe6194b, 0x3cb44b, 0xffe119, 0x4363d8, 0xf58231, 0x911eb4, 0x46f0f0, 0xf032e6, 0xbcf60c, 0xfabebe, 0x008080, 0xe6beff, 0x9a6324, 0xfffac8, 0x800000, 0xaaffc3, 0x808000, 0xffd8b1, 0x999999, 0x0000ff, 0x00ff00, 0xffcccc];
-                                const defaultColorHex = kColorTable[i] || 0x999999;
-                                // Check for custom color
-                                const customColorHex = sphereRef?.customClusterColors?.get(i);
-                                const colorHex = customColorHex || defaultColorHex;
-                                const color = '#' + colorHex.toString(16).padStart(6, '0');
-                                return (
-                                    <div key={`cluster-${i}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-                                        <span style={{ fontSize: '12px' }}>C{i}</span>
-                                        <input
-                                            type="color"
-                                            value={color}
-                                            onChange={(e) => {
-                                                if (sphereRef && sphereRef.current) {
-                                                    const newColor = e.target.value;
-                                                    set_cluster_color(sphereRef.current, i, newColor);
-                                                    render_sphere(sphereRef.current);
-                                                    // Force component re-render
-                                                    setShowColorLegend(prev => prev);
-                                                } else {
-                                                }
-                                            }}
-                                            style={{ 
-                                                width: '30px', 
-                                                height: '30px', 
-                                                border: '1px solid #555', 
-                                                borderRadius: '3px',
-                                                cursor: 'pointer',
-                                                padding: 0
-                                            }}
-                                            title={`Change color for cluster ${i}`}
-                                        />
-                                    </div>
-                                );
-                            })}
-                        </div>
-                        <button
-                            onClick={() => {
-                                if (sphereRef && sphereRef.current) {
-                                    clear_cluster_colors(sphereRef.current);
-                                    render_sphere(sphereRef.current);
-                                    setShowColorLegend(prev => prev);
-                                }
-                            }}
-                            style={{ 
-                                marginTop: '8px',
-                                width: '100%',
-                                background: '#2a2a2a',
-                                border: 'none',
-                                color: '#8a8a8a',
-                                padding: '6px',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                fontSize: '11px'
-                            }}
-                        >
-                            Reset to Default Colors
-                        </button>
-                    </div>
-                )}
-
-                {/* Cluster Debug Panel - Inline in side panel */}
-                {showClusterDebug && (
-                    <div style={{ marginBottom: '16px' }}>
-                        <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', marginBottom: '8px' }}>CLUSTER INSPECTOR</div>
-                        {frameInfo && (<div style={{ marginBottom: '8px', fontSize: '14px' }}><div>Frame: {frameInfo.current}/{frameInfo.total}</div><div>Visible Clusters: {frameInfo.visible}</div><div>Epoch: {frameInfo.epoch || 'unknown'}</div></div>)}
-
-                        {/* Cluster member counts */}
-                        {sphereRef && (() => {
-                            // Count points per cluster
-                            const clusterCounts = new Map<number, number>();
-                            let pointsWithoutCluster = 0;
-                            let totalPoints = 0;
-
-                            if (sphereRef.pointObjectsByRecordID && sphereRef.pointRecordsByID) {
-                                sphereRef.pointObjectsByRecordID.forEach((mesh: any, recordId: string) => {
-                                    totalPoints++;
-                                    const record = sphereRef.pointRecordsByID.get(recordId);
-
-                                    // Try to get cluster from finalClusterResults
-                                    let cluster = -1;
-                                    const activeClusterKey = get_active_cluster_count_key(sphereRef);
-                                    if (activeClusterKey !== null && sphereRef.finalClusterResults?.[activeClusterKey]?.cluster_labels) {
-                                        const rowOffset = record?.featrix_meta?.__featrix_row_offset;
-                                        if (rowOffset !== undefined && rowOffset < sphereRef.finalClusterResults[activeClusterKey].cluster_labels.length) {
-                                            cluster = sphereRef.finalClusterResults[activeClusterKey].cluster_labels[rowOffset];
-                                        }
-                                    }
-
-                                    if (cluster === -1) {
-                                        pointsWithoutCluster++;
-                                    } else {
-                                        clusterCounts.set(cluster, (clusterCounts.get(cluster) || 0) + 1);
-                                    }
-                                });
-                            }
-
-                            if (clusterCounts.size === 0) {
-                                return (<div style={{ fontSize: '12px', color: '#c44', marginTop: '8px' }}>⚠️ No cluster data available ({totalPoints} points)</div>);
-                            }
-
-                            return (
-                                <div style={{ marginTop: '8px', borderTop: '1px solid #444', paddingTop: '8px' }}>
-                                    <div style={{ color: '#4cf', fontWeight: 'bold', marginBottom: '4px', fontSize: '13px' }}>Cluster Members:</div>
-                                    <div style={{ fontSize: '11px', fontFamily: 'monospace', maxHeight: '150px', overflowY: 'auto' }}>
-                                        {Array.from(clusterCounts.entries()).sort((a, b) => a[0] - b[0]).map(([cluster, count]) => (
-                                            <div key={cluster} style={{ marginBottom: '2px' }}>
-                                                <span style={{ color: '#888' }}>C{cluster}:</span> <span style={{ color: '#ddd' }}>{count} points</span>
-                                            </div>
-                                        ))}
-                                        {pointsWithoutCluster > 0 && (
-                                            <div style={{ marginTop: '4px', color: '#c44' }}>⚠️ {pointsWithoutCluster} points without cluster</div>
-                                        )}
-                                    </div>
-                                </div>
-                            );
-                        })()}
-                        {selectedPointInfo && (
-                            <div style={{ marginTop: '8px', borderTop: '1px solid #444', paddingTop: '8px', fontSize: '13px' }}>
-                                <div style={{ color: '#ff4', fontWeight: 'bold', marginBottom: '6px' }}>Selected Point:</div>
-                                <div>Record ID: {selectedPointInfo.recordId}</div>
-                                <div>Row Offset: {selectedPointInfo.rowOffset}</div>
-                                <div>Cluster ID: {selectedPointInfo.clusterId}</div>
-                                <div>Color: <span style={{ background: selectedPointInfo.color, padding: '2px 6px', borderRadius: '2px' }}>{selectedPointInfo.color}</span></div>
-                                <div>Position: {selectedPointInfo.position}</div>
-                                {selectedPointInfo.data && (
-                                    <div style={{ marginTop: '8px', borderTop: '1px solid #333', paddingTop: '8px' }}>
-                                        <div style={{ color: '#4cf', fontWeight: 'bold', marginBottom: '4px' }}>Data:</div>
-                                        <div style={{ maxHeight: '200px', overflowY: 'auto', fontSize: '12px', fontFamily: 'monospace' }}>
-                                            {Object.entries(selectedPointInfo.data).map(([key, value]) => (
-                                                <div key={key} style={{ marginBottom: '2px' }}>
-                                                    <span style={{ color: '#888' }}>{key}:</span> <span style={{ color: '#ddd' }}>{String(value)}</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                        <div style={{ marginTop: '8px', fontSize: '13px', color: '#888' }}>Click points on sphere to inspect</div>
-                    </div>
-                )}
-
             </div>
-            )}
-
             {/* Floating Data Inspector */}
-            {showDataInspector && selectedPoints.length > 0 && (
+            {showDataInspector && selectedPoints.length > 0 && !isThumbnail && (
                 <div
                     style={{
                         position: 'fixed',

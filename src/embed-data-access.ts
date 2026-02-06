@@ -43,9 +43,14 @@ export async function fetch_session_projections(session_id: string, apiBaseUrl?:
     return projections;
 }
 
-export async function fetch_training_metrics(session_id: string, apiBaseUrl?: string, limit?: number) {
+export async function fetch_training_metrics(
+    session_id: string,
+    apiBaseUrl?: string,
+    limit?: number,
+    onProgress?: (info: { bytesLoaded: number, totalBytes?: number, phase: string }) => void
+) {
     const baseUrl = getApiBaseUrl(apiBaseUrl);
-    
+
     // Fetch epoch projections (3D coordinates) - CRITICAL for training movie
     console.time('🔗 API_EPOCH_PROJECTIONS');
     console.log('🔗 API_CALL_START: epoch_projections');
@@ -55,14 +60,45 @@ export async function fetch_training_metrics(session_id: string, apiBaseUrl?: st
     }
     console.log('🔗 Fetching from:', projectionsUrl);
     const projectionsResponse = await fetch(projectionsUrl);
-    
+
     if (!projectionsResponse.ok) {
         const errorText = await projectionsResponse.text();
         console.error('❌ API Error:', projectionsResponse.status, errorText);
         throw new Error(`API request failed: ${projectionsResponse.status} ${projectionsResponse.statusText}`);
     }
-    
-    const projectionsData = await projectionsResponse.json();
+
+    // Get total size from Content-Length header if available
+    const contentLength = projectionsResponse.headers.get('Content-Length');
+    const totalBytes = contentLength ? parseInt(contentLength, 10) : undefined;
+
+    // Read response with progress tracking
+    let projectionsData;
+    if (onProgress && projectionsResponse.body) {
+        const reader = projectionsResponse.body.getReader();
+        const chunks: Uint8Array[] = [];
+        let bytesLoaded = 0;
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            bytesLoaded += value.length;
+            onProgress({ bytesLoaded, totalBytes, phase: 'downloading' });
+        }
+
+        // Combine chunks and parse JSON
+        onProgress({ bytesLoaded, totalBytes, phase: 'parsing' });
+        const allChunks = new Uint8Array(bytesLoaded);
+        let position = 0;
+        for (const chunk of chunks) {
+            allChunks.set(chunk, position);
+            position += chunk.length;
+        }
+        const text = new TextDecoder().decode(allChunks);
+        projectionsData = JSON.parse(text);
+    } else {
+        projectionsData = await projectionsResponse.json();
+    }
     console.timeEnd('🔗 API_EPOCH_PROJECTIONS');
     console.log('🎯 DEBUG: API Response keys:', Object.keys(projectionsData));
     if (projectionsData.epoch_projections) {
