@@ -714,36 +714,36 @@ const LossPlotOverlay: React.FC<{
             }
         }
         
-        // Draw labels with better formatting
+        // Draw labels with better formatting - LARGER FONTS
         ctx.fillStyle = '#ffffff';
-        ctx.font = '12px Arial';
+        ctx.font = 'bold 15px Arial';
         ctx.textAlign = 'center';
-        
+
         // X-axis labels (epochs)
         for (let i = 0; i <= 5; i++) {
             const epoch = minEpoch + (i / 5) * (maxEpoch - minEpoch);
             const x = leftPadding + (i / 5) * plotWidth;
-            ctx.fillText(Math.round(epoch).toString(), x, height - 10);
+            ctx.fillText(Math.round(epoch).toString(), x, height - 8);
         }
-        
-        // Left Y-axis labels (validation loss values) - better formatting and positioning
+
+        // Left Y-axis labels (validation loss values) - LARGER
         ctx.textAlign = 'right';
-        ctx.font = '12px Arial';
+        ctx.font = 'bold 14px Arial';
         ctx.fillStyle = '#00ff88'; // Green color for loss axis
         for (let i = 0; i <= 4; i++) {
             const loss = maxLoss - (i / 4) * (maxLoss - minLoss);
             const y = topPadding + (i / 4) * plotHeight;
             // Smart decimal formatting based on value magnitude
-            const formatted = loss < 0.01 ? loss.toFixed(4) : 
-                             loss < 0.1 ? loss.toFixed(3) : 
+            const formatted = loss < 0.01 ? loss.toFixed(4) :
+                             loss < 0.1 ? loss.toFixed(3) :
                              loss.toFixed(2);
-            ctx.fillText(formatted, leftPadding - 10, y + 4);
+            ctx.fillText(formatted, leftPadding - 10, y + 5);
         }
-        
-        // Right Y-axis labels (learning rate values) if provided - YELLOW
+
+        // Right Y-axis labels (learning rate values) if provided - LARGER
         if (sortedLRData.length > 0) {
             ctx.textAlign = 'left';
-            ctx.font = '12px Arial';
+            ctx.font = 'bold 14px Arial';
             ctx.fillStyle = '#ffff00'; // YELLOW color for learning rate axis
             for (let i = 0; i <= 4; i++) {
                 const lr = maxLR - (i / 4) * (maxLR - minLR);
@@ -753,26 +753,26 @@ const LossPlotOverlay: React.FC<{
                                  lr < 0.01 ? lr.toFixed(5) :
                                  lr < 0.1 ? lr.toFixed(4) :
                                  lr.toFixed(3);
-                ctx.fillText(formatted, leftPadding + plotWidth + 10, y + 4);
+                ctx.fillText(formatted, leftPadding + plotWidth + 10, y + 5);
             }
         }
-        
-        // Title with better positioning
+
+        // Title with better positioning - LARGER
         ctx.textAlign = 'center';
-        ctx.font = 'bold 14px Arial';
+        ctx.font = 'bold 16px Arial';
         ctx.fillStyle = '#ffffff';
-        ctx.fillText(title, width / 2, 20);
-        
-        // Legend if both datasets are present
+        ctx.fillText(title, width / 2, 18);
+
+        // Legend if both datasets are present - LARGER
         if (sortedLRData.length > 0) {
-            ctx.font = '11px Arial';
+            ctx.font = 'bold 13px Arial';
             ctx.textAlign = 'left';
             // Validation Loss label
             ctx.fillStyle = '#00ff88';
-            ctx.fillText('Loss', leftPadding + 10, topPadding + plotHeight + 20);
+            ctx.fillText('Loss', leftPadding + 10, topPadding + plotHeight + 22);
             // Learning Rate label
             ctx.fillStyle = '#ffaa00';
-            ctx.fillText('LR', leftPadding + 60, topPadding + plotHeight + 20);
+            ctx.fillText('LR', leftPadding + 70, topPadding + plotHeight + 22);
         }
     }, [lossData, learningRateData, currentEpoch, title]);
     
@@ -1022,18 +1022,19 @@ const MovementPlotOverlay: React.FC<{
             }
         }
 
-        // X-axis labels
+        // X-axis labels - LARGER
         ctx.fillStyle = '#ffffff';
-        ctx.font = '11px Arial';
+        ctx.font = 'bold 14px Arial';
         ctx.textAlign = 'center';
         for (let i = 0; i <= 5; i++) {
             const epoch = minEpoch + (i / 5) * epochRange;
             const x = leftPadding + (i / 5) * plotWidth;
-            ctx.fillText(Math.round(epoch).toString(), x, height - 8);
+            ctx.fillText(Math.round(epoch).toString(), x, height - 6);
         }
 
-        // Y-axis labels
+        // Y-axis labels - LARGER
         ctx.textAlign = 'right';
+        ctx.font = 'bold 13px Arial';
         ctx.fillStyle = '#00ccff';
         for (let i = 0; i <= 4; i++) {
             const val = maxY - (i / 4) * (maxY - minY);
@@ -1041,21 +1042,21 @@ const MovementPlotOverlay: React.FC<{
             ctx.fillText(val < 0.01 ? val.toExponential(1) : val.toFixed(3), leftPadding - 8, y + 4);
         }
 
-        // Title
+        // Title - LARGER
         ctx.textAlign = 'center';
-        ctx.font = 'bold 13px Arial';
+        ctx.font = 'bold 16px Arial';
         ctx.fillStyle = '#ffffff';
-        ctx.fillText('Point Movement (epoch-to-epoch)', width / 2, 16);
+        ctx.fillText('Point Movement (epoch-to-epoch)', width / 2, 18);
 
-        // Legend
-        ctx.font = '10px Arial';
+        // Legend - LARGER
+        ctx.font = 'bold 12px Arial';
         ctx.textAlign = 'left';
         ctx.fillStyle = '#00ccff';
-        ctx.fillText('mean', leftPadding + 10, topPadding + plotHeight + 18);
+        ctx.fillText('mean', leftPadding + 10, topPadding + plotHeight + 20);
         ctx.fillStyle = '#ffaa00';
-        ctx.fillText('median', leftPadding + 50, topPadding + plotHeight + 18);
+        ctx.fillText('median', leftPadding + 55, topPadding + plotHeight + 20);
         ctx.fillStyle = 'rgba(255,100,100,0.7)';
-        ctx.fillText('p90', leftPadding + 100, topPadding + plotHeight + 18);
+        ctx.fillText('p90', leftPadding + 110, topPadding + plotHeight + 20);
     }, [movementData, currentEpoch]);
 
     useEffect(() => {
@@ -3184,7 +3185,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     <div style={{ color: '#d0d0d0', fontWeight: 'bold', marginBottom: '8px', fontSize: '13px' }}>
                                         Color Rules ({colorRules.length}):
                                         {colorRules.length === 0 && (
-                                            <span style={{ fontSize: '11px', color: '#888', fontWeight: 'normal', marginLeft: '8px' }}>
+                                            <span style={{ fontSize: '13px', color: '#888', fontWeight: 'normal', marginLeft: '8px' }}>
                                                 (Type search and press Enter to create)
                                             </span>
                                         )}
@@ -3195,23 +3196,23 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                                 {colorRules.map((rule) => (
                                                     <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px', background: 'rgba(0,0,0,0.3)', borderRadius: '3px' }}>
                                                         <div style={{ width: '20px', height: '20px', background: rule.color, border: '1px solid #666', borderRadius: '3px', flexShrink: 0 }}></div>
-                                                        <div style={{ flex: 1, fontSize: '12px', color: '#d0d0d0' }}>
+                                                        <div style={{ flex: 1, fontSize: '14px', color: '#d0d0d0' }}>
                                                             <strong>{rule.column}</strong>: "{rule.query}" ({rule.recordIds.length} records)
                                                         </div>
                                                         <button 
                                                             onClick={() => {
                                                                 setColorRules(prev => prev.filter(r => r.id !== rule.id));
                                                             }}
-                                                            style={{ 
-                                                                background: '#633', 
-                                                                border: '1px solid #666', 
-                                                                color: '#d0d0d0', 
-                                                                padding: '4px 8px', 
-                                                                borderRadius: '3px', 
-                                                                cursor: 'pointer', 
-                                                                fontSize: '11px',
+                                                            style={{
+                                                                background: '#633',
+                                                                border: '1px solid #666',
+                                                                color: '#d0d0d0',
+                                                                padding: '4px 8px',
+                                                                borderRadius: '3px',
+                                                                cursor: 'pointer',
+                                                                fontSize: '13px',
                                                                 flexShrink: 0
-                                                            }} 
+                                                            }}
                                                             title="Delete Rule"
                                                         >
                                                             ✕
@@ -3227,19 +3228,19 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                                     marginTop: '8px', 
                                                     width: '100%', 
                                                     background: '#633', 
-                                                    border: '1px solid #666', 
-                                                    color: '#d0d0d0', 
-                                                    padding: '6px', 
-                                                    borderRadius: '3px', 
-                                                    cursor: 'pointer', 
-                                                    fontSize: '12px' 
+                                                    border: '1px solid #666',
+                                                    color: '#d0d0d0',
+                                                    padding: '6px',
+                                                    borderRadius: '3px',
+                                                    cursor: 'pointer',
+                                                    fontSize: '14px'
                                                 }}
                                             >
                                                 Clear All Rules
                                             </button>
                                         </>
                                     ) : (
-                                        <div style={{ fontSize: '11px', color: '#888', fontStyle: 'italic', padding: '8px', textAlign: 'center' }}>
+                                        <div style={{ fontSize: '13px', color: '#888', fontStyle: 'italic', padding: '8px', textAlign: 'center' }}>
                                             No color rules yet. Search and press Enter to create one.
                                         </div>
                                     )}
@@ -3265,7 +3266,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 
                                 if (hasBoolean) {
                                     return (
-                                        <div style={{ padding: '8px', background: 'rgba(76, 175, 80, 0.1)', border: '1px solid rgba(76, 175, 80, 0.3)', borderRadius: '4px', fontSize: '12px', color: '#4caf50' }}>
+                                        <div style={{ padding: '8px', background: 'rgba(76, 175, 80, 0.1)', border: '1px solid rgba(76, 175, 80, 0.3)', borderRadius: '4px', fontSize: '14px', color: '#4caf50' }}>
                                             <strong>Boolean column detected:</strong> Try: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px' }}>true</code>, <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px' }}>1</code>, <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px' }}>yes</code> or <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px' }}>false</code>, <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px' }}>0</code>, <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px' }}>no</code>
                                         </div>
                                     );
@@ -3275,7 +3276,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             
                             {/* Color Key for Boolean Search Results */}
                             {searchResultStats && searchResultStats.isBoolean && (
-                                <div style={{ padding: '8px', background: 'rgba(42, 42, 42, 0.8)', border: '1px solid #666', borderRadius: '4px', fontSize: '12px' }}>
+                                <div style={{ padding: '8px', background: 'rgba(42, 42, 42, 0.8)', border: '1px solid #666', borderRadius: '4px', fontSize: '14px' }}>
                                     <div style={{ color: '#d0d0d0', fontWeight: 'bold', marginBottom: '6px' }}>Search Results:</div>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -3290,7 +3291,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                 <div style={{ width: '16px', height: '16px', background: '#888888', border: '1px solid #666', borderRadius: '2px' }}></div>
                                                 <span style={{ color: '#d0d0d0' }}>Unknown: <strong>{searchResultStats.unknown}</strong></span>
-                                                <label style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '11px' }}>
+                                                <label style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '13px' }}>
                                                     <input 
                                                         type="checkbox" 
                                                         checked={hideUnknown} 
@@ -3307,19 +3308,19 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             
                             {/* Column Distribution/Vocabulary */}
                             {columnVocabulary && (
-                                <div style={{ padding: '8px', background: 'rgba(42, 42, 42, 0.8)', border: '1px solid #666', borderRadius: '4px', fontSize: '12px' }}>
+                                <div style={{ padding: '8px', background: 'rgba(42, 42, 42, 0.8)', border: '1px solid #666', borderRadius: '4px', fontSize: '14px' }}>
                                     {columnVocabulary.type === 'scalar' && columnVocabulary.distribution && (
                                         <div>
                                             <div style={{ color: '#d0d0d0', fontWeight: 'bold', marginBottom: '6px' }}>
                                                 Distribution
                                                 {columnVocabulary.min !== undefined && columnVocabulary.max !== undefined && (
-                                                    <span style={{ fontSize: '11px', fontWeight: 'normal', color: '#aaa', marginLeft: '8px' }}>
+                                                    <span style={{ fontSize: '13px', fontWeight: 'normal', color: '#aaa', marginLeft: '8px' }}>
                                                         ({columnVocabulary.min.toFixed(2)} - {columnVocabulary.max.toFixed(2)})
                                                     </span>
                                                 )}
                                             </div>
                                             {columnVocabulary.mean !== undefined && columnVocabulary.median !== undefined && (
-                                                <div style={{ fontSize: '11px', color: '#aaa', marginBottom: '6px' }}>
+                                                <div style={{ fontSize: '13px', color: '#aaa', marginBottom: '6px' }}>
                                                     Mean: {columnVocabulary.mean.toFixed(2)} | Median: {columnVocabulary.median.toFixed(2)}
                                                 </div>
                                             )}
@@ -3352,7 +3353,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                                             padding: '2px 6px',
                                                             borderRadius: '3px',
                                                             cursor: 'pointer',
-                                                            fontSize: '11px',
+                                                            fontSize: '13px',
                                                             whiteSpace: 'nowrap'
                                                         }}
                                                         title={`Click to search for: ${val}`}
@@ -3419,7 +3420,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                                 }
                                             }} style={{ background: '#555', border: '1px solid #777', color: '#d0d0d0', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '13px' }} title={`Click to search for: ${ex}`}>{ex.length > 15 ? ex.substring(0, 15) + '...' : ex}</button>
                                         )) : (
-                                            <div style={{ color: '#888', fontSize: '12px', fontStyle: 'italic' }}>No sample values found</div>
+                                            <div style={{ color: '#888', fontSize: '14px', fontStyle: 'italic' }}>No sample values found</div>
                                         );
                                     })()}
                                 </div>
@@ -3431,25 +3432,24 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
 
                 {/* SECTION 4: VISUAL CONTROLS */}
                 {frameInfo && (
-                    <div style={{ marginBottom: '16px' }}>
-                        <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', margin: '20px 0 8px 0' }}>VISUAL CONTROLS</div>
+                    <CollapsibleSection title="VISUAL CONTROLS">
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             {/* Dropdowns first */}
                             <label style={{ color: '#cfd8dc', fontSize: '13px', display: 'flex', alignItems: 'center' }}>
                                 Cluster Coloring:
-                                <select value={clusterColorMode} onChange={(e) => setClusterColorMode(e.target.value as 'final' | 'per-epoch')} style={{ marginLeft: '8px', fontSize: '12px', padding: '4px 6px', backgroundColor: '#2a2a2a', color: '#e0e0e0', border: '1px solid #333', borderRadius: '3px', cursor: 'pointer', flex: 1 }}>
+                                <select value={clusterColorMode} onChange={(e) => setClusterColorMode(e.target.value as 'final' | 'per-epoch')} style={{ marginLeft: '8px', fontSize: '14px', padding: '4px 6px', backgroundColor: '#2a2a2a', color: '#e0e0e0', border: '1px solid #333', borderRadius: '3px', cursor: 'pointer', flex: 1 }}>
                                     <option value="final">Final Frame Clusters</option>
                                     <option value="per-epoch">Per-Epoch Clusters</option>
                                 </select>
                             </label>
-                            <div style={{ fontSize: '11px', color: '#8a8a8a', paddingLeft: '4px', marginTop: '-4px' }}>
+                            <div style={{ fontSize: '13px', color: '#8a8a8a', paddingLeft: '4px', marginTop: '-4px' }}>
                                 {clusterColorMode === 'final'
                                     ? 'Colors locked to final-frame neighbors. Watch them converge.'
                                     : 'Colors from each epoch\'s own clustering. Watch clusters evolve.'}
                             </div>
                             <label style={{ color: '#cfd8dc', fontSize: '13px', display: 'flex', alignItems: 'center' }}>
                                 Focus Cluster:
-                                <select value={spotlightCluster} onChange={(e) => { const cluster = parseInt(e.target.value); setSpotlightCluster(cluster); if (sphereRef) { sphereRef.spotlightCluster = cluster; update_cluster_spotlight(sphereRef); render_sphere(sphereRef); } }} style={{ marginLeft: '8px', fontSize: '12px', padding: '4px 6px', backgroundColor: '#2a2a2a', color: '#e0e0e0', border: '1px solid #333', borderRadius: '3px', cursor: 'pointer', flex: 1 }}>
+                                <select value={spotlightCluster} onChange={(e) => { const cluster = parseInt(e.target.value); setSpotlightCluster(cluster); if (sphereRef) { sphereRef.spotlightCluster = cluster; update_cluster_spotlight(sphereRef); render_sphere(sphereRef); } }} style={{ marginLeft: '8px', fontSize: '14px', padding: '4px 6px', backgroundColor: '#2a2a2a', color: '#e0e0e0', border: '1px solid #333', borderRadius: '3px', cursor: 'pointer', flex: 1 }}>
                                     <option value={-1}>Off</option>
                                     {frameInfo.visible > 0 && Array.from({length: frameInfo.visible}, (_, i) => (<option key={i} value={i}>C{i}</option>))}
                                 </select>
@@ -3460,41 +3460,43 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             <label style={{ color: frameInfo.visible >= 4 ? '#cfd8dc' : '#555', fontSize: '13px', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
                                 <input type="checkbox" checked={showDynamicHulls} onChange={(e) => { setShowDynamicHulls(e.target.checked); }} style={{ marginRight: '8px', cursor: 'pointer', width: '14px', height: '14px' }} disabled={frameInfo.visible < 4} />
                                 Show Cluster Spheres
-                                <span style={{ fontSize: '11px', color: '#8a8a8a', marginLeft: '8px' }}>({frameInfo.visible})</span>
+                                <span style={{ fontSize: '13px', color: '#8a8a8a', marginLeft: '8px' }}>({frameInfo.visible})</span>
                             </label>
                         </div>
-                    </div>
+                    </CollapsibleSection>
                 )}
+
                 {/* SECTION 5: SYSTEM */}
-                <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', margin: '28px 0 8px 0' }}>SYSTEM</div>
-                <div style={{ marginBottom: '16px', fontSize: '11px', color: '#8a8a8a' }}>
-                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                        <button onClick={() => setShowMovementPlot(!showMovementPlot)} style={{ background: showMovementPlot ? '#4c4' : '#2a2a2a', border: 'none', color: '#8a8a8a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title="Toggle Movement Histogram">Move</button>
-                        <button onClick={() => setShowClusterDebug(!showClusterDebug)} style={{ background: showClusterDebug ? '#4c4' : '#2a2a2a', border: 'none', color: '#8a8a8a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title="Toggle Cluster Inspector">Debug</button>
-                        <button onClick={() => setShowColorLegend(!showColorLegend)} style={{ background: showColorLegend ? '#4c4' : '#2a2a2a', border: 'none', color: '#8a8a8a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title="Toggle Color Legend">Colors</button>
-                        {!isMobile && <button onClick={toggleFullscreen} style={{ background: isFullscreen ? '#4c4' : '#2a2a2a', border: 'none', color: '#8a8a8a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}>{isFullscreen ? 'Exit' : 'Full'}</button>}
-                        <button onClick={() => setRotationEnabled(!rotationEnabled)} style={{ background: rotationEnabled ? '#4c4' : '#c44', border: 'none', color: '#8a8a8a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} title={rotationEnabled ? "Disable Rotation" : "Enable Rotation"}>{rotationEnabled ? 'On' : 'Off'}</button>
-                    </div>
-                    {/* Session info merged into System */}
-                    {lossData && (
-                        <div style={{ marginTop: '10px', color: '#666', fontSize: '10px', fontFamily: 'monospace' }}>
-                            <div style={{ marginBottom: '2px' }}>Session: {sessionId}</div>
-                            {lossData.training_info && lossData.training_info.featrix_version && (
-                                <div style={{ marginBottom: '2px' }}>Featrix: {lossData.training_info.featrix_version}</div>
-                            )}
-                            {lossData.training_info && lossData.training_info.software_version && (
-                                <div style={{ marginBottom: '2px' }}>Software: {lossData.training_info.software_version}</div>
-                            )}
-                            {frameInfo && (
-                                <div>Epochs: {frameInfo.total}</div>
-                            )}
+                <CollapsibleSection title="SYSTEM">
+                    <div style={{ marginBottom: '16px', fontSize: '13px', color: '#8a8a8a' }}>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                            <button onClick={() => setShowMovementPlot(!showMovementPlot)} style={{ background: showMovementPlot ? '#4c4' : '#2a2a2a', border: 'none', color: '#8a8a8a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' }} title="Toggle Movement Histogram">Move</button>
+                            <button onClick={() => setShowClusterDebug(!showClusterDebug)} style={{ background: showClusterDebug ? '#4c4' : '#2a2a2a', border: 'none', color: '#8a8a8a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' }} title="Toggle Cluster Inspector">Debug</button>
+                            <button onClick={() => setShowColorLegend(!showColorLegend)} style={{ background: showColorLegend ? '#4c4' : '#2a2a2a', border: 'none', color: '#8a8a8a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' }} title="Toggle Color Legend">Colors</button>
+                            {!isMobile && <button onClick={toggleFullscreen} style={{ background: isFullscreen ? '#4c4' : '#2a2a2a', border: 'none', color: '#8a8a8a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' }} title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}>{isFullscreen ? 'Exit' : 'Full'}</button>}
+                            <button onClick={() => setRotationEnabled(!rotationEnabled)} style={{ background: rotationEnabled ? '#4c4' : '#c44', border: 'none', color: '#8a8a8a', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' }} title={rotationEnabled ? "Disable Rotation" : "Enable Rotation"}>{rotationEnabled ? 'On' : 'Off'}</button>
                         </div>
-                    )}
-                </div>
+                        {/* Session info merged into System */}
+                        {lossData && (
+                            <div style={{ marginTop: '10px', color: '#666', fontSize: '10px', fontFamily: 'monospace' }}>
+                                <div style={{ marginBottom: '2px' }}>Session: {sessionId}</div>
+                                {lossData.training_info && lossData.training_info.featrix_version && (
+                                    <div style={{ marginBottom: '2px' }}>Featrix: {lossData.training_info.featrix_version}</div>
+                                )}
+                                {lossData.training_info && lossData.training_info.software_version && (
+                                    <div style={{ marginBottom: '2px' }}>Software: {lossData.training_info.software_version}</div>
+                                )}
+                                {frameInfo && (
+                                    <div>Epochs: {frameInfo.total}</div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </CollapsibleSection>
+
                 {/* Color Legend - Inline in side panel */}
                 {showColorLegend && frameInfo && (
-                    <div style={{ marginBottom: '16px' }}>
-                        <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', marginBottom: '8px' }}>CLUSTER COLORS</div>
+                    <CollapsibleSection title="CLUSTER COLORS">
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
                             {frameInfo.visible > 0 && Array.from({length: frameInfo.visible}, (_, i) => {
                                 // Clusters are 0-based, so cluster 0 uses color index 0
@@ -3506,7 +3508,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 const color = '#' + colorHex.toString(16).padStart(6, '0');
                                 return (
                                     <div key={`cluster-${i}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-                                        <span style={{ fontSize: '12px' }}>C{i}</span>
+                                        <span style={{ fontSize: '14px' }}>C{i}</span>
                                         <input
                                             type="color"
                                             value={color}
@@ -3520,10 +3522,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                                 } else {
                                                 }
                                             }}
-                                            style={{ 
-                                                width: '30px', 
-                                                height: '30px', 
-                                                border: '1px solid #555', 
+                                            style={{
+                                                width: '30px',
+                                                height: '30px',
+                                                border: '1px solid #555',
                                                 borderRadius: '3px',
                                                 cursor: 'pointer',
                                                 padding: 0
@@ -3542,7 +3544,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                     setShowColorLegend(prev => prev);
                                 }
                             }}
-                            style={{ 
+                            style={{
                                 marginTop: '8px',
                                 width: '100%',
                                 background: '#2a2a2a',
@@ -3551,18 +3553,17 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 padding: '6px',
                                 borderRadius: '4px',
                                 cursor: 'pointer',
-                                fontSize: '11px'
+                                fontSize: '13px'
                             }}
                         >
                             Reset to Default Colors
                         </button>
-                    </div>
+                    </CollapsibleSection>
                 )}
 
                 {/* Cluster Debug Panel - Inline in side panel */}
                 {showClusterDebug && (
-                    <div style={{ marginBottom: '16px' }}>
-                        <div style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.08em', color: '#9aa0a6', marginBottom: '8px' }}>CLUSTER INSPECTOR</div>
+                    <CollapsibleSection title="CLUSTER INSPECTOR">
                         {frameInfo && (<div style={{ marginBottom: '8px', fontSize: '14px' }}><div>Frame: {frameInfo.current}/{frameInfo.total}</div><div>Visible Clusters: {frameInfo.visible}</div><div>Epoch: {frameInfo.epoch || 'unknown'}</div></div>)}
 
                         {/* Cluster member counts */}
@@ -3596,20 +3597,20 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             }
 
                             if (clusterCounts.size === 0) {
-                                return (<div style={{ fontSize: '12px', color: '#c44', marginTop: '8px' }}>⚠️ No cluster data available ({totalPoints} points)</div>);
+                                return (<div style={{ fontSize: '14px', color: '#c44', marginTop: '8px' }}>No cluster data available ({totalPoints} points)</div>);
                             }
 
                             return (
                                 <div style={{ marginTop: '8px', borderTop: '1px solid #444', paddingTop: '8px' }}>
                                     <div style={{ color: '#4cf', fontWeight: 'bold', marginBottom: '4px', fontSize: '13px' }}>Cluster Members:</div>
-                                    <div style={{ fontSize: '11px', fontFamily: 'monospace', maxHeight: '150px', overflowY: 'auto' }}>
+                                    <div style={{ fontSize: '13px', fontFamily: 'monospace', maxHeight: '150px', overflowY: 'auto' }}>
                                         {Array.from(clusterCounts.entries()).sort((a, b) => a[0] - b[0]).map(([cluster, count]) => (
                                             <div key={cluster} style={{ marginBottom: '2px' }}>
                                                 <span style={{ color: '#888' }}>C{cluster}:</span> <span style={{ color: '#ddd' }}>{count} points</span>
                                             </div>
                                         ))}
                                         {pointsWithoutCluster > 0 && (
-                                            <div style={{ marginTop: '4px', color: '#c44' }}>⚠️ {pointsWithoutCluster} points without cluster</div>
+                                            <div style={{ marginTop: '4px', color: '#c44' }}>{pointsWithoutCluster} points without cluster</div>
                                         )}
                                     </div>
                                 </div>
@@ -3626,7 +3627,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 {selectedPointInfo.data && (
                                     <div style={{ marginTop: '8px', borderTop: '1px solid #333', paddingTop: '8px' }}>
                                         <div style={{ color: '#4cf', fontWeight: 'bold', marginBottom: '4px' }}>Data:</div>
-                                        <div style={{ maxHeight: '200px', overflowY: 'auto', fontSize: '12px', fontFamily: 'monospace' }}>
+                                        <div style={{ maxHeight: '200px', overflowY: 'auto', fontSize: '14px', fontFamily: 'monospace' }}>
                                             {Object.entries(selectedPointInfo.data).map(([key, value]) => (
                                                 <div key={key} style={{ marginBottom: '2px' }}>
                                                     <span style={{ color: '#888' }}>{key}:</span> <span style={{ color: '#ddd' }}>{String(value)}</span>
@@ -3638,7 +3639,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                             </div>
                         )}
                         <div style={{ marginTop: '8px', fontSize: '13px', color: '#888' }}>Click points on sphere to inspect</div>
-                    </div>
+                    </CollapsibleSection>
                 )}
             </div>
             )}
