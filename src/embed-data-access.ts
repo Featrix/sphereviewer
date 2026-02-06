@@ -1,12 +1,151 @@
 /**
  * @license
  * Featrix Sphere Viewer - Data Access Layer
- * 
+ *
  * Copyright (c) 2024-2025 Featrix
  * Licensed under the MIT License
- * 
+ *
  * Simplified data access for embeddable version
  */
+
+// Retry configuration
+const RETRY_CONFIG = {
+    maxRetryDuration: 10 * 60 * 1000, // 10 minutes total
+    initialDelay: 1000, // 1 second
+    maxDelay: 60 * 1000, // 60 seconds max between retries
+    backoffMultiplier: 2,
+};
+
+// Callback for retry status updates
+type RetryStatusCallback = (status: {
+    isRetrying: boolean;
+    attempt: number;
+    nextRetryIn: number; // seconds
+    totalElapsed: number; // seconds
+    error: string;
+}) => void;
+
+// Global retry status callback - set by the UI component
+let globalRetryStatusCallback: RetryStatusCallback | null = null;
+
+export function setRetryStatusCallback(callback: RetryStatusCallback | null) {
+    globalRetryStatusCallback = callback;
+}
+
+// Helper to check if an error is retryable (5xx errors or network errors)
+function isRetryableError(response: Response | null, error: Error | null): boolean {
+    if (response && response.status >= 500 && response.status < 600) {
+        return true; // 5xx server errors
+    }
+    if (error && (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('Failed to fetch'))) {
+        return true; // Network errors
+    }
+    return false;
+}
+
+// Fetch with exponential backoff retry
+async function fetchWithRetry(
+    url: string,
+    options?: RequestInit
+): Promise<Response> {
+    const startTime = Date.now();
+    let attempt = 0;
+    let delay = RETRY_CONFIG.initialDelay;
+
+    while (true) {
+        attempt++;
+        let response: Response | null = null;
+        let error: Error | null = null;
+
+        try {
+            response = await fetch(url, options);
+
+            // If successful or non-retryable error, return immediately
+            if (response.ok || !isRetryableError(response, null)) {
+                if (globalRetryStatusCallback) {
+                    globalRetryStatusCallback({
+                        isRetrying: false,
+                        attempt: 0,
+                        nextRetryIn: 0,
+                        totalElapsed: 0,
+                        error: ''
+                    });
+                }
+                return response;
+            }
+
+            error = new Error(`HTTP ${response.status}: ${response.statusText}`);
+        } catch (e) {
+            error = e as Error;
+        }
+
+        // Check if we've exceeded max retry duration
+        const elapsed = Date.now() - startTime;
+        if (elapsed >= RETRY_CONFIG.maxRetryDuration) {
+            if (globalRetryStatusCallback) {
+                globalRetryStatusCallback({
+                    isRetrying: false,
+                    attempt: 0,
+                    nextRetryIn: 0,
+                    totalElapsed: 0,
+                    error: ''
+                });
+            }
+            if (response) {
+                return response; // Return the failed response so caller can handle it
+            }
+            throw error || new Error('Max retry duration exceeded');
+        }
+
+        // Check if error is retryable
+        if (!isRetryableError(response, error)) {
+            if (response) {
+                return response;
+            }
+            throw error || new Error('Non-retryable error');
+        }
+
+        // Calculate delay with exponential backoff
+        const nextDelay = Math.min(delay, RETRY_CONFIG.maxDelay);
+        const errorMsg = error?.message || `Server error (${response?.status})`;
+
+        console.warn(`⏳ Retry attempt ${attempt} failed: ${errorMsg}. Retrying in ${nextDelay / 1000}s...`);
+
+        // Notify UI about retry status with countdown
+        if (globalRetryStatusCallback) {
+            // Start countdown
+            const countdownInterval = setInterval(() => {
+                const remaining = Math.max(0, nextDelay - (Date.now() - countdownStart));
+                globalRetryStatusCallback!({
+                    isRetrying: true,
+                    attempt,
+                    nextRetryIn: Math.ceil(remaining / 1000),
+                    totalElapsed: Math.floor((Date.now() - startTime) / 1000),
+                    error: errorMsg
+                });
+            }, 1000);
+
+            const countdownStart = Date.now();
+            globalRetryStatusCallback({
+                isRetrying: true,
+                attempt,
+                nextRetryIn: Math.ceil(nextDelay / 1000),
+                totalElapsed: Math.floor(elapsed / 1000),
+                error: errorMsg
+            });
+
+            // Wait for delay
+            await new Promise(resolve => setTimeout(resolve, nextDelay));
+            clearInterval(countdownInterval);
+        } else {
+            // Just wait without UI updates
+            await new Promise(resolve => setTimeout(resolve, nextDelay));
+        }
+
+        // Increase delay for next attempt
+        delay = Math.min(delay * RETRY_CONFIG.backoffMultiplier, RETRY_CONFIG.maxDelay);
+    }
+}
 
 // Helper to get the API base URL - use proxy if on localhost
 function getApiBaseUrl(apiBaseUrl?: string): string {
@@ -22,7 +161,7 @@ function getApiBaseUrl(apiBaseUrl?: string): string {
 
 export async function fetch_session_data(session_id: string, apiBaseUrl?: string) {
     const baseUrl = getApiBaseUrl(apiBaseUrl);
-    const data_raw = await fetch(`${baseUrl}/compute/session/${session_id}`);
+    const data_raw = await fetchWithRetry(`${baseUrl}/compute/session/${session_id}`);
 
     const data = await data_raw.json();
     return data;
@@ -34,7 +173,7 @@ export async function fetch_session_projections(session_id: string, apiBaseUrl?:
     if (limit !== undefined) {
         url += `?limit=${limit}`;
     }
-    const data_raw = await fetch(url);
+    const data_raw = await fetchWithRetry(url);
     const data = await data_raw.json();
     const projections = data.projections;
     if (projections && projections.coords) {
@@ -59,7 +198,7 @@ export async function fetch_training_metrics(
         projectionsUrl += `?limit=${limit}`;
     }
     console.log('🔗 Fetching from:', projectionsUrl);
-    const projectionsResponse = await fetch(projectionsUrl);
+    const projectionsResponse = await fetchWithRetry(projectionsUrl);
 
     if (!projectionsResponse.ok) {
         const errorText = await projectionsResponse.text();
@@ -128,7 +267,7 @@ export async function fetch_training_metrics(
         console.log('🔗 API_CALL_START: training_metrics');
         const metricsUrl = `${baseUrl}/compute/session/${session_id}/training_metrics`;
         console.log('🔗 Fetching training metrics from:', metricsUrl);
-        const metricsResponse = await fetch(metricsUrl);
+        const metricsResponse = await fetchWithRetry(metricsUrl);
         if (metricsResponse.ok) {
             trainingMetrics = await metricsResponse.json();
             console.timeEnd('🔗 API_TRAINING_METRICS');
@@ -181,7 +320,7 @@ export async function fetch_training_metrics(
 export async function fetch_session_status(session_id: string, apiBaseUrl?: string) {
     const baseUrl = getApiBaseUrl(apiBaseUrl);
     try {
-        const response = await fetch(`${baseUrl}/compute/session/${session_id}`);
+        const response = await fetchWithRetry(`${baseUrl}/compute/session/${session_id}`);
         if (response.ok) {
             const data = await response.json();
             return data;
@@ -196,7 +335,7 @@ export async function fetch_single_epoch(session_id: string, epochKey: string, a
     const baseUrl = getApiBaseUrl(apiBaseUrl);
     try {
         // Fetch all epoch projections and extract just the one we need
-        const response = await fetch(`${baseUrl}/compute/session/${session_id}/epoch_projections`);
+        const response = await fetchWithRetry(`${baseUrl}/compute/session/${session_id}/epoch_projections`);
         if (response.ok) {
             const data = await response.json();
             if (data.epoch_projections && data.epoch_projections[epochKey]) {

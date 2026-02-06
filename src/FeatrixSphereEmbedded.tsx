@@ -11,7 +11,7 @@
 import React, { Suspense, useEffect, useRef, useState, useCallback } from "react";
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
-import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch } from './embed-data-access';
+import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch, setRetryStatusCallback } from './embed-data-access';
 import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles, register_event_listener, set_cluster_color_mode, compute_epoch_movement_stats } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 
@@ -1636,6 +1636,23 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [loadingDetail, setLoadingDetail] = useState<string>('');
     const [nextCheckCountdown, setNextCheckCountdown] = useState<number>(30);
 
+    // Retry status for API failures
+    const [retryStatus, setRetryStatus] = useState<{
+        isRetrying: boolean;
+        attempt: number;
+        nextRetryIn: number;
+        totalElapsed: number;
+        error: string;
+    } | null>(null);
+
+    // Set up the retry status callback
+    useEffect(() => {
+        setRetryStatusCallback((status) => {
+            setRetryStatus(status.isRetrying ? status : null);
+        });
+        return () => setRetryStatusCallback(null);
+    }, []);
+
     // Countdown function for initial pause - using useCallback to ensure stable reference
     const startCountdown = useCallback(() => {
         setShowCountdown(true);
@@ -2618,23 +2635,50 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 </div>
                 {trainingStatus === 'loading' && (
                     <>
-                        <div style={{ marginBottom: '20px', fontSize: '18px' }}>Loading Training Movie...</div>
-                        <div style={{
-                            width: '40px',
-                            height: '40px',
-                            border: '3px solid #555',
-                            borderTop: '3px solid #d0d0d0',
-                            borderRadius: '50%',
-                            animation: 'spin 1s linear infinite',
-                            marginBottom: '15px'
-                        }}></div>
-                        <div style={{ fontSize: '14px', color: '#00ccff', marginBottom: '8px' }}>
-                            {loadingStep}
+                        <div style={{ marginBottom: '20px', fontSize: '18px' }}>
+                            {retryStatus ? 'Server Unavailable - Retrying...' : 'Loading Training Movie...'}
                         </div>
-                        {loadingDetail && (
-                            <div style={{ fontSize: '13px', color: '#aaa', marginBottom: '8px' }}>
-                                {loadingDetail}
-                            </div>
+                        {retryStatus ? (
+                            <>
+                                <div style={{
+                                    fontSize: '48px',
+                                    fontWeight: 'bold',
+                                    color: '#ff6b6b',
+                                    marginBottom: '10px',
+                                    fontFamily: 'monospace'
+                                }}>
+                                    {retryStatus.nextRetryIn}s
+                                </div>
+                                <div style={{ fontSize: '14px', color: '#ff6b6b', marginBottom: '8px' }}>
+                                    {retryStatus.error}
+                                </div>
+                                <div style={{ fontSize: '13px', color: '#aaa', marginBottom: '8px' }}>
+                                    Attempt {retryStatus.attempt} | Total wait: {Math.floor(retryStatus.totalElapsed / 60)}m {retryStatus.totalElapsed % 60}s
+                                </div>
+                                <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>
+                                    Will retry for up to 10 minutes
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <div style={{
+                                    width: '40px',
+                                    height: '40px',
+                                    border: '3px solid #555',
+                                    borderTop: '3px solid #d0d0d0',
+                                    borderRadius: '50%',
+                                    animation: 'spin 1s linear infinite',
+                                    marginBottom: '15px'
+                                }}></div>
+                                <div style={{ fontSize: '14px', color: '#00ccff', marginBottom: '8px' }}>
+                                    {loadingStep}
+                                </div>
+                                {loadingDetail && (
+                                    <div style={{ fontSize: '13px', color: '#aaa', marginBottom: '8px' }}>
+                                        {loadingDetail}
+                                    </div>
+                                )}
+                            </>
                         )}
                         <div style={{ fontSize: '14px', color: '#ccc', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>Session: {isMobile && sessionId.length > 20 ? sessionId.slice(0, 8) + '...' + sessionId.slice(-4) : sessionId}</div>
                         <div style={{ fontSize: '12px', color: '#888', marginTop: '5px' }}>
@@ -2670,23 +2714,50 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                 )}
                 {!trainingStatus && (
                     <>
-                        <div style={{ marginBottom: '20px', fontSize: '18px' }}>Loading Training Movie...</div>
-                        <div style={{
-                            width: '40px',
-                            height: '40px',
-                            border: '3px solid #555',
-                            borderTop: '3px solid #d0d0d0',
-                            borderRadius: '50%',
-                            animation: 'spin 1s linear infinite',
-                            marginBottom: '15px'
-                        }}></div>
-                        <div style={{ fontSize: '14px', color: '#00ccff', marginBottom: '8px' }}>
-                            {loadingStep}
+                        <div style={{ marginBottom: '20px', fontSize: '18px' }}>
+                            {retryStatus ? 'Server Unavailable - Retrying...' : 'Loading Training Movie...'}
                         </div>
-                        {loadingDetail && (
-                            <div style={{ fontSize: '13px', color: '#aaa', marginBottom: '8px' }}>
-                                {loadingDetail}
-                            </div>
+                        {retryStatus ? (
+                            <>
+                                <div style={{
+                                    fontSize: '48px',
+                                    fontWeight: 'bold',
+                                    color: '#ff6b6b',
+                                    marginBottom: '10px',
+                                    fontFamily: 'monospace'
+                                }}>
+                                    {retryStatus.nextRetryIn}s
+                                </div>
+                                <div style={{ fontSize: '14px', color: '#ff6b6b', marginBottom: '8px' }}>
+                                    {retryStatus.error}
+                                </div>
+                                <div style={{ fontSize: '13px', color: '#aaa', marginBottom: '8px' }}>
+                                    Attempt {retryStatus.attempt} | Total wait: {Math.floor(retryStatus.totalElapsed / 60)}m {retryStatus.totalElapsed % 60}s
+                                </div>
+                                <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>
+                                    Will retry for up to 10 minutes
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <div style={{
+                                    width: '40px',
+                                    height: '40px',
+                                    border: '3px solid #555',
+                                    borderTop: '3px solid #d0d0d0',
+                                    borderRadius: '50%',
+                                    animation: 'spin 1s linear infinite',
+                                    marginBottom: '15px'
+                                }}></div>
+                                <div style={{ fontSize: '14px', color: '#00ccff', marginBottom: '8px' }}>
+                                    {loadingStep}
+                                </div>
+                                {loadingDetail && (
+                                    <div style={{ fontSize: '13px', color: '#aaa', marginBottom: '8px' }}>
+                                        {loadingDetail}
+                                    </div>
+                                )}
+                            </>
                         )}
                         <div style={{ fontSize: '14px', color: '#ccc', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>Session: {isMobile && sessionId.length > 20 ? sessionId.slice(0, 8) + '...' + sessionId.slice(-4) : sessionId}</div>
                         <div style={{ fontSize: '12px', color: '#888', marginTop: '5px' }}>
