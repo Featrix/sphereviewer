@@ -290,6 +290,8 @@ For the simple single-sphere case, everything can go on the script tag:
 | `data-session-id` | **yes** | -- | Featrix session ID to load |
 | `data-container-id` | no | `sphere-viewer-container` | ID of the div to render into |
 | `data-api-base-url` | no | auto-detect | Full URL to Featrix API |
+| `data-width` | no | `100%` | Container width (e.g., `100%`, `800px`) |
+| `data-height` | no | `500px` / fills parent | Container height (e.g., `100vh`, `100%`, `600px`) |
 | `data-is-rotating` | no | `true` | Auto-rotate the sphere |
 | `data-rotation-speed` | no | `0.1` | Rotation speed |
 | `data-point-size` | no | `0.05` | Point size |
@@ -307,6 +309,8 @@ viewer.init({
     sessionId: 'abc-123',
     containerId: 'my-div',
     apiBaseUrl: '/proxy/featrix',
+    width: '100%',       // Container width (default: '100%')
+    height: '100vh',     // Container height (default: '500px' for new containers, or fills existing)
     isRotating: true,
     pointSize: 0.02,
     pointOpacity: 0.5,

@@ -23,10 +23,13 @@ import './embed-styles-minimal.css';
 interface FeatrixSphereViewerConfig {
   // New: Accept data directly instead of sessionId
   data?: any;
-  // Legacy: Still support sessionId for backwards compatibility  
+  // Legacy: Still support sessionId for backwards compatibility
   sessionId?: string;
   containerId?: string;
   apiBaseUrl?: string;
+  // Container dimensions - auto-fills parent by default, or specify explicit values
+  width?: string;  // e.g., '100%', '800px', 'auto'
+  height?: string; // e.g., '100%', '100vh', '600px', 'auto'
   // Animation controls
   isRotating?: boolean;
   rotationSpeed?: number;
@@ -73,10 +76,16 @@ class FeatrixSphereViewer {
       const pointSize = parseFloat(script.getAttribute('data-point-size') || '0.05');
       const pointOpacity = parseFloat(script.getAttribute('data-point-opacity') || '0.5');
 
+      // Container dimension attributes
+      const width = script.getAttribute('data-width') || undefined;
+      const height = script.getAttribute('data-height') || undefined;
+
       const config = {
         sessionId: sessionId || undefined,
         containerId: containerId || undefined,
         apiBaseUrl: apiBaseUrl || undefined,
+        width,
+        height,
         isRotating,
         rotationSpeed,
         animateClusters,
@@ -200,15 +209,19 @@ class FeatrixSphereViewer {
     }
   }
 
-  private getOrCreateContainer(containerId?: string | null) {
+  private getOrCreateContainer(containerId?: string | null, width?: string, height?: string) {
     const id = containerId || 'sphere-viewer-container';
     let container = document.getElementById(id);
-    
+    const isNewContainer = !container;
+
     if (!container) {
+      // Creating new container - use provided dimensions or defaults
       container = document.createElement('div');
       container.id = id;
-      container.style.cssText = 'width: 100%; height: 500px; min-height: 400px;';
-      
+      const w = width || '100%';
+      const h = height || '500px';
+      container.style.cssText = `width: ${w}; height: ${h}; min-height: 300px;`;
+
       // Insert after the script tag or at the end of body
       const scripts = document.querySelectorAll('script[src*="sphere-viewer.js"]');
       const script = scripts[scripts.length - 1];
@@ -217,13 +230,19 @@ class FeatrixSphereViewer {
       } else {
         document.body.appendChild(container);
       }
+    } else if (width || height) {
+      // Existing container with explicit dimensions requested - apply them
+      if (width) container.style.width = width;
+      if (height) container.style.height = height;
     }
-    
+    // For existing containers without explicit dimensions, leave sizing as-is
+    // The React component uses height: 100% to fill the container
+
     return container;
   }
 
   async init(config: FeatrixSphereViewerConfig) {
-    const { data, sessionId, containerId = 'sphere-viewer-container', apiBaseUrl } = config;
+    const { data, sessionId, containerId = 'sphere-viewer-container', apiBaseUrl, width, height } = config;
 
     // Store the current config for future updates
     this.currentConfig = { ...config };
@@ -235,7 +254,7 @@ class FeatrixSphereViewer {
       return;
     }
 
-    const container = this.getOrCreateContainer(containerId);
+    const container = this.getOrCreateContainer(containerId, width, height);
     this.container = container;
     
     // CRITICAL: Always show ONLY training movie, never the finished sphere
