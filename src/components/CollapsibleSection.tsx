@@ -14,30 +14,41 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
     const [isOpen, setIsOpen] = useState(defaultOpen);
 
     return (
-        <div style={{ marginBottom: '16px' }}>
+        <div style={{ marginBottom: 0 }}>
             <div
                 onClick={() => setIsOpen(!isOpen)}
                 style={{
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    letterSpacing: '0.05em',
-                    color: '#ffffff',
-                    cursor: 'pointer',
+                    height: '40px',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '8px',
-                    padding: '8px 0',
-                    borderBottom: '1px solid #444',
+                    justifyContent: 'space-between',
+                    padding: '0 12px',
+                    background: '#181818',
+                    borderBottom: '1px solid #2a2a2a',
+                    cursor: 'pointer',
                     userSelect: 'none',
                 }}
             >
-                <span style={{ color: '#888', fontSize: '12px', width: '12px' }}>
-                    {isOpen ? '▼' : '▶'}
+                <span style={{
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    letterSpacing: '0.08em',
+                    color: '#d8d8d8',
+                    textTransform: 'uppercase',
+                }}>
+                    {title}
                 </span>
-                {title}
+                <span style={{
+                    color: '#9aa0a6',
+                    fontSize: '10px',
+                    transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)',
+                    transition: 'transform 150ms ease',
+                }}>
+                    {'\u25B6'}
+                </span>
             </div>
             {isOpen && (
-                <div style={{ paddingTop: '12px' }}>
+                <div style={{ padding: '12px' }}>
                     {children}
                 </div>
             )}
