@@ -2821,7 +2821,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
             display: 'flex',
             flexDirection: 'column',
             width: '100%',
-            height: '100%',
+            height: '100vh',
+            minHeight: '100vh',
             background: '#2a2a2a',
             color: '#d0d0d0',
             overflow: 'hidden'

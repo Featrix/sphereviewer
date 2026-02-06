@@ -5,16 +5,6 @@
  */
 
 /**
- * @license
- * Featrix Sphere Viewer - Embeddable 3D Data Visualization Component
- *
- * Copyright (c) 2024-2025 Featrix
- * Licensed under the MIT License
- *
- * This file contains the main React component for embedded sphere visualization.
- */
-
-/**
  * @license React
  * react-jsx-runtime.production.min.js
  *
