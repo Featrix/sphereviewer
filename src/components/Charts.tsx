@@ -88,7 +88,7 @@ export const LossPlotOverlay: React.FC<{
                     type: 'scatter',
                     mode: 'lines',
                     name: 'Loss',
-                    line: { color: '#00ff88', width: 2 },
+                    line: { color: '#00e5ff', width: 2 },
                     hovertemplate: 'Epoch %{x}<br>Loss: %{y:.4f}<extra></extra>',
                 },
             ];
@@ -103,7 +103,7 @@ export const LossPlotOverlay: React.FC<{
                     mode: 'lines',
                     name: 'LR',
                     yaxis: 'y2',
-                    line: { color: '#ffff00', width: 2 },
+                    line: { color: '#ff6666', width: 1.5 },
                     hovertemplate: 'LR: %{y:.2e}<extra></extra>',
                 });
             }
@@ -117,7 +117,7 @@ export const LossPlotOverlay: React.FC<{
                         y: [Math.min(...losses) * 0.9, Math.max(...losses) * 1.1],
                         type: 'scatter',
                         mode: 'lines',
-                        line: { color: '#ff4444', width: 2, dash: 'dot' },
+                        line: { color: 'rgba(255,255,255,0.5)', width: 1, dash: 'dash' },
                         hoverinfo: 'skip',
                         showlegend: false,
                     });
@@ -129,8 +129,7 @@ export const LossPlotOverlay: React.FC<{
                 xaxis: { ...darkLayout.xaxis, title: { text: 'Epoch', font: { size: 10 } } },
                 yaxis: {
                     ...darkLayout.yaxis,
-                    title: { text: 'Loss', font: { size: 10, color: '#00ff88' } },
-                    tickfont: { color: '#00ff88', size: 9 },
+                    title: { text: 'Loss', font: { size: 10 } },
                 },
             };
 
@@ -139,8 +138,7 @@ export const LossPlotOverlay: React.FC<{
                     ...darkLayout.yaxis,
                     overlaying: 'y',
                     side: 'right',
-                    title: { text: 'LR', font: { size: 10, color: '#ffff00' } },
-                    tickfont: { color: '#ffff00', size: 9 },
+                    title: { text: 'LR', font: { size: 10 } },
                     tickformat: '.0e',
                 };
                 layout.margin.r = 50;
@@ -193,7 +191,7 @@ export const MovementPlotOverlay: React.FC<{
             const epochs = sorted.map(d => parseEpoch(d.epoch));
 
             const traces: any[] = [
-                // P90 area fill
+                // P90 area fill (background context)
                 {
                     x: epochs,
                     y: sorted.map(d => d.p90),
@@ -201,18 +199,18 @@ export const MovementPlotOverlay: React.FC<{
                     mode: 'lines',
                     name: 'P90',
                     fill: 'tozeroy',
-                    fillcolor: 'rgba(255, 100, 100, 0.15)',
-                    line: { color: '#ff6666', width: 2 },
+                    fillcolor: 'rgba(255, 102, 102, 0.12)',
+                    line: { color: '#ff6666', width: 1.5 },
                     hovertemplate: 'P90: %{y:.4f}<extra></extra>',
                 },
-                // Median line
+                // Median line (primary metric)
                 {
                     x: epochs,
                     y: sorted.map(d => d.median),
                     type: 'scatter',
                     mode: 'lines',
                     name: 'Median',
-                    line: { color: '#00e5ff', width: 3 },
+                    line: { color: '#00e5ff', width: 2 },
                     hovertemplate: 'Median: %{y:.4f}<extra></extra>',
                 },
             ];

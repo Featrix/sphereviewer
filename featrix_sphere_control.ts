@@ -385,8 +385,10 @@ export function remove_similarity_search_results(sphere: SphereData, anchor_id: 
 
 
 function fit_sphere_to_container(sphere: SphereData) {
-    const width = sphere.container.clientWidth;
-    const height = sphere.container.clientHeight;
+    // Use getBoundingClientRect for more reliable dimensions on mobile
+    const rect = sphere.container.getBoundingClientRect();
+    const width = rect.width || sphere.container.clientWidth;
+    const height = rect.height || sphere.container.clientHeight;
 
     // Force minimum height if container has no height
     const effectiveHeight = height > 0 ? height : 500;
