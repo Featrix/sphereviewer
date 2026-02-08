@@ -348,19 +348,44 @@ export async function fetch_single_epoch(session_id: string, epochKey: string, a
     return null;
 }
 
-// Fast fetch for thumbnail mode - only gets final projections, no epoch data
+// Fast fetch for thumbnail mode - only gets final epoch (~600KB instead of ~32MB)
 export async function fetch_thumbnail_data(session_id: string, apiBaseUrl?: string) {
     const baseUrl = getApiBaseUrl(apiBaseUrl);
     console.time('🚀 THUMBNAIL_FETCH');
 
     try {
-        // Only fetch final projections - much smaller/faster than epoch_projections
+        // Use new ?epoch=last parameter to get only the final epoch
+        const response = await fetchWithRetry(`${baseUrl}/compute/session/${session_id}/epoch_projections?epoch=last`);
+        if (response.ok) {
+            const data = await response.json();
+            console.timeEnd('🚀 THUMBNAIL_FETCH');
+
+            if (data.epoch_projections) {
+                // Get the single epoch returned
+                const epochKeys = Object.keys(data.epoch_projections);
+                if (epochKeys.length > 0) {
+                    const lastEpoch = data.epoch_projections[epochKeys[0]];
+                    console.log('📊 Thumbnail: loaded', lastEpoch.coords?.length || 0, 'points from', epochKeys[0]);
+                    return {
+                        coords: lastEpoch.coords || [],
+                        entire_cluster_results: lastEpoch.entire_cluster_results || data.entire_cluster_results || {}
+                    };
+                }
+            }
+        }
+    } catch (error) {
+        console.warn('⚠️ Thumbnail fetch (epoch=last) failed:', error);
+    }
+
+    // Fallback to /projections endpoint if epoch=last not supported
+    try {
+        console.log('📊 Falling back to /projections endpoint');
         const response = await fetchWithRetry(`${baseUrl}/compute/session/${session_id}/projections?limit=10000`);
         if (response.ok) {
             const data = await response.json();
             console.timeEnd('🚀 THUMBNAIL_FETCH');
             if (data.projections) {
-                console.log('📊 Thumbnail: loaded', data.projections.coords?.length || 0, 'points');
+                console.log('📊 Thumbnail fallback: loaded', data.projections.coords?.length || 0, 'points');
                 return {
                     coords: data.projections.coords || [],
                     entire_cluster_results: data.projections.entire_cluster_results || {}
@@ -368,7 +393,7 @@ export async function fetch_thumbnail_data(session_id: string, apiBaseUrl?: stri
             }
         }
     } catch (error) {
-        console.warn('⚠️ Thumbnail fetch failed:', error);
+        console.warn('⚠️ Thumbnail fallback also failed:', error);
     }
 
     console.timeEnd('🚀 THUMBNAIL_FETCH');
