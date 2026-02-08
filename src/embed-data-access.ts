@@ -346,4 +346,31 @@ export async function fetch_single_epoch(session_id: string, epochKey: string, a
         console.warn(`⚠️ Could not fetch epoch ${epochKey}:`, error);
     }
     return null;
+}
+
+// Fast fetch for thumbnail mode - only gets final projections, no epoch data
+export async function fetch_thumbnail_data(session_id: string, apiBaseUrl?: string) {
+    const baseUrl = getApiBaseUrl(apiBaseUrl);
+    console.time('🚀 THUMBNAIL_FETCH');
+
+    try {
+        // Only fetch final projections - much smaller/faster than epoch_projections
+        const response = await fetchWithRetry(`${baseUrl}/compute/session/${session_id}/projections?limit=10000`);
+        if (response.ok) {
+            const data = await response.json();
+            console.timeEnd('🚀 THUMBNAIL_FETCH');
+            if (data.projections) {
+                console.log('📊 Thumbnail: loaded', data.projections.coords?.length || 0, 'points');
+                return {
+                    coords: data.projections.coords || [],
+                    entire_cluster_results: data.projections.entire_cluster_results || {}
+                };
+            }
+        }
+    } catch (error) {
+        console.warn('⚠️ Thumbnail fetch failed:', error);
+    }
+
+    console.timeEnd('🚀 THUMBNAIL_FETCH');
+    return null;
 } 

@@ -11,7 +11,7 @@
 import React, { Suspense, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
-import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch, setRetryStatusCallback } from './embed-data-access';
+import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch, fetch_thumbnail_data, setRetryStatusCallback } from './embed-data-access';
 import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, set_wireframe_opacity, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles, register_event_listener, set_cluster_color_mode, compute_epoch_movement_stats } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 import CollapsibleSection from './components/CollapsibleSection';
@@ -735,6 +735,29 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
         const loadTrainingData = async () => {
             try {
                 setLoading(true);
+
+                // THUMBNAIL MODE: Fast path - only load final projections
+                if (mode === 'thumbnail') {
+                    setLoadingStep('Loading...');
+                    const thumbnailData = await fetch_thumbnail_data(sessionId, apiBaseUrl);
+                    if (thumbnailData && thumbnailData.coords && thumbnailData.coords.length > 0) {
+                        // Create a single "epoch" from the final projections
+                        const finalEpoch = {
+                            coords: thumbnailData.coords,
+                            entire_cluster_results: thumbnailData.entire_cluster_results
+                        };
+                        setTrainingData({ 'final': finalEpoch });
+                        setSessionProjections({
+                            coords: thumbnailData.coords,
+                            entire_cluster_results: thumbnailData.entire_cluster_results
+                        });
+                        setLoading(false);
+                        return;
+                    }
+                    // Fall through to full load if thumbnail fetch failed
+                    console.warn('Thumbnail fetch failed, falling back to full load');
+                }
+
                 setLoadingStep('Fetching training epochs...');
                 setLoadingDetail('');
 
@@ -931,7 +954,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
         };
 
         loadTrainingData();
-    }, [sessionId, apiBaseUrl]); // Load when sessionId or apiBaseUrl changes
+    }, [sessionId, apiBaseUrl, mode]); // Load when sessionId, apiBaseUrl, or mode changes
 
     // Poll for new epochs if training is in progress
     useEffect(() => {
@@ -1722,6 +1745,30 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
     }, [hideUnknown]);
 
     if (loading) {
+        // THUMBNAIL MODE: Simple spinner, no detailed steps or build info
+        if (mode === 'thumbnail') {
+            return (
+                <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    height: '100%',
+                    background: '#1a1a1a',
+                    color: '#888',
+                }}>
+                    <div style={{
+                        width: '32px',
+                        height: '32px',
+                        border: '2px solid #333',
+                        borderTop: '2px solid #888',
+                        borderRadius: '50%',
+                        animation: 'spin 1s linear infinite',
+                    }}></div>
+                </div>
+            );
+        }
+
         return (
             <div className="training-progress-display" style={{
                 display: 'flex',
@@ -1733,18 +1780,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                 color: '#d0d0d0',
                 position: 'relative'
             }}>
-                <div style={{
-                    position: 'absolute',
-                    ...(isMobile ? { bottom: '10px', left: '10px' } : { top: '10px', right: '10px' }),
-                    fontSize: isMobile ? '10px' : '12px',
-                    color: '#ff6b6b',
-                    fontFamily: 'monospace',
-                    background: 'rgba(255, 107, 107, 0.1)',
-                    padding: '4px 8px',
-                    borderRadius: '4px'
-                }}>
-                    Build: {BUILD_TIMESTAMP.slice(0, 16)}
-                </div>
                 {trainingStatus === 'loading' && (
                     <>
                         <div style={{ marginBottom: '20px', fontSize: '18px' }}>
@@ -3402,18 +3437,28 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                             }
                             
                             
-                            // Start countdown after a brief delay
-                            setTimeout(() => {
-                                try {
-                                    if (typeof startCountdown === 'function') {
-                                        startCountdown();
-                                    } else {
-                                        console.error('startCountdown is not a function:', typeof startCountdown);
+                            // Start countdown after a brief delay (skip for thumbnail mode)
+                            if (mode === 'thumbnail') {
+                                // Thumbnail: immediately start rotation, no countdown
+                                setTimeout(() => {
+                                    if (sphere) {
+                                        resume_training_movie(sphere);
+                                        setIsPlaying(true);
                                     }
-                                } catch (error) {
-                                    console.error('Error calling startCountdown:', error);
-                                }
-                            }, 1000);
+                                }, 100);
+                            } else {
+                                setTimeout(() => {
+                                    try {
+                                        if (typeof startCountdown === 'function') {
+                                            startCountdown();
+                                        } else {
+                                            console.error('startCountdown is not a function:', typeof startCountdown);
+                                        }
+                                    } catch (error) {
+                                        console.error('Error calling startCountdown:', error);
+                                    }
+                                }, 1000);
+                            }
                         }}
                         onFrameUpdate={(info) => {
                             // DEBUG: Log frameInfo for troubleshooting focus dropdown
