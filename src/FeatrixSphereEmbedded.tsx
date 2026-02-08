@@ -211,6 +211,8 @@ function fix_server_cluster_pre_assignments(serverData: any) {
 interface TrainingMovieProps {
     sessionId: string;
     apiBaseUrl?: string;
+    // Display mode: 'thumbnail' hides all UI controls
+    mode?: 'thumbnail' | 'full';
 }
 
 // Training Movie Sphere Component - handles everything internally
@@ -370,7 +372,7 @@ const TrainingMovieSphere: React.FC<{
     );
 };
 
-const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) => {
+const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mode }) => {
     // NOTE: Loading training movie from API (the working version)
     const [trainingData, setTrainingData] = useState<any>(null);
     const [lossData, setLossData] = useState<any>(null);
@@ -409,6 +411,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
     const [selectedPoints, setSelectedPoints] = useState<any[]>([]);
     const [showDataInspector, setShowDataInspector] = useState(false);
     const [hideNulls, setHideNulls] = useState(false);
+    const [showOnlyDifferences, setShowOnlyDifferences] = useState(false);
     const [inspectorPosition, setInspectorPosition] = useState({ x: 100, y: 100 });
     const [isDraggingInspector, setIsDraggingInspector] = useState(false);
     const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -450,24 +453,36 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
         return now.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
     }, []);
 
-    // Thumbnail mode - hide all controls when container is small
-    // Default to FALSE so sidebar shows immediately, ResizeObserver will hide if needed
-    const [isThumbnail, setIsThumbnail] = useState(false);
+    // Thumbnail mode - hide all controls
+    // If mode='thumbnail' prop is passed, always use thumbnail mode
+    // If mode='full' prop is passed, never use thumbnail mode
+    // Otherwise, detect based on container size
+    const [isThumbnail, setIsThumbnail] = useState(mode === 'thumbnail');
 
-    // Detect thumbnail mode from OUTER container size
+    // Detect thumbnail mode from OUTER container size (only if mode not explicitly set)
     useEffect(() => {
+        // If mode is explicitly set, respect it
+        if (mode === 'thumbnail') {
+            setIsThumbnail(true);
+            return;
+        }
+        if (mode === 'full') {
+            setIsThumbnail(false);
+            return;
+        }
+
+        // Otherwise, detect based on container size
         if (!outerContainerRef.current) return;
         const resizeObserver = new ResizeObserver((entries) => {
             const entry = entries[0];
             const width = entry.contentRect.width;
             const height = entry.contentRect.height;
             const isThumbnailMode = width < 800 || height < 600;
-            console.log('📐 Container size:', width, 'x', height, '→ thumbnail:', isThumbnailMode);
             setIsThumbnail(isThumbnailMode);
         });
         resizeObserver.observe(outerContainerRef.current);
         return () => resizeObserver.disconnect();
-    }, []);
+    }, [mode]);
 
     useEffect(() => {
         const handleResize = () => {
@@ -3598,8 +3613,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                         <div style={{ color: '#4c4', fontWeight: 'bold', fontSize: '16px' }}>
                             Data Inspector ({selectedPoints.length} point{selectedPoints.length !== 1 ? 's' : ''})
                         </div>
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            <label style={{ fontSize: '12px', color: '#888', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                            <label style={{ fontSize: '11px', color: '#888', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
                                 <input
                                     type="checkbox"
                                     checked={hideNulls}
@@ -3607,6 +3622,16 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                 />
                                 Hide nulls
                             </label>
+                            {selectedPoints.length > 1 && (
+                                <label style={{ fontSize: '11px', color: '#888', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={showOnlyDifferences}
+                                        onChange={(e) => setShowOnlyDifferences(e.target.checked)}
+                                    />
+                                    Differences only
+                                </label>
+                            )}
                             <button
                                 onClick={() => setSelectedPoints([])}
                                 style={{
@@ -3660,15 +3685,42 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
                                         <th key={point.recordId} style={{
                                             padding: '6px 8px',
                                             textAlign: 'left',
-                                            borderBottom: '2px solid #444',
+                                            borderBottom: `3px solid ${point.color || '#ff4'}`,
                                             borderLeft: '1px solid #333',
-                                            color: point.color || '#ff4',
                                             fontWeight: 'bold',
-                                            minWidth: '120px'
+                                            minWidth: '120px',
+                                            position: 'relative'
                                         }}>
-                                            <div>Point {idx + 1}</div>
-                                            <div style={{ fontSize: '10px', color: '#888' }}>Row {point.rowOffset}</div>
-                                            <div style={{ fontSize: '10px', color: '#888' }}>Cluster {point.clusterId}</div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <span style={{
+                                                    width: '10px',
+                                                    height: '10px',
+                                                    borderRadius: '50%',
+                                                    background: point.color || '#ff4',
+                                                    flexShrink: 0
+                                                }} />
+                                                <span style={{ color: '#ddd' }}>Point {idx + 1}</span>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setSelectedPoints(prev => prev.filter(p => p.recordId !== point.recordId));
+                                                    }}
+                                                    style={{
+                                                        background: 'transparent',
+                                                        border: 'none',
+                                                        color: '#888',
+                                                        cursor: 'pointer',
+                                                        fontSize: '14px',
+                                                        padding: '0 2px',
+                                                        marginLeft: 'auto',
+                                                        lineHeight: 1
+                                                    }}
+                                                    title="Remove this point"
+                                                >
+                                                    ×
+                                                </button>
+                                            </div>
+                                            <div style={{ fontSize: '10px', color: '#888', marginTop: '2px' }}>Row {point.rowOffset} · Cluster {point.clusterId}</div>
                                         </th>
                                     ))}
                                 </tr>
@@ -3685,36 +3737,62 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl }) 
 
                                     const sortedFields = Array.from(allFields).sort();
 
+                                    // Helper to normalize values for comparison
+                                    const normalizeValue = (val: any) => {
+                                        if (val === null || val === undefined || val === '') return null;
+                                        return JSON.stringify(val);
+                                    };
+
                                     return sortedFields.map(field => {
+                                        // Get all values for this field
+                                        const values = selectedPoints.map(point => point.data?.[field]);
+                                        const normalizedValues = values.map(normalizeValue);
+
                                         // Check if all values are null
-                                        const allNull = selectedPoints.every(point => {
-                                            const val = point.data?.[field];
-                                            return val === null || val === undefined || val === '';
-                                        });
+                                        const allNull = normalizedValues.every(v => v === null);
+
+                                        // Check if all values are the same
+                                        const allSame = selectedPoints.length > 1 &&
+                                            normalizedValues.every(v => v === normalizedValues[0]);
 
                                         // Skip if hiding nulls and all values are null
                                         if (hideNulls && allNull) return null;
 
+                                        // Skip if showing only differences and all values are the same
+                                        if (showOnlyDifferences && allSame) return null;
+
+                                        // Determine if this row has differences
+                                        const hasDifferences = !allSame && selectedPoints.length > 1;
+
                                         return (
-                                            <tr key={field} style={{ borderBottom: '1px solid #333' }}>
+                                            <tr key={field} style={{
+                                                borderBottom: '1px solid #333',
+                                                background: hasDifferences ? 'rgba(255, 200, 50, 0.05)' : 'transparent'
+                                            }}>
                                                 <td style={{
                                                     padding: '6px 8px',
-                                                    color: '#888',
+                                                    color: hasDifferences ? '#fc8' : '#888',
                                                     fontWeight: 'bold',
                                                     verticalAlign: 'top'
                                                 }}>{field}</td>
-                                                {selectedPoints.map(point => {
+                                                {selectedPoints.map((point, idx) => {
                                                     const value = point.data?.[field];
                                                     const displayValue = value === null || value === undefined ? 'null' : String(value);
                                                     const isNull = value === null || value === undefined;
 
+                                                    // Check if this value differs from others
+                                                    const thisNormalized = normalizeValue(value);
+                                                    const isDifferent = hasDifferences &&
+                                                        normalizedValues.some((v, i) => i !== idx && v !== thisNormalized);
+
                                                     return (
                                                         <td key={point.recordId} style={{
                                                             padding: '6px 8px',
-                                                            color: isNull ? '#666' : '#ddd',
+                                                            color: isNull ? '#666' : (isDifferent ? '#fff' : '#ddd'),
                                                             borderLeft: '1px solid #333',
                                                             verticalAlign: 'top',
-                                                            wordBreak: 'break-word'
+                                                            wordBreak: 'break-word',
+                                                            background: isDifferent ? `${point.color || '#ff4'}22` : 'transparent'
                                                         }}>
                                                             {displayValue}
                                                         </td>
@@ -3874,6 +3952,8 @@ interface SphereEmbeddedProps {
     pointSize?: number;
     pointOpacity?: number;
     onSphereReady?: (sphereRef: any) => void;
+    // Display mode: 'thumbnail' hides all UI controls, 'full' shows everything
+    mode?: 'thumbnail' | 'full';
 }
 
 // Final Sphere View Component - shows the completed sphere with all points
@@ -4036,7 +4116,7 @@ const FinalSphereView: React.FC<{
     );
 };
 
-export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity, onSphereReady }: SphereEmbeddedProps) {
+export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity, onSphereReady, mode }: SphereEmbeddedProps) {
     // Check if we have final sphere data (coords + cluster_results) or just a session ID
     const hasFinalData = initial_data?.coords && initial_data?.coords.length > 0 && initial_data?.entire_cluster_results;
     const sessionId = initial_data?.session?.session_id;
@@ -4065,7 +4145,7 @@ export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, isRota
         return (
             <div className="sphere-embedded-container">
                 <div className="mx-auto">
-                    <TrainingMovie sessionId={sessionId} apiBaseUrl={apiBaseUrl} />
+                    <TrainingMovie sessionId={sessionId} apiBaseUrl={apiBaseUrl} mode={mode} />
                 </div>
             </div>
         );

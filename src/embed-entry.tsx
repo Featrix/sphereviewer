@@ -37,6 +37,8 @@ interface FeatrixSphereViewerConfig {
   // Visual controls
   pointSize?: number;
   pointOpacity?: number;
+  // Display mode: 'thumbnail' hides all UI controls, 'full' shows everything
+  mode?: 'thumbnail' | 'full';
   // Callback when sphere is ready
   onSphereReady?: (sphereRef: any) => void;
 }
@@ -80,6 +82,13 @@ class FeatrixSphereViewer {
       const width = script.getAttribute('data-width') || undefined;
       const height = script.getAttribute('data-height') || undefined;
 
+      // Display mode: 'thumbnail' or 'full' (from data attribute or URL param)
+      const modeAttr = script.getAttribute('data-mode');
+      const urlParams = new URLSearchParams(window.location.search);
+      const modeParam = urlParams.get('mode');
+      const modeValue = modeAttr || modeParam;
+      const mode = (modeValue === 'thumbnail' || modeValue === 'full') ? modeValue as 'thumbnail' | 'full' : undefined;
+
       const config = {
         sessionId: sessionId || undefined,
         containerId: containerId || undefined,
@@ -91,6 +100,7 @@ class FeatrixSphereViewer {
         animateClusters,
         pointSize,
         pointOpacity,
+        mode,
         onSphereReady: (window as any).onSphereReady || undefined
       };
 
@@ -232,7 +242,8 @@ class FeatrixSphereViewer {
       }
     } else if (width || height) {
       // Existing container with explicit dimensions requested - apply them
-      if (width) container.style.width = width;
+      // Convert 100vw to 100% to avoid iOS Safari horizontal overflow issues
+      if (width) container.style.width = width === '100vw' ? '100%' : width;
       if (height) container.style.height = height;
     }
     // For existing containers without explicit dimensions, leave sizing as-is
@@ -262,7 +273,7 @@ class FeatrixSphereViewer {
     const initial_data = data || { session: { session_id: sessionId } };
     
     const component = (
-      <FeatrixSphereEmbedded 
+      <FeatrixSphereEmbedded
         initial_data={initial_data}
         apiBaseUrl={apiBaseUrl}
         isRotating={config.isRotating}
@@ -270,6 +281,7 @@ class FeatrixSphereViewer {
         animateClusters={config.animateClusters}
         pointSize={config.pointSize}
         pointOpacity={config.pointOpacity}
+        mode={config.mode}
         onSphereReady={(sphereRef: any) => {
           this.sphereRef = sphereRef;
           if (config.onSphereReady) {
