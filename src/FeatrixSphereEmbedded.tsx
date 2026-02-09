@@ -1596,11 +1596,16 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
     const [columnVocabulary, setColumnVocabulary] = useState<{
         type: 'scalar' | 'set' | 'string';
         distribution?: Array<{ bin: number, count: number }>; // For scalars
-        vocabulary?: string[]; // For non-scalars
+        vocabulary?: string[]; // For non-scalars (backwards compat)
+        vocabularyWithCounts?: Array<{ value: string, count: number, pct: number }>; // For set/string with counts
+        totalValues?: number; // Total number of values for set/string
+        uniqueCount?: number; // Number of unique values
         min?: number;
         max?: number;
         mean?: number;
         median?: number;
+        q1?: number; // First quartile
+        q3?: number; // Third quartile
     } | null>(null);
     
     // Apply all color rules to the sphere
@@ -1784,50 +1789,80 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                 const num = typeof v === 'number' ? v : parseFloat(String(v));
                 return isNaN(num) ? null : num;
             }).filter(v => v !== null) as number[];
-            
+
             if (numericValues.length === 0) {
                 setColumnVocabulary(null);
                 return;
             }
-            
-            const min = Math.min(...numericValues);
-            const max = Math.max(...numericValues);
+
             const sorted = [...numericValues].sort((a, b) => a - b);
+            const min = sorted[0];
+            const max = sorted[sorted.length - 1];
             const mean = numericValues.reduce((a, b) => a + b, 0) / numericValues.length;
-            const median = sorted.length % 2 === 0
-                ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
-                : sorted[Math.floor(sorted.length / 2)];
-            
+
+            // Calculate quartiles
+            const getPercentile = (arr: number[], p: number) => {
+                const index = (p / 100) * (arr.length - 1);
+                const lower = Math.floor(index);
+                const upper = Math.ceil(index);
+                if (lower === upper) return arr[lower];
+                return arr[lower] * (upper - index) + arr[upper] * (index - lower);
+            };
+
+            const q1 = getPercentile(sorted, 25);
+            const median = getPercentile(sorted, 50);
+            const q3 = getPercentile(sorted, 75);
+
             // Create histogram with 20 bins
             const numBins = 20;
-            const binWidth = (max - min) / numBins;
+            const binWidth = (max - min) / numBins || 1;
             const bins: number[] = new Array(numBins).fill(0);
-            
+
             numericValues.forEach(val => {
                 let binIndex = Math.floor((val - min) / binWidth);
                 if (binIndex >= numBins) binIndex = numBins - 1; // Handle edge case
                 bins[binIndex]++;
             });
-            
+
             const distribution = bins.map((count, i) => ({
                 bin: min + (i + 0.5) * binWidth,
                 count: count
             }));
-            
+
             setColumnVocabulary({
                 type: 'scalar',
                 distribution,
                 min,
                 max,
                 mean,
-                median
+                median,
+                q1,
+                q3
             });
         } else {
-            // For set/string columns, show vocabulary (unique values)
-            const uniqueValues = Array.from(new Set(values.map(v => String(v)))).sort();
+            // For set/string columns, show vocabulary with counts (histogram)
+            const valueCounts: Map<string, number> = new Map();
+            values.forEach(v => {
+                const str = String(v);
+                valueCounts.set(str, (valueCounts.get(str) || 0) + 1);
+            });
+
+            // Sort by count descending, then by value alphabetically
+            const sortedEntries = Array.from(valueCounts.entries())
+                .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+
+            const vocabularyWithCounts = sortedEntries.slice(0, 50).map(([value, count]) => ({
+                value,
+                count,
+                pct: Math.round((count / values.length) * 100)
+            }));
+
             setColumnVocabulary({
                 type: colType as 'set' | 'string',
-                vocabulary: uniqueValues.slice(0, 100) // Limit to 100 for performance
+                vocabulary: sortedEntries.slice(0, 100).map(([v]) => v), // Keep for backwards compat
+                vocabularyWithCounts,
+                totalValues: values.length,
+                uniqueCount: valueCounts.size
             });
         }
     }, [selectedSearchColumn, sphereRef, columnTypes]);
@@ -2218,6 +2253,16 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                             {frameInfo.current}/{frameInfo.total}
                         </span>
                     )}
+                    {/* Movement metric in top bar */}
+                    {currentEpochMovement && !isMobile && (
+                        <span style={{
+                            fontSize: '11px',
+                            color: currentEpochMovement.median < 0.01 ? '#4caf50' : currentEpochMovement.median < 0.05 ? '#ff9800' : '#f44336',
+                            fontFamily: 'monospace',
+                        }}>
+                            Δ {currentEpochMovement.median.toFixed(4)}
+                        </span>
+                    )}
                     {trainingStatus === 'training' && (
                         <span style={{ fontSize: '11px', color: '#64b5f6' }}>In Progress</span>
                     )}
@@ -2307,7 +2352,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                 overflowY: 'auto',
                 fontSize: '12px',
             }}>
-                {/* Header Bar - Always visible with current epoch */}
+                {/* Header Bar - Always visible with current epoch and movement metrics */}
                 <div style={{
                     padding: '12px 16px',
                     background: '#1a1a1a',
@@ -2329,8 +2374,100 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                         {!frameInfo && (
                             <span style={{ fontSize: '12px', color: '#8f8f8f' }}>Loading...</span>
                         )}
+                        {/* Movement metrics display */}
+                        {currentEpochMovement && (
+                            <div
+                                onClick={() => setShowMovementHistogram(!showMovementHistogram)}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    padding: '4px 8px',
+                                    background: showMovementHistogram ? '#2a2a2a' : '#222',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    transition: 'background 0.15s',
+                                }}
+                                title="Click to show movement histogram"
+                            >
+                                <span style={{ fontSize: '10px', color: '#8f8f8f', textTransform: 'uppercase' }}>Move</span>
+                                <span style={{
+                                    fontSize: '12px',
+                                    fontWeight: 500,
+                                    color: currentEpochMovement.median < 0.01 ? '#4caf50' : currentEpochMovement.median < 0.05 ? '#ff9800' : '#f44336',
+                                    fontFamily: 'monospace',
+                                }}>
+                                    {currentEpochMovement.median.toFixed(4)}
+                                </span>
+                                <span style={{ fontSize: '9px', color: '#666' }}>▼</span>
+                            </div>
+                        )}
                     </div>
                 </div>
+
+                {/* Movement Histogram Popover */}
+                {showMovementHistogram && currentEpochMovement && (
+                    <div style={{
+                        padding: '12px 16px',
+                        background: '#1a1a1a',
+                        borderBottom: '1px solid #2a2a2a',
+                    }}>
+                        <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            marginBottom: '10px',
+                        }}>
+                            <span style={{ fontSize: '11px', fontWeight: 600, color: '#e6e6e6', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                Movement Stats
+                            </span>
+                            <button
+                                onClick={() => setShowMovementHistogram(false)}
+                                style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: '#8f8f8f',
+                                    cursor: 'pointer',
+                                    fontSize: '14px',
+                                    padding: '2px 6px',
+                                }}
+                            >
+                                ×
+                            </button>
+                        </div>
+                        <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(4, 1fr)',
+                            gap: '8px',
+                            marginBottom: '12px',
+                        }}>
+                            <div style={{ textAlign: 'center', padding: '8px', background: '#222', borderRadius: '4px' }}>
+                                <div style={{ fontSize: '9px', color: '#8f8f8f', textTransform: 'uppercase', marginBottom: '4px' }}>Mean</div>
+                                <div style={{ fontSize: '12px', color: '#e6e6e6', fontFamily: 'monospace' }}>{currentEpochMovement.mean.toFixed(4)}</div>
+                            </div>
+                            <div style={{ textAlign: 'center', padding: '8px', background: '#222', borderRadius: '4px' }}>
+                                <div style={{ fontSize: '9px', color: '#8f8f8f', textTransform: 'uppercase', marginBottom: '4px' }}>Median</div>
+                                <div style={{ fontSize: '12px', color: '#00e5ff', fontFamily: 'monospace' }}>{currentEpochMovement.median.toFixed(4)}</div>
+                            </div>
+                            <div style={{ textAlign: 'center', padding: '8px', background: '#222', borderRadius: '4px' }}>
+                                <div style={{ fontSize: '9px', color: '#8f8f8f', textTransform: 'uppercase', marginBottom: '4px' }}>P90</div>
+                                <div style={{ fontSize: '12px', color: '#ff6666', fontFamily: 'monospace' }}>{currentEpochMovement.p90.toFixed(4)}</div>
+                            </div>
+                            <div style={{ textAlign: 'center', padding: '8px', background: '#222', borderRadius: '4px' }}>
+                                <div style={{ fontSize: '9px', color: '#8f8f8f', textTransform: 'uppercase', marginBottom: '4px' }}>Max</div>
+                                <div style={{ fontSize: '12px', color: '#e6e6e6', fontFamily: 'monospace' }}>{currentEpochMovement.max.toFixed(4)}</div>
+                            </div>
+                        </div>
+                        {/* Movement over time chart */}
+                        {movementData.length > 0 && (
+                            <MovementPlotOverlay
+                                movementData={movementData}
+                                currentEpoch={frameInfo?.epoch}
+                                style={{ width: '100%', height: '100px', borderRadius: '4px', border: '1px solid #2a2a2a' }}
+                            />
+                        )}
+                    </div>
+                )}
 
 
                 {/* Panel 1: SEARCH */}
@@ -2496,45 +2633,136 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                                 </div>
                             )}
 
-                            {/* Column vocabulary for quick selection */}
-                            {columnVocabulary && columnVocabulary.type !== 'scalar' && columnVocabulary.vocabulary && (
-                                <div style={{ marginTop: '4px' }}>
-                                    <div style={{ fontSize: '11px', color: '#b8b8b8', marginBottom: '4px' }}>Values:</div>
-                                    <div style={{ maxHeight: '100px', overflowY: 'auto', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                        {columnVocabulary.vocabulary.slice(0, 20).map((val, idx) => (
-                                            <button
-                                                key={idx}
-                                                onClick={() => {
-                                                    setSearchQuery(val);
-                                                    const fakeEvent = { target: { value: val } } as React.ChangeEvent<HTMLInputElement>;
-                                                    handleSearchInput(fakeEvent);
-                                                }}
-                                                style={{
-                                                    background: '#222222',
-                                                    border: searchQuery === val ? '1px solid #64b5f6' : '1px solid #2a2a2a',
-                                                    color: searchQuery === val ? '#64b5f6' : '#b8b8b8',
-                                                    padding: '2px 6px',
-                                                    borderRadius: '3px',
-                                                    cursor: 'pointer',
-                                                    fontSize: '10px',
-                                                }}
-                                            >
-                                                {val.length > 15 ? val.substring(0, 15) + '...' : val}
-                                            </button>
-                                        ))}
+                            {/* Column vocabulary histogram for set/string columns */}
+                            {columnVocabulary && columnVocabulary.type !== 'scalar' && columnVocabulary.vocabularyWithCounts && (
+                                <div style={{ marginTop: '8px' }}>
+                                    <div style={{ fontSize: '11px', color: '#b8b8b8', marginBottom: '6px' }}>
+                                        Values ({columnVocabulary.uniqueCount} unique):
+                                    </div>
+                                    <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
+                                        {columnVocabulary.vocabularyWithCounts.slice(0, 15).map((item, idx) => {
+                                            const isSelected = searchQuery.toLowerCase() === item.value.toLowerCase();
+                                            const maxCount = columnVocabulary.vocabularyWithCounts![0].count;
+                                            const barWidth = Math.max(5, (item.count / maxCount) * 100);
+                                            return (
+                                                <div
+                                                    key={idx}
+                                                    onClick={() => {
+                                                        setSearchQuery(item.value);
+                                                        const fakeEvent = { target: { value: item.value } } as React.ChangeEvent<HTMLInputElement>;
+                                                        handleSearchInput(fakeEvent);
+                                                    }}
+                                                    style={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '8px',
+                                                        padding: '3px 6px',
+                                                        marginBottom: '2px',
+                                                        borderRadius: '3px',
+                                                        cursor: 'pointer',
+                                                        background: isSelected ? '#1a3a5c' : 'transparent',
+                                                        border: isSelected ? '1px solid #64b5f6' : '1px solid transparent',
+                                                    }}
+                                                >
+                                                    {/* Value label */}
+                                                    <span style={{
+                                                        fontSize: '10px',
+                                                        color: isSelected ? '#64b5f6' : '#d8d8d8',
+                                                        width: '80px',
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                        whiteSpace: 'nowrap',
+                                                        flexShrink: 0,
+                                                    }} title={item.value}>
+                                                        {item.value.length > 12 ? item.value.substring(0, 12) + '…' : item.value}
+                                                    </span>
+                                                    {/* Bar */}
+                                                    <div style={{
+                                                        flex: 1,
+                                                        height: '12px',
+                                                        background: '#2a2a2a',
+                                                        borderRadius: '2px',
+                                                        overflow: 'hidden',
+                                                    }}>
+                                                        <div style={{
+                                                            width: `${barWidth}%`,
+                                                            height: '100%',
+                                                            background: isSelected ? '#64b5f6' : '#4a7c59',
+                                                            borderRadius: '2px',
+                                                        }} />
+                                                    </div>
+                                                    {/* Count */}
+                                                    <span style={{
+                                                        fontSize: '9px',
+                                                        color: '#888',
+                                                        width: '45px',
+                                                        textAlign: 'right',
+                                                        flexShrink: 0,
+                                                    }}>
+                                                        {item.count} ({item.pct}%)
+                                                    </span>
+                                                </div>
+                                            );
+                                        })}
+                                        {columnVocabulary.vocabularyWithCounts.length > 15 && (
+                                            <div style={{ fontSize: '9px', color: '#666', textAlign: 'center', marginTop: '4px' }}>
+                                                +{columnVocabulary.vocabularyWithCounts.length - 15} more values
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             )}
 
-                            {/* Distribution chart for scalar columns */}
+                            {/* Distribution chart and stats for scalar columns */}
                             {columnVocabulary && columnVocabulary.type === 'scalar' && columnVocabulary.distribution && (
-                                <div style={{ marginTop: '4px' }}>
+                                <div style={{ marginTop: '8px' }}>
                                     <DistributionChart
                                         distribution={columnVocabulary.distribution}
                                         min={columnVocabulary.min || 0}
                                         max={columnVocabulary.max || 0}
                                         searchValue={searchQuery ? parseFloat(searchQuery) : null}
                                     />
+                                    {/* Quartile stats */}
+                                    <div style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        marginTop: '6px',
+                                        padding: '6px 8px',
+                                        background: '#1a1a1a',
+                                        borderRadius: '4px',
+                                        fontSize: '10px',
+                                    }}>
+                                        <div style={{ textAlign: 'center' }}>
+                                            <div style={{ color: '#666', marginBottom: '2px' }}>Min</div>
+                                            <div style={{ color: '#d8d8d8', fontWeight: 500 }}>
+                                                {columnVocabulary.min?.toFixed(columnVocabulary.min % 1 === 0 ? 0 : 2)}
+                                            </div>
+                                        </div>
+                                        <div style={{ textAlign: 'center' }}>
+                                            <div style={{ color: '#666', marginBottom: '2px' }}>Q1</div>
+                                            <div style={{ color: '#d8d8d8', fontWeight: 500 }}>
+                                                {columnVocabulary.q1?.toFixed(columnVocabulary.q1 % 1 === 0 ? 0 : 2)}
+                                            </div>
+                                        </div>
+                                        <div style={{ textAlign: 'center' }}>
+                                            <div style={{ color: '#666', marginBottom: '2px' }}>Median</div>
+                                            <div style={{ color: '#64b5f6', fontWeight: 500 }}>
+                                                {columnVocabulary.median?.toFixed(columnVocabulary.median % 1 === 0 ? 0 : 2)}
+                                            </div>
+                                        </div>
+                                        <div style={{ textAlign: 'center' }}>
+                                            <div style={{ color: '#666', marginBottom: '2px' }}>Q3</div>
+                                            <div style={{ color: '#d8d8d8', fontWeight: 500 }}>
+                                                {columnVocabulary.q3?.toFixed(columnVocabulary.q3 % 1 === 0 ? 0 : 2)}
+                                            </div>
+                                        </div>
+                                        <div style={{ textAlign: 'center' }}>
+                                            <div style={{ color: '#666', marginBottom: '2px' }}>Max</div>
+                                            <div style={{ color: '#d8d8d8', fontWeight: 500 }}>
+                                                {columnVocabulary.max?.toFixed(columnVocabulary.max % 1 === 0 ? 0 : 2)}
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             )}
                         </div>

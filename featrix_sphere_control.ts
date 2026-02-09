@@ -1528,6 +1528,10 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
     // Either start from current position (for resume) or from beginning
     if (!startFromCurrent || sphere.currentEpoch === undefined) {
         sphere.currentEpoch = 0;
+    } else {
+        // When resuming, ensure we don't start past the last frame
+        // (which would immediately trigger completion logic)
+        sphere.currentEpoch = Math.min(sphere.currentEpoch, totalFrames - 1);
     }
 
     const animate = () => {
