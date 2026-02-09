@@ -271,6 +271,9 @@ export interface SphereData {
     // Auto-loop movie with physics effect between loops
     autoLoopMovie?: boolean;
 
+    // Internal: Track pending auto-loop timeout so we can cancel it on pause
+    _autoLoopCheckRef?: ReturnType<typeof setTimeout>;
+
     // Alpha by movement - transparent for large moves, opaque for small moves (convergence effect)
     alphaByMovement?: boolean;
 
@@ -929,6 +932,46 @@ function get_cluster_assignment_for_point(
     return -1;
 }
 
+const SPOTLIGHT_GRAY_COLOR = 0x555555;
+const SPOTLIGHT_DIM_OPACITY = 0.25;
+
+/**
+ * Apply color to a point mesh, respecting spotlight state.
+ * If spotlight is active and this point is NOT in the spotlight cluster, use gray + dim opacity.
+ */
+function apply_point_color_with_spotlight(sphere: SphereData, mesh: any, clusterAssignment: number, baseOpacity?: number) {
+    if (!mesh.material || !('color' in mesh.material)) return;
+
+    const spotlightCluster = sphere.spotlightCluster;
+    const hasSpotlight = spotlightCluster !== undefined && spotlightCluster >= 0;
+    const isSpotlightMember = !hasSpotlight || clusterAssignment === spotlightCluster;
+
+    if (isSpotlightMember) {
+        // Full color for spotlight members (or when no spotlight active)
+        const newColor = get_cluster_color(sphere, clusterAssignment);
+        mesh.material.color.setHex(newColor);
+        // Store original color for later restoration
+        if (!mesh.userData.originalColor) {
+            mesh.userData.originalColor = new THREE.Color(newColor);
+        }
+        if ('opacity' in mesh.material) {
+            mesh.material.opacity = baseOpacity ?? sphere.pointOpacity ?? 0.5;
+        }
+    } else {
+        // Gray and dimmed for non-spotlight members
+        // Store original color if not already stored
+        if (!mesh.userData.originalColor) {
+            const newColor = get_cluster_color(sphere, clusterAssignment);
+            mesh.userData.originalColor = new THREE.Color(newColor);
+        }
+        mesh.material.color.setHex(SPOTLIGHT_GRAY_COLOR);
+        if ('opacity' in mesh.material) {
+            mesh.material.opacity = (baseOpacity ?? sphere.pointOpacity ?? 0.5) * SPOTLIGHT_DIM_OPACITY;
+        }
+    }
+    mesh.material.needsUpdate = true;
+}
+
 function recolor_points_for_mode(sphere: SphereData, epochKey: string) {
     sphere.pointObjectsByRecordID.forEach((mesh: any, recordId: string) => {
         // Skip manually selected records
@@ -943,11 +986,7 @@ function recolor_points_for_mode(sphere: SphereData, epochKey: string) {
 
         // Only override color if we have a valid cluster assignment
         if (clusterAssignment >= 0) {
-            const newColor = get_cluster_color(sphere, clusterAssignment);
-            if (mesh.material && 'color' in mesh.material) {
-                mesh.material.color.setHex(newColor);
-                mesh.material.needsUpdate = true;
-            }
+            apply_point_color_with_spotlight(sphere, mesh, clusterAssignment);
         }
     });
 }
@@ -1464,6 +1503,10 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
 
     sphere.isPlayingMovie = true;
 
+    // Track movie start time and angle for loop delay logic
+    const movieStartTime = Date.now();
+    const movieStartAngle = sphere.angle || 0;
+
     // Let auto-rotation continue during training movie - this gives a nice visual effect
     // where the sphere slowly rotates while epochs are playing
     // The animation loop handles rotation, training movie just updates point positions
@@ -1519,11 +1562,42 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
 
             // Check if we should loop with physics effect
             if (sphere.autoLoopMovie) {
-                // Stop the movie timer during physics
-                sphere.isPlayingMovie = false;
+                // Wait until sphere has rotated 180° OR 10 seconds elapsed, whichever is LONGER
+                const minWaitTime = 10000; // 10 seconds minimum
+                const minRotation = Math.PI; // 180 degrees
 
-                // Start physics effect - points fall and bounce
-                start_physics_reset_effect(sphere, () => {
+                const checkConditionsAndStart = () => {
+                    // If movie was paused/stopped, abort the loop check
+                    if (!sphere.autoLoopMovie) {
+                        sphere._autoLoopCheckRef = undefined;
+                        return;
+                    }
+
+                    const elapsed = Date.now() - movieStartTime;
+                    const currentAngle = sphere.angle || 0;
+                    const rotated = Math.abs(currentAngle - movieStartAngle);
+
+                    // Both conditions must be met (whichever takes longer)
+                    const timeConditionMet = elapsed >= minWaitTime;
+                    const rotationConditionMet = rotated >= minRotation;
+
+                    if (timeConditionMet && rotationConditionMet) {
+                        // Both conditions met - start physics
+                        sphere._autoLoopCheckRef = undefined;
+                        sphere.isPlayingMovie = false;
+                        start_physics_reset_effect(sphere, onPhysicsComplete);
+                    } else {
+                        // Check again in 100ms - store the ref so we can cancel on pause
+                        sphere._autoLoopCheckRef = setTimeout(checkConditionsAndStart, 100);
+                    }
+                };
+
+                const onPhysicsComplete = () => {
+                    // If auto-loop was disabled (user paused), don't restart
+                    if (!sphere.autoLoopMovie) {
+                        return;
+                    }
+
                     // Physics complete - restart movie from beginning
                     sphere.currentEpoch = 0;
                     sphere.isPlayingMovie = true;
@@ -1545,7 +1619,10 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
                     // Then schedule next frame
                     sphere.currentEpoch = 1;
                     sphere.movieAnimationRef = setTimeout(animate, frameDelay);
-                });
+                };
+
+                // Start checking conditions
+                checkConditionsAndStart();
                 return;
             }
 
@@ -1570,7 +1647,20 @@ export function stop_training_movie(sphere: SphereData) {
         clearTimeout(sphere.movieAnimationRef);
         sphere.movieAnimationRef = 0;
     }
-    
+
+    // Cancel pending auto-loop check
+    if (sphere._autoLoopCheckRef) {
+        clearTimeout(sphere._autoLoopCheckRef);
+        sphere._autoLoopCheckRef = undefined;
+    }
+
+    // Stop physics animation if running
+    if (sphere.isPhysicsRunning && sphere.physicsAnimationRef) {
+        cancelAnimationFrame(sphere.physicsAnimationRef);
+        sphere.physicsAnimationRef = undefined;
+        sphere.isPhysicsRunning = false;
+    }
+
     // Stop any ongoing interpolation
     stop_point_interpolation(sphere);
 }
@@ -1582,6 +1672,18 @@ export function pause_training_movie(sphere: SphereData) {
         sphere.movieAnimationRef = 0;
     }
 
+    // Cancel pending auto-loop check (prevents restart after pause)
+    if (sphere._autoLoopCheckRef) {
+        clearTimeout(sphere._autoLoopCheckRef);
+        sphere._autoLoopCheckRef = undefined;
+    }
+
+    // Stop physics animation if running (prevents restart when physics completes)
+    if (sphere.isPhysicsRunning && sphere.physicsAnimationRef) {
+        cancelAnimationFrame(sphere.physicsAnimationRef);
+        sphere.physicsAnimationRef = undefined;
+        sphere.isPhysicsRunning = false;
+    }
 }
 
 export function resume_training_movie(sphere: SphereData) {
@@ -1984,14 +2086,8 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
                     // Only override color if we have a valid cluster assignment.
                     // If no cluster data is available (returns -1), keep existing color.
                     if (clusterAssignment >= 0) {
-                        const newColor = get_cluster_color(sphere, clusterAssignment);
-                        if (mesh.material instanceof THREE.MeshBasicMaterial) {
-                            mesh.material.color.setHex(newColor);
-                            mesh.material.needsUpdate = true;
-                        } else if (mesh.material && 'color' in mesh.material) {
-                            (mesh.material as any).color.setHex(newColor);
-                            (mesh.material as any).needsUpdate = true;
-                        }
+                        // Use spotlight-aware color function (will gray out non-spotlight members)
+                        apply_point_color_with_spotlight(sphere, mesh, clusterAssignment);
                     }
                 }
             } else {
@@ -2271,11 +2367,12 @@ export function update_memory_trails(sphere: SphereData) {
             }
         }
 
-        // Opacity multiplier for non-spotlight members (heavily dimmed)
-        const spotlightDimFactor = isSpotlightMember ? 1.0 : 0.1;
+        // Opacity multiplier and color for non-spotlight members (grayed out and heavily dimmed)
+        const spotlightDimFactor = isSpotlightMember ? 1.0 : 0.25;
+        const GRAY_COLOR = new THREE.Color(0x555555);
 
-        // Get point color
-        const pointColor = pointMesh.material.color;
+        // Get point color - use gray for non-spotlight members
+        const pointColor = isSpotlightMember ? pointMesh.material.color : GRAY_COLOR;
         
         // Create trail segments (up to 5 segments)
         const maxSegments = Math.min(5, history.length - 1);
@@ -3184,59 +3281,7 @@ function create_spherical_hull_geometry(hullPoints: THREE.Vector3[]): THREE.Buff
     const normalizedPoints = normalize_points_to_sphere_surface(hullPoints);
 
     try {
-        const geometry = new THREE.BufferGeometry();
-        const vertices: number[] = [];
-        const indices: number[] = [];
-        const vertexMap = new Map<string, number>();
-        
-        // Function to get or add vertex index
-        function getVertexIndex(point: THREE.Vector3): number {
-            const key = `${point.x.toFixed(6)},${point.y.toFixed(6)},${point.z.toFixed(6)}`;
-            if (vertexMap.has(key)) {
-                return vertexMap.get(key)!;
-            }
-            const index = vertices.length / 3;
-            vertices.push(point.x, point.y, point.z);
-            vertexMap.set(key, index);
-            return index;
-        }
-        
         const numPoints = normalizedPoints.length;
-
-        // Helper to add a subdivided triangle with adaptive subdivision based on arc length
-        function addSubdividedTriangle(p0: THREE.Vector3, p1: THREE.Vector3, p2: THREE.Vector3) {
-            const subdivisions = calculate_adaptive_subdivisions(p0, p1, p2);
-
-            const subdivided = subdivide_spherical_triangle(p0, p1, p2, subdivisions);
-
-            let baseIndex = vertices.length / 3;
-            subdivided.forEach(p => {
-                vertices.push(p.x, p.y, p.z);
-            });
-
-            // Create triangular faces from subdivided vertices
-            let rowStart = baseIndex;
-            for (let row = 0; row < subdivisions; row++) {
-                const nextRowStart = rowStart + (subdivisions - row + 1);
-                const currentRowSize = subdivisions - row + 1;
-                const nextRowSize = subdivisions - row;
-
-                for (let j = 0; j < currentRowSize - 1; j++) {
-                    const v0 = rowStart + j;
-                    const v1 = rowStart + j + 1;
-                    const v2 = nextRowStart + j;
-
-                    indices.push(v0, v1, v2);
-
-                    if (j < nextRowSize - 1) {
-                        const v3 = nextRowStart + j + 1;
-                        indices.push(v1, v3, v2);
-                    }
-                }
-
-                rowStart = nextRowStart;
-            }
-        }
 
         // Compute centroid of hull points (on sphere surface)
         const centroid = new THREE.Vector3();
@@ -3244,45 +3289,65 @@ function create_spherical_hull_geometry(hullPoints: THREE.Vector3[]): THREE.Buff
         centroid.divideScalar(numPoints);
         centroid.normalize(); // Project back to sphere surface
 
-        // Create triangles using centroid as fan center
-        // This creates proper convex triangulation for spherical hulls
-        if (numPoints === 3) {
-            // Single triangle - subdivide it with adaptive level
-            addSubdividedTriangle(normalizedPoints[0], normalizedPoints[1], normalizedPoints[2]);
-        } else {
-            // Fan triangulation from CENTROID to each edge of the hull boundary
-            // Hull points are already in counterclockwise order from Graham scan
-            for (let i = 0; i < numPoints; i++) {
-                const next = (i + 1) % numPoints;
-                addSubdividedTriangle(centroid, normalizedPoints[i], normalizedPoints[next]);
-            }
+        // Start with fan triangles from centroid to hull edges
+        // Each triangle is [centroid, hullPoint[i], hullPoint[i+1]]
+        let triangles: [THREE.Vector3, THREE.Vector3, THREE.Vector3][] = [];
+        for (let i = 0; i < numPoints; i++) {
+            const curr = normalizedPoints[i];
+            const next = normalizedPoints[(i + 1) % numPoints];
+            triangles.push([centroid.clone(), curr.clone(), next.clone()]);
         }
-        
+
+        // Subdivide triangles to conform to sphere surface
+        // Each subdivision: split each triangle into 4 smaller ones, normalize midpoints
+        const subdivisions = 3; // More subdivisions = smoother sphere conformance
+        for (let s = 0; s < subdivisions; s++) {
+            const newTriangles: [THREE.Vector3, THREE.Vector3, THREE.Vector3][] = [];
+            for (const [a, b, c] of triangles) {
+                // Compute midpoints and normalize to sphere surface
+                const ab = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5).normalize();
+                const bc = new THREE.Vector3().addVectors(b, c).multiplyScalar(0.5).normalize();
+                const ca = new THREE.Vector3().addVectors(c, a).multiplyScalar(0.5).normalize();
+
+                // Split into 4 triangles
+                newTriangles.push([a.clone(), ab.clone(), ca.clone()]);
+                newTriangles.push([ab.clone(), b.clone(), bc.clone()]);
+                newTriangles.push([ca.clone(), bc.clone(), c.clone()]);
+                newTriangles.push([ab.clone(), bc.clone(), ca.clone()]);
+            }
+            triangles = newTriangles;
+        }
+
+        // Build geometry from triangles
+        const geometry = new THREE.BufferGeometry();
+        const vertices: number[] = [];
+        const indices: number[] = [];
+        const vertexMap = new Map<string, number>(); // Deduplicate vertices
+
+        const getVertexIndex = (v: THREE.Vector3): number => {
+            // Round to avoid floating point key issues
+            const key = `${v.x.toFixed(6)},${v.y.toFixed(6)},${v.z.toFixed(6)}`;
+            if (vertexMap.has(key)) {
+                return vertexMap.get(key)!;
+            }
+            const idx = vertices.length / 3;
+            vertices.push(v.x, v.y, v.z);
+            vertexMap.set(key, idx);
+            return idx;
+        };
+
+        for (const [a, b, c] of triangles) {
+            const ia = getVertexIndex(a);
+            const ib = getVertexIndex(b);
+            const ic = getVertexIndex(c);
+            indices.push(ia, ib, ic);
+        }
+
         // Set geometry data
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
         geometry.setIndex(indices);
-        
-        // Compute normals pointing outward from sphere center
         geometry.computeVertexNormals();
-        
-        // Ensure normals point outward (from center of sphere)
-        const positions = geometry.attributes.position;
-        const normals = geometry.attributes.normal;
-        for (let i = 0; i < positions.count; i++) {
-            const i3 = i * 3;
-            const nx = positions.array[i3];
-            const ny = positions.array[i3 + 1];
-            const nz = positions.array[i3 + 2];
-            // Normalize and set as normal (pointing outward from origin)
-            const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
-            if (len > 0) {
-                normals.array[i3] = nx / len;
-                normals.array[i3 + 1] = ny / len;
-                normals.array[i3 + 2] = nz / len;
-            }
-        }
-        normals.needsUpdate = true;
-        
+
         return geometry;
     } catch (error) {
         // Spherical hull geometry creation failed
@@ -3679,7 +3744,11 @@ function create_dynamic_sphere_hull(sphere: SphereData, hullPoints: THREE.Vector
             // Create mesh and position at cluster center
             const sphereMesh = new THREE.Mesh(sphereGeometry, sphereMaterial);
             sphereMesh.position.copy(boundingSphere.center);
-            
+            // Store cluster info and original color for spotlight dimming
+            sphereMesh.userData.cluster = cluster;
+            sphereMesh.userData.originalColor = clusterColor.clone();
+            sphereMesh.userData.originalOpacity = opacity;
+
             sphere.convexHullsGroup.add(sphereMesh);
         }
     } catch (error) {
@@ -3714,18 +3783,38 @@ export function update_cluster_spotlight(sphere: SphereData, updateOpacity: bool
     }
 
     const spotlightCluster = sphere.spotlightCluster;
+    const GRAY_COLOR = new THREE.Color(0x555555);
+    const DIM_OPACITY_FACTOR = 0.25;
 
     // If spotlight is off (-1) or no cluster selected
     if (spotlightCluster === undefined || spotlightCluster < 0) {
-        // Only restore opacity when explicitly requested (when user changes setting)
+        // Only restore when explicitly requested (when user changes setting)
         if (updateOpacity) {
+            // Restore point colors and opacity
             sphere.pointObjectsByRecordID.forEach((pointMesh) => {
                 const mat = pointMesh.material as THREE.MeshPhongMaterial | THREE.MeshBasicMaterial;
-                if (mat && 'opacity' in mat) {
-                    mat.opacity = sphere.pointOpacity || 0.5;
+                if (mat) {
+                    // Restore original color if stored
+                    if (pointMesh.userData.originalColor) {
+                        mat.color.copy(pointMesh.userData.originalColor);
+                    }
+                    if ('opacity' in mat) {
+                        mat.opacity = sphere.pointOpacity || 0.5;
+                    }
                     mat.needsUpdate = true;
                 }
             });
+            // Restore convex hull colors and opacity
+            if (sphere.convexHullsGroup) {
+                sphere.convexHullsGroup.children.forEach((child: any) => {
+                    const mat = child.material as THREE.MeshBasicMaterial;
+                    if (mat && child.userData.originalColor) {
+                        mat.color.copy(child.userData.originalColor);
+                        mat.opacity = child.userData.originalOpacity || 0.15;
+                        mat.needsUpdate = true;
+                    }
+                });
+            }
         }
         return;
     }
@@ -3791,20 +3880,54 @@ export function update_cluster_spotlight(sphere: SphereData, updateOpacity: bool
                     position: pointMesh.position.clone(),
                     color: mat && 'color' in mat ? mat.color.clone() : new THREE.Color(0xffffff)
                 });
-                // Only update opacity when explicitly requested (user changed setting)
-                if (updateOpacity && mat && 'opacity' in mat) {
-                    mat.opacity = sphere.pointOpacity || 0.5;
+                // Restore original color and full opacity for spotlight members
+                if (updateOpacity && mat) {
+                    if (pointMesh.userData.originalColor) {
+                        mat.color.copy(pointMesh.userData.originalColor);
+                    }
+                    if ('opacity' in mat) {
+                        mat.opacity = sphere.pointOpacity || 0.5;
+                    }
                     mat.needsUpdate = true;
                 }
             } else {
-                // Only dim non-members when explicitly requested (user changed setting)
-                if (updateOpacity && mat && 'opacity' in mat) {
-                    mat.opacity = (sphere.pointOpacity || 0.5) * 0.15;
+                // Gray out and reduce opacity for non-members
+                if (updateOpacity && mat) {
+                    // Store original color if not already stored
+                    if (!pointMesh.userData.originalColor) {
+                        pointMesh.userData.originalColor = mat.color.clone();
+                    }
+                    mat.color.copy(GRAY_COLOR);
+                    if ('opacity' in mat) {
+                        mat.opacity = (sphere.pointOpacity || 0.5) * DIM_OPACITY_FACTOR;
+                    }
                     mat.needsUpdate = true;
                 }
             }
         }
     });
+
+    // Gray out non-spotlight convex hulls
+    if (updateOpacity && sphere.convexHullsGroup) {
+        sphere.convexHullsGroup.children.forEach((child: any) => {
+            const mat = child.material as THREE.MeshBasicMaterial;
+            const hullCluster = child.userData.cluster;
+            if (mat) {
+                if (hullCluster === spotlightCluster) {
+                    // Restore original color and opacity for spotlight cluster
+                    if (child.userData.originalColor) {
+                        mat.color.copy(child.userData.originalColor);
+                    }
+                    mat.opacity = child.userData.originalOpacity || 0.15;
+                } else {
+                    // Gray out and reduce opacity for non-spotlight clusters
+                    mat.color.copy(GRAY_COLOR);
+                    mat.opacity = (child.userData.originalOpacity || 0.15) * DIM_OPACITY_FACTOR;
+                }
+                mat.needsUpdate = true;
+            }
+        });
+    }
 
     if (clusterPoints.length === 0) {
         return;
@@ -3915,7 +4038,15 @@ function create_spherical_convex_hull_mesh(sphere: SphereData, hullPoints: THREE
             // Create both filled and wireframe meshes
             const filledMesh = new THREE.Mesh(sphericalGeometry, filledMaterial);
             const wireframeMesh = new THREE.Mesh(sphericalGeometry.clone(), wireframeMaterial);
-            
+
+            // Store cluster info and original colors for spotlight dimming
+            filledMesh.userData.cluster = cluster;
+            filledMesh.userData.originalColor = clusterColor.clone();
+            filledMesh.userData.originalOpacity = 0.15;
+            wireframeMesh.userData.cluster = cluster;
+            wireframeMesh.userData.originalColor = clusterColor.clone();
+            wireframeMesh.userData.originalOpacity = 0.6;
+
             // Add both to convex hulls group
             sphere.convexHullsGroup.add(filledMesh);
             sphere.convexHullsGroup.add(wireframeMesh);

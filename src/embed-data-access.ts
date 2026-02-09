@@ -398,4 +398,44 @@ export async function fetch_thumbnail_data(session_id: string, apiBaseUrl?: stri
 
     console.timeEnd('🚀 THUMBNAIL_FETCH');
     return null;
+}
+
+// Fetch model card for column statistics (mutual information, predictability, etc.)
+export interface ColumnStatistics {
+    mutual_information_bits?: number;
+    predictability_pct?: number;
+    marginal_loss?: number | null;
+}
+
+export interface ModelCard {
+    column_statistics?: Record<string, ColumnStatistics>;
+    [key: string]: any;
+}
+
+export async function fetch_model_card(session_id: string, apiBaseUrl?: string): Promise<ModelCard | null> {
+    const baseUrl = getApiBaseUrl(apiBaseUrl);
+    console.time('🔗 API_MODEL_CARD');
+    console.log('🔗 Fetching model card for session:', session_id);
+
+    try {
+        const response = await fetchWithRetry(`${baseUrl}/compute/session/${session_id}/model_card`);
+        if (response.ok) {
+            const data = await response.json();
+            console.timeEnd('🔗 API_MODEL_CARD');
+
+            if (data.column_statistics) {
+                const columnCount = Object.keys(data.column_statistics).length;
+                console.log(`📊 Model card: ${columnCount} columns with statistics`);
+            }
+            return data;
+        } else {
+            console.timeEnd('🔗 API_MODEL_CARD');
+            console.warn('⚠️ Model card endpoint returned:', response.status, response.statusText);
+        }
+    } catch (error) {
+        console.timeEnd('🔗 API_MODEL_CARD');
+        console.warn('⚠️ Could not fetch model card:', error);
+    }
+
+    return null;
 } 

@@ -11,7 +11,7 @@
 import React, { Suspense, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
-import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch, fetch_thumbnail_data, setRetryStatusCallback } from './embed-data-access';
+import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch, fetch_thumbnail_data, fetch_model_card, setRetryStatusCallback, ModelCard } from './embed-data-access';
 import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, set_wireframe_opacity, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles, register_event_listener, set_cluster_color_mode, compute_epoch_movement_stats, set_movie_auto_loop, trim_trail_history, set_playback_speed } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 import CollapsibleSection from './components/CollapsibleSection';
@@ -452,6 +452,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
     const [showDynamicHulls, setShowDynamicHulls] = usePersistedState('showDynamicHulls', false);
     const [trailLength, setTrailLength] = usePersistedState('trailLength', 12);
     const [spotlightCluster, setSpotlightCluster] = useState<number>(-1); // -1 = off, 0+ = cluster number (not persisted - session specific)
+    const [showClusterAnalysis, setShowClusterAnalysis] = useState(false); // Cluster analysis modal
+    const [clusterAnalysisView, setClusterAnalysisView] = useState<'signatures' | 'fields' | 'details'>('signatures');
+    const [analysisClusterCount, setAnalysisClusterCount] = useState<string | null>(null); // null = use active, "4", "8", "12" etc
     const [clusterColorMode, setClusterColorMode] = usePersistedState<'final' | 'per-epoch'>('clusterColorMode', 'final');
     const [showCountdown, setShowCountdown] = useState(false);
     const [countdownText, setCountdownText] = useState('');
@@ -575,6 +578,13 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
     // Movement histogram state
     const [movementData, setMovementData] = useState<Array<{ epoch: string, mean: number, median: number, p90: number, max: number }>>([]);
     const [showMovementPlot, setShowMovementPlot] = usePersistedState('showMovementPlot', true);
+    const [showMovementHistogram, setShowMovementHistogram] = useState(false);
+
+    // Compute current epoch's movement stats
+    const currentEpochMovement = useMemo(() => {
+        if (!frameInfo?.epoch || movementData.length === 0) return null;
+        return movementData.find(d => d.epoch === frameInfo.epoch) || null;
+    }, [frameInfo?.epoch, movementData]);
 
     // Playback overlay visibility state
     const [overlayVisible, setOverlayVisible] = useState(false);
@@ -714,15 +724,19 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
 
     // Load model card when modal opens
     useEffect(() => {
-        if (!showModelCard) return;
+        // Fetch model card when either Model Card panel OR Cluster Analysis modal opens
+        if (!showModelCard && !showClusterAnalysis) return;
 
         const loadModelCard = async () => {
+            // Skip if already loaded
+            if (modelCardData) return;
+
             setModelCardLoading(true);
             setModelCardError(null);
 
             try {
-                // Load the external model card library if not already loaded
-                if (!(window as any).FeatrixModelCard) {
+                // Load the external model card library if not already loaded (only needed for Model Card panel)
+                if (showModelCard && !(window as any).FeatrixModelCard) {
                     await new Promise<void>((resolve, reject) => {
                         const script = document.createElement('script');
                         script.src = 'https://bits.featrix.com/js/featrix-modelcard/model-card.js';
@@ -740,6 +754,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                 }
                 const data = await response.json();
                 setModelCardData(data);
+                console.log('📊 Model card loaded with', Object.keys(data.column_statistics || {}).length, 'column statistics');
             } catch (err) {
                 console.error('Error loading model card:', err);
                 setModelCardError(err instanceof Error ? err.message : 'Failed to load model card');
@@ -749,7 +764,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
         };
 
         loadModelCard();
-    }, [showModelCard, sessionId, apiBaseUrl]);
+    }, [showModelCard, showClusterAnalysis, sessionId, apiBaseUrl, modelCardData]);
 
     // Render model card when data is available
     useEffect(() => {
@@ -1345,28 +1360,80 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
         return normalized !== null;
     };
     
-    // Filter record list for search with improved boolean handling
+    // Helper to parse array-like values (JSON arrays or Python-style list strings)
+    const parseArrayValue = (val: any): string[] | null => {
+        // Already an array
+        if (Array.isArray(val)) {
+            return val.map(v => String(v));
+        }
+        // Try to parse as JSON or Python-style list string
+        if (typeof val === 'string') {
+            const trimmed = val.trim();
+            if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+                try {
+                    // Try JSON first
+                    const parsed = JSON.parse(trimmed.replace(/'/g, '"'));
+                    if (Array.isArray(parsed)) {
+                        return parsed.map(v => String(v));
+                    }
+                } catch {
+                    // Try simple split for Python-style lists
+                    const inner = trimmed.slice(1, -1);
+                    if (inner.includes(',')) {
+                        return inner.split(',').map(s => s.trim().replace(/^['"]|['"]$/g, ''));
+                    }
+                }
+            }
+        }
+        return null;
+    };
+
+    // Filter record list for search with improved boolean handling and array support
     const filter_record_list = (queryColumnType: any, queryColumn: any, queryValue: any) => {
         if (!sphereRef || !sphereRef.current || !sphereRef.current.pointRecordsByID) {
+            console.log('🔍 Search: No sphere or records');
             return [];
         }
-        
+
         // Normalize the query value for boolean matching
         const normalizedQuery = normalizeBoolean(queryValue);
         const isBooleanQuery = normalizedQuery !== null;
-        
+        const query = String(queryValue).toLowerCase().trim();
+
         let results: any = [];
         let checked = 0;
+        let sampleValue: any = null;
         for (const record of sphereRef.current.pointRecordsByID.values()) {
             checked++;
             const columnValue = record.original[queryColumn];
+
+            // Log first few values for debugging
+            if (checked <= 3) {
+                console.log(`🔍 Search sample ${checked}: column="${queryColumn}", value=`, columnValue, typeof columnValue);
+                if (checked === 1) sampleValue = columnValue;
+            }
+
             if (columnValue === undefined) continue;
-            
+
             let matches = false;
-            
-            if (queryColumnType === 'string') {
+
+            // First, check if this is an array/list value
+            const arrayItems = parseArrayValue(columnValue);
+            if (arrayItems !== null) {
+                // Search within array items - partial, case-insensitive match
+                matches = arrayItems.some(item =>
+                    item.toLowerCase().includes(query)
+                );
+                if (checked <= 3) {
+                    console.log(`🔍 Parsed as array:`, arrayItems, `matches="${query}":`, matches);
+                }
+                // Array was handled - skip string/set checks
+            } else if (queryColumnType === 'string') {
+                // Not an array - log why
+                if (checked <= 3) {
+                    console.log(`🔍 NOT array, checking as string. Raw value:`, JSON.stringify(columnValue).substring(0, 100));
+                }
                 const value = String(columnValue).toLowerCase();
-                const query = String(queryValue).toLowerCase();
                 if (isBooleanQuery) {
                     // For boolean-like queries, try to match normalized boolean values
                     const normalizedValue = normalizeBoolean(columnValue);
@@ -1380,19 +1447,20 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                     matches = value.includes(query);
                 }
             } else if (queryColumnType === 'set') {
+                // For set columns, also do partial case-insensitive matching
                 const value = String(columnValue).toLowerCase();
-                const query = String(queryValue).toLowerCase();
                 if (isBooleanQuery) {
                     // For boolean-like queries, try to match normalized boolean values
                     const normalizedValue = normalizeBoolean(columnValue);
                     if (normalizedValue !== null && normalizedValue === normalizedQuery) {
                         matches = true;
                     } else if (!normalizedValue) {
-                        // Fallback to exact match if value isn't boolean-like
-                        matches = value === query;
+                        // Partial match for non-boolean values
+                        matches = value.includes(query);
                     }
                 } else {
-                    matches = value === query;
+                    // Partial, case-insensitive match (not exact!)
+                    matches = value.includes(query);
                 }
             } else if (queryColumnType === 'scalar') {
                 // Handle scalar columns with comparison operators and null/nan support
@@ -1511,6 +1579,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                 results.push(record);
             }
         }
+        console.log(`🔍 Search complete: query="${query}" column="${queryColumn}" type="${queryColumnType}" checked=${checked} matches=${results.length}`);
         return results;
     };
     
@@ -1622,70 +1691,62 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
         }
     };
     
-    // Handle search input with boolean color coding (live preview)
+    // Handle search input with live visual preview (green = match, gray = no match)
     const handleSearchInput = (e: React.ChangeEvent<HTMLInputElement>) => {
         const inputValue = e.target.value;
         setSearchQuery(inputValue);
-        
-        if (!sphereRef) {
+
+        if (!sphereRef || !sphereRef.current) {
             return;
         }
 
         if (!columnTypes || !selectedSearchColumn) {
             return;
         }
-        
-        // If empty, just show color rules
+
+        // If empty, restore original cluster colors
         if (inputValue === "") {
             applyColorRules();
             setSearchResultStats(null);
             return;
         }
-        
+
         // Filter results for preview
         const queryColumnType = columnTypes[selectedSearchColumn];
         const theRecords = filter_record_list(queryColumnType, selectedSearchColumn, inputValue);
-        
-        // Apply color rules first, then show preview
-        applyColorRules();
-        
-        // Check if this is a boolean query
-        const normalizedQuery = normalizeBoolean(inputValue);
-        const isBooleanQuery = normalizedQuery !== null;
-        
-        // Categorize results for boolean columns (preview only)
-        if (isBooleanQuery && theRecords.length > 0) {
-            let yesCount = 0;
-            let noCount = 0;
-            let unknownCount = 0;
-            
-            for (const record of theRecords) {
-                const columnValue = record.original[selectedSearchColumn];
-                const normalizedValue = normalizeBoolean(columnValue);
-                
-                if (normalizedValue === null) {
-                    unknownCount++;
-                } else if (normalizedValue === 'true') {
-                    yesCount++;
+
+        // Create a set of matching record IDs for fast lookup
+        const matchingIds = new Set(theRecords.map(r => r.id));
+
+        // LIVE PREVIEW: Color all points - green for matches, gray for non-matches
+        const GREEN = 0x4caf50; // Material green
+        const GRAY = 0x555555;  // Dark gray
+
+        sphereRef.current.pointObjectsByRecordID?.forEach((mesh: any, recordId: string) => {
+            if (mesh.material && 'color' in mesh.material) {
+                if (matchingIds.has(recordId)) {
+                    // Match: bright green, full opacity
+                    mesh.material.color.setHex(GREEN);
+                    mesh.material.opacity = sphereRef.current!.pointOpacity || 0.5;
                 } else {
-                    noCount++;
+                    // No match: gray, reduced opacity
+                    mesh.material.color.setHex(GRAY);
+                    mesh.material.opacity = (sphereRef.current!.pointOpacity || 0.5) * 0.3;
                 }
+                mesh.material.needsUpdate = true;
             }
-            
-            setSearchResultStats({
-                yes: yesCount,
-                no: noCount,
-                unknown: unknownCount,
-                isBoolean: true
-            });
-        } else {
-            setSearchResultStats({
-                yes: 0,
-                no: 0,
-                unknown: 0,
-                isBoolean: false
-            });
-        }
+        });
+
+        // Trigger a render to show the preview
+        render_sphere(sphereRef.current);
+
+        // Update stats display
+        setSearchResultStats({
+            yes: theRecords.length,
+            no: (sphereRef.current.pointObjectsByRecordID?.size || 0) - theRecords.length,
+            unknown: 0,
+            isBoolean: false
+        });
     };
     
     // Note: Color rules are applied when colorRules.length changes (see above useEffect)
@@ -2363,6 +2424,30 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                                 )}
                             </div>
 
+                            {/* Live search preview count */}
+                            {searchQuery && searchResultStats && (
+                                <div style={{
+                                    marginTop: '6px',
+                                    padding: '6px 10px',
+                                    background: searchResultStats.yes > 0 ? '#1b3a1b' : '#3a1b1b',
+                                    borderRadius: '4px',
+                                    fontSize: '11px',
+                                    color: searchResultStats.yes > 0 ? '#4caf50' : '#f44336',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                }}>
+                                    <span style={{ fontWeight: 600 }}>{searchResultStats.yes}</span>
+                                    <span style={{ color: '#888' }}>matches</span>
+                                    {searchResultStats.no > 0 && (
+                                        <>
+                                            <span style={{ color: '#555' }}>|</span>
+                                            <span style={{ color: '#666' }}>{searchResultStats.no} no match</span>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
                             {/* Color Rules */}
                             {colorRules.length > 0 && (
                                 <div style={{ marginTop: '8px' }}>
@@ -2519,6 +2604,31 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                                     ))}
                                 </select>
                             </div>
+                        )}
+
+                        {/* Cluster Analysis button */}
+                        {frameInfo && frameInfo.visible > 0 && (
+                            <button
+                                onClick={() => setShowClusterAnalysis(true)}
+                                style={{
+                                    width: '100%',
+                                    padding: '10px 16px',
+                                    backgroundColor: '#2d4a6f',
+                                    border: 'none',
+                                    borderRadius: '6px',
+                                    color: '#e6e6e6',
+                                    fontSize: '12px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '8px',
+                                }}
+                            >
+                                <span style={{ fontSize: '14px' }}>📊</span>
+                                Cluster Analysis
+                            </button>
                         )}
 
                         {/* Show Cluster Spheres checkbox */}
@@ -3365,6 +3475,24 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                                         )}
                                     </div>
 
+                                    {/* Live search preview count */}
+                                    {searchQuery && searchResultStats && (
+                                        <div style={{
+                                            marginTop: '4px',
+                                            padding: '4px 8px',
+                                            background: searchResultStats.yes > 0 ? '#1b3a1b' : '#3a1b1b',
+                                            borderRadius: '4px',
+                                            fontSize: '10px',
+                                            color: searchResultStats.yes > 0 ? '#4caf50' : '#f44336',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                        }}>
+                                            <span style={{ fontWeight: 600 }}>{searchResultStats.yes}</span>
+                                            <span style={{ color: '#888' }}>matches</span>
+                                        </div>
+                                    )}
+
                                     {/* Color Rules (compact for mobile) */}
                                     {colorRules.length > 0 && (
                                         <div style={{ marginTop: '4px' }}>
@@ -4144,6 +4272,793 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                         </table>
                     </div>
                 </div>
+                </>
+            )}
+
+            {/* Cluster Analysis Modal */}
+            {showClusterAnalysis && sphereRef && (
+                <>
+                    {/* Scrim */}
+                    <div
+                        onClick={() => setShowClusterAnalysis(false)}
+                        style={{
+                            position: 'fixed',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            background: 'rgba(0, 0, 0, 0.8)',
+                            zIndex: 25000,
+                        }}
+                    />
+                    {/* Modal Dialog */}
+                    <div style={{
+                        position: 'fixed',
+                        top: '5%',
+                        left: '5%',
+                        right: '5%',
+                        bottom: '5%',
+                        background: '#1a1a1a',
+                        border: '2px solid #4c78a8',
+                        borderRadius: '12px',
+                        zIndex: 25001,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        overflow: 'hidden',
+                    }}>
+                        {/* Header */}
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '16px 20px',
+                            borderBottom: '1px solid #333',
+                            background: '#222',
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <span style={{ fontSize: '20px' }}>📊</span>
+                                <span style={{ color: '#4c78a8', fontWeight: 'bold', fontSize: '18px' }}>
+                                    Cluster Analysis
+                                </span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ color: '#888', fontSize: '12px' }}>Clusters:</span>
+                                    <select
+                                        value={analysisClusterCount || ''}
+                                        onChange={(e) => {
+                                            const newClusterCount = e.target.value || null;
+                                            setAnalysisClusterCount(newClusterCount);
+                                            // Also update the sphere visualization to show this cluster count
+                                            if (sphereRef && sphereRef.jsonData) {
+                                                const clusterKey = newClusterCount || get_active_cluster_count_key(sphereRef)?.toString();
+                                                if (clusterKey) {
+                                                    change_cluster_count(sphereRef, sphereRef.jsonData, clusterKey);
+                                                }
+                                            }
+                                        }}
+                                        style={{
+                                            padding: '6px 12px',
+                                            background: '#333',
+                                            border: '1px solid #444',
+                                            borderRadius: '4px',
+                                            color: '#fff',
+                                            fontSize: '12px',
+                                            cursor: 'pointer',
+                                        }}
+                                    >
+                                        <option value="">Auto ({get_active_cluster_count_key(sphereRef) || '?'})</option>
+                                        {sphereRef.finalClusterResults && Object.keys(sphereRef.finalClusterResults)
+                                            .sort((a, b) => parseInt(a) - parseInt(b))
+                                            .map(k => (
+                                                <option key={k} value={k}>{k} clusters</option>
+                                            ))
+                                        }
+                                    </select>
+                                </div>
+                                <button
+                                    onClick={() => setShowClusterAnalysis(false)}
+                                style={{
+                                    background: '#555',
+                                    border: 'none',
+                                    color: 'white',
+                                        padding: '8px 16px',
+                                        borderRadius: '6px',
+                                        cursor: 'pointer',
+                                        fontSize: '14px',
+                                    }}
+                                >
+                                    ✕ Close
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Tab Bar */}
+                        <div style={{
+                            display: 'flex',
+                            gap: '0',
+                            borderBottom: '1px solid #333',
+                            background: '#1e1e1e',
+                            padding: '0 20px',
+                        }}>
+                            {[
+                                { id: 'signatures', label: '🎯 Cluster Signatures', desc: 'What defines each cluster' },
+                                { id: 'fields', label: '📋 Field Analysis', desc: 'Which values belong to which clusters' },
+                                { id: 'details', label: '📊 Raw Data', desc: 'Detailed breakdown' },
+                            ].map(tab => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setClusterAnalysisView(tab.id as any)}
+                                    style={{
+                                        padding: '12px 20px',
+                                        background: clusterAnalysisView === tab.id ? '#2a2a2a' : 'transparent',
+                                        border: 'none',
+                                        borderBottom: clusterAnalysisView === tab.id ? '2px solid #4c78a8' : '2px solid transparent',
+                                        color: clusterAnalysisView === tab.id ? '#fff' : '#888',
+                                        fontSize: '13px',
+                                        fontWeight: clusterAnalysisView === tab.id ? 600 : 400,
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s',
+                                    }}
+                                    title={tab.desc}
+                                >
+                                    {tab.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Content */}
+                        <div style={{ flex: 1, overflow: 'auto', padding: '20px' }}>
+                            {(() => {
+                                // Gather all points by cluster
+                                const clusterData: Map<number, { points: any[], color: string }> = new Map();
+                                const allFields = new Set<string>();
+                                // Use selected cluster count, or fall back to active
+                                const clusterKey = analysisClusterCount || get_active_cluster_count_key(sphereRef);
+
+                                sphereRef.pointObjectsByRecordID?.forEach((mesh: any, recordId: string) => {
+                                    const record = sphereRef.pointRecordsByID?.get(recordId);
+                                    if (!record) return;
+
+                                    let cluster = -1;
+                                    if (clusterKey !== null && sphereRef.finalClusterResults?.[clusterKey]?.cluster_labels) {
+                                        const rowOffset = record?.featrix_meta?.__featrix_row_offset;
+                                        if (rowOffset !== undefined && rowOffset < sphereRef.finalClusterResults[clusterKey].cluster_labels.length) {
+                                            cluster = sphereRef.finalClusterResults[clusterKey].cluster_labels[rowOffset];
+                                        }
+                                    }
+
+                                    if (cluster >= 0) {
+                                        if (!clusterData.has(cluster)) {
+                                            const colorHex = mesh.material?.color?.getHexString?.() || 'ffffff';
+                                            clusterData.set(cluster, { points: [], color: `#${colorHex}` });
+                                        }
+
+                                        // Add point data - use record.original which contains the source data
+                                        const pointData = record.original || record.source_data || record;
+                                        clusterData.get(cluster)!.points.push(pointData);
+
+                                        // Collect all fields (exclude internal fields)
+                                        if (pointData) {
+                                            Object.keys(pointData).forEach(f => {
+                                                // Skip internal/meta fields
+                                                if (!f.startsWith('featrix_') &&
+                                                    !f.startsWith('__featrix') &&
+                                                    f !== 'id' &&
+                                                    f !== 'coords' &&
+                                                    f !== 'original') {
+                                                    allFields.add(f);
+                                                }
+                                            });
+                                        }
+                                    }
+                                });
+
+                                const numClusters = clusterData.size;
+                                const fieldList = Array.from(allFields).sort();
+                                const kColorTable = ['#4C78A8', '#72B7B2', '#F58518', '#E45756', '#54A24B', '#B279A2', '#FF9DA6', '#9D755D', '#BAB0AC', '#79706E', '#D37295', '#8F6D31'];
+
+                                if (numClusters === 0) {
+                                    return <div style={{ color: '#888', textAlign: 'center', padding: '40px' }}>No cluster data available</div>;
+                                }
+
+                                // Compute value distributions for each field in each cluster
+                                // Helper to parse array-like strings: "['a', 'b']" -> ['a', 'b']
+                                const parseArrayString = (val: any): string[] | null => {
+                                    if (Array.isArray(val)) {
+                                        // Already an array - flatten to strings
+                                        return val.map(v => typeof v === 'object' ? JSON.stringify(v) : String(v));
+                                    }
+                                    if (typeof val === 'string') {
+                                        // Try to parse array-like strings: ['a', 'b'] or ["a", "b"]
+                                        const trimmed = val.trim();
+                                        if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+                                            try {
+                                                const parsed = JSON.parse(trimmed.replace(/'/g, '"'));
+                                                if (Array.isArray(parsed)) {
+                                                    return parsed.map(v => String(v));
+                                                }
+                                            } catch {
+                                                // Not valid JSON, try simple split
+                                                const inner = trimmed.slice(1, -1);
+                                                if (inner.includes(',')) {
+                                                    return inner.split(',').map(s => s.trim().replace(/^['"]|['"]$/g, ''));
+                                                }
+                                            }
+                                        }
+                                    }
+                                    return null; // Not an array
+                                };
+
+                                // Helper to stringify single values
+                                const stringify = (val: any): string => {
+                                    if (val === null || val === undefined) return 'null';
+                                    if (typeof val === 'object' && !Array.isArray(val)) {
+                                        const keys = Object.keys(val);
+                                        if (keys.length === 0) return '{}';
+                                        return `{${keys[0]}: ...}`;
+                                    }
+                                    return String(val);
+                                };
+
+                                // Compute distribution - explode arrays into individual items
+                                const computeDistribution = (points: any[], field: string) => {
+                                    const valueCounts: Map<string, number> = new Map();
+                                    let nullCount = 0;
+                                    let isArrayField = false;
+
+                                    points.forEach(p => {
+                                        const val = p?.[field];
+                                        if (val === null || val === undefined) {
+                                            nullCount++;
+                                            return;
+                                        }
+
+                                        // Try to parse as array
+                                        const arrayItems = parseArrayString(val);
+                                        if (arrayItems && arrayItems.length > 0) {
+                                            isArrayField = true;
+                                            // Count each item in the array separately
+                                            arrayItems.forEach(item => {
+                                                const trimmed = item.trim();
+                                                if (trimmed && trimmed !== 'null' && trimmed !== '') {
+                                                    valueCounts.set(trimmed, (valueCounts.get(trimmed) || 0) + 1);
+                                                }
+                                            });
+                                        } else {
+                                            // Single value
+                                            const strVal = stringify(val);
+                                            if (strVal !== 'null' && strVal !== '[]') {
+                                                valueCounts.set(strVal, (valueCounts.get(strVal) || 0) + 1);
+                                            } else {
+                                                nullCount++;
+                                            }
+                                        }
+                                    });
+                                    return { valueCounts, nullCount, total: points.length, isArrayField };
+                                };
+
+                                // Compute overlap between two distributions (Jaccard similarity on value sets)
+                                const computeOverlap = (dist1: ReturnType<typeof computeDistribution>, dist2: ReturnType<typeof computeDistribution>) => {
+                                    const set1 = new Set(dist1.valueCounts.keys());
+                                    const set2 = new Set(dist2.valueCounts.keys());
+                                    const intersection = new Set([...set1].filter(x => set2.has(x)));
+                                    const union = new Set([...set1, ...set2]);
+                                    if (union.size === 0) return 0;
+                                    return intersection.size / union.size;
+                                };
+
+                                // Compute stats for each field
+                                const fieldStats = fieldList.map(field => {
+                                    const distributions: Map<number, ReturnType<typeof computeDistribution>> = new Map();
+                                    clusterData.forEach((data, cluster) => {
+                                        distributions.set(cluster, computeDistribution(data.points, field));
+                                    });
+
+                                    // Compute pairwise overlaps
+                                    const clusters = Array.from(clusterData.keys()).sort((a, b) => a - b);
+                                    let totalOverlap = 0;
+                                    let pairCount = 0;
+                                    for (let i = 0; i < clusters.length; i++) {
+                                        for (let j = i + 1; j < clusters.length; j++) {
+                                            const overlap = computeOverlap(distributions.get(clusters[i])!, distributions.get(clusters[j])!);
+                                            totalOverlap += overlap;
+                                            pairCount++;
+                                        }
+                                    }
+                                    const avgOverlap = pairCount > 0 ? totalOverlap / pairCount : 0;
+
+                                    // Compute variance in unique value counts (higher = more distinguishing)
+                                    const uniqueCounts = clusters.map(c => distributions.get(c)!.valueCounts.size);
+                                    const avgUnique = uniqueCounts.reduce((a, b) => a + b, 0) / uniqueCounts.length;
+                                    const variance = uniqueCounts.reduce((sum, c) => sum + Math.pow(c - avgUnique, 2), 0) / uniqueCounts.length;
+
+                                    return { field, distributions, avgOverlap, variance, clusters };
+                                });
+
+                                // Sort by distinguishing power (low overlap = distinguishing)
+                                fieldStats.sort((a, b) => a.avgOverlap - b.avgOverlap);
+
+                                const clusters = Array.from(clusterData.keys()).sort((a, b) => a - b);
+                                const totalPoints = Array.from(clusterData.values()).reduce((sum, d) => sum + d.points.length, 0);
+
+                                // Compute cluster signatures: values that are over-represented in each cluster
+                                // A value is a "signature" if it appears much more in this cluster than overall
+                                // Minimum count threshold: at least 3 occurrences AND >3% of total points
+                                const minAbsoluteCount = 3;
+                                const minPctThreshold = 0.03; // 3% of total
+                                const minCountByPct = Math.ceil(totalPoints * minPctThreshold);
+                                const minSignatureCount = Math.max(minAbsoluteCount, minCountByPct);
+
+                                const computeClusterSignatures = () => {
+                                    const signatures: Map<number, { field: string, value: string, clusterPct: number, overallPct: number, lift: number, isArrayField: boolean }[]> = new Map();
+
+                                    clusters.forEach(cluster => {
+                                        const clusterSignatures: { field: string, value: string, clusterPct: number, overallPct: number, lift: number, isArrayField: boolean }[] = [];
+                                        const clusterPoints = clusterData.get(cluster)!.points;
+                                        const clusterSize = clusterPoints.length;
+
+                                        fieldStats.slice(0, 30).forEach(({ field, distributions }) => { // Top 30 distinguishing fields
+                                            const clusterDist = distributions.get(cluster);
+                                            if (!clusterDist) return;
+
+                                            const isArrayField = clusterDist.isArrayField || false;
+
+                                            // Get overall distribution
+                                            const overallCounts: Map<string, number> = new Map();
+                                            distributions.forEach(dist => {
+                                                dist.valueCounts.forEach((count, value) => {
+                                                    overallCounts.set(value, (overallCounts.get(value) || 0) + count);
+                                                });
+                                            });
+
+                                            // Find values with high "lift" in this cluster
+                                            clusterDist.valueCounts.forEach((count, value) => {
+                                                const overallCount = overallCounts.get(value) || count;
+
+                                                // Skip rare values - they appear too few times to be meaningful
+                                                if (overallCount < minSignatureCount) return;
+
+                                                const clusterPct = count / clusterSize;
+                                                const overallPct = overallCount / totalPoints;
+                                                const lift = overallPct > 0 ? clusterPct / overallPct : 1;
+
+                                                // Include if: appears in >20% of cluster AND lift > 1.5
+                                                if (clusterPct >= 0.2 && lift >= 1.5) {
+                                                    clusterSignatures.push({ field, value, clusterPct, overallPct, lift, isArrayField });
+                                                }
+                                            });
+                                        });
+
+                                        // Sort by lift, take top signatures
+                                        clusterSignatures.sort((a, b) => b.lift - a.lift);
+                                        signatures.set(cluster, clusterSignatures.slice(0, 8));
+                                    });
+
+                                    return signatures;
+                                };
+
+                                const clusterSignatures = computeClusterSignatures();
+
+                                // Compute field ownership: which cluster "owns" which values
+                                const computeFieldOwnership = () => {
+                                    return fieldStats.slice(0, 25).map(({ field, distributions, avgOverlap }) => {
+                                        const valueOwners: { value: string, ownerCluster: number, pct: number, totalCount: number, otherClusters: { cluster: number, pct: number }[] }[] = [];
+
+                                        // Check if this is an array field
+                                        let isArrayField = false;
+                                        distributions.forEach(dist => {
+                                            if (dist.isArrayField) isArrayField = true;
+                                        });
+
+                                        // Get all unique values across all clusters and compute total count for each
+                                        const allValues = new Map<string, number>(); // value -> total count across all clusters
+                                        distributions.forEach(dist => {
+                                            dist.valueCounts.forEach((count, value) => {
+                                                allValues.set(value, (allValues.get(value) || 0) + count);
+                                            });
+                                        });
+
+                                        // Calculate minimum count threshold: at least 3 occurrences AND >3% of total points
+                                        const minAbsoluteCount = 3;
+                                        const minPctThreshold = 0.03; // 3% of total
+                                        const minCountByPct = Math.ceil(totalPoints * minPctThreshold);
+                                        const minCount = Math.max(minAbsoluteCount, minCountByPct);
+
+                                        // For each value, find which cluster has the highest % of it
+                                        allValues.forEach((totalCount, value) => {
+                                            // Filter out rare values - they appear too few times to be meaningful
+                                            if (totalCount < minCount) return;
+
+                                            let maxPct = 0;
+                                            let ownerCluster = -1;
+                                            const clusterPcts: { cluster: number, pct: number }[] = [];
+
+                                            distributions.forEach((dist, cluster) => {
+                                                const count = dist.valueCounts.get(value) || 0;
+                                                const pct = count / dist.total;
+                                                clusterPcts.push({ cluster, pct });
+                                                if (pct > maxPct) {
+                                                    maxPct = pct;
+                                                    ownerCluster = cluster;
+                                                }
+                                            });
+
+                                            // Only include if some cluster has >15% of this value
+                                            if (maxPct >= 0.15) {
+                                                valueOwners.push({
+                                                    value,
+                                                    ownerCluster,
+                                                    pct: maxPct,
+                                                    totalCount,
+                                                    otherClusters: clusterPcts.filter(c => c.cluster !== ownerCluster && c.pct > 0.05).sort((a, b) => b.pct - a.pct)
+                                                });
+                                            }
+                                        });
+
+                                        // Sort by owner's percentage
+                                        valueOwners.sort((a, b) => b.pct - a.pct);
+
+                                        // Recalculate avgOverlap excluding rare values for more accurate DISTINGUISHING label
+                                        // A field is only "distinguishing" if it has meaningful values that differ
+                                        const meaningfulOverlap = valueOwners.length > 0 ? avgOverlap : 1; // No meaningful values = not distinguishing
+
+                                        return { field, avgOverlap: meaningfulOverlap, isArrayField, valueOwners: valueOwners.slice(0, 6) };
+                                    });
+                                };
+
+                                const fieldOwnership = computeFieldOwnership();
+
+                                // ============ RENDER BASED ON VIEW ============
+
+                                // Cluster summary header (shown in all views)
+                                const ClusterSummary = () => (
+                                    <div style={{ marginBottom: '20px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                                        {clusters.map(cluster => {
+                                            const data = clusterData.get(cluster)!;
+                                            const color = kColorTable[cluster] || '#888';
+                                            return (
+                                                <div key={cluster} style={{
+                                                    background: '#252525',
+                                                    padding: '8px 14px',
+                                                    borderRadius: '6px',
+                                                    borderLeft: `3px solid ${color}`,
+                                                    fontSize: '12px',
+                                                }}>
+                                                    <span style={{ color, fontWeight: 'bold' }}>C{cluster}</span>
+                                                    <span style={{ color: '#888', marginLeft: '8px' }}>{data.points.length} pts</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                );
+
+                                // Get column statistics from model card (MI, predictability) - for all views
+                                const columnStats = modelCardData?.column_statistics || {};
+
+                                // ============ SIGNATURES VIEW ============
+                                if (clusterAnalysisView === 'signatures') {
+                                    return (
+                                        <div>
+                                            <ClusterSummary />
+                                            <div style={{ fontSize: '13px', color: '#888', marginBottom: '16px' }}>
+                                                Values that are <strong style={{ color: '#4f4' }}>over-represented</strong> in each cluster compared to the overall dataset.
+                                            </div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '16px' }}>
+                                                {clusters.map(cluster => {
+                                                    const sigs = clusterSignatures.get(cluster) || [];
+                                                    const color = kColorTable[cluster] || '#888';
+                                                    return (
+                                                        <div key={cluster} style={{
+                                                            background: '#222',
+                                                            borderRadius: '8px',
+                                                            border: `1px solid ${color}44`,
+                                                            overflow: 'hidden',
+                                                        }}>
+                                                            <div style={{
+                                                                background: `${color}22`,
+                                                                padding: '12px 16px',
+                                                                borderBottom: `1px solid ${color}44`,
+                                                            }}>
+                                                                <span style={{ color, fontWeight: 'bold', fontSize: '16px' }}>Cluster {cluster}</span>
+                                                                <span style={{ color: '#888', marginLeft: '12px', fontSize: '12px' }}>
+                                                                    {clusterData.get(cluster)!.points.length} points
+                                                                </span>
+                                                            </div>
+                                                            <div style={{ padding: '12px 16px' }}>
+                                                                {sigs.length === 0 ? (
+                                                                    <div style={{ color: '#666', fontStyle: 'italic', fontSize: '12px' }}>
+                                                                        No strong distinguishing values found
+                                                                    </div>
+                                                                ) : (
+                                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                                        {sigs.map((sig, i) => {
+                                                                            const sigFieldStats = columnStats[sig.field];
+                                                                            const sigMI = sigFieldStats?.mutual_information_bits;
+                                                                            return (
+                                                                            <div key={i} style={{ fontSize: '12px' }}>
+                                                                                <span style={{ color: '#4cf' }}>{sig.field}</span>
+                                                                                {sigMI !== undefined && sigMI !== null && (
+                                                                                    <span style={{
+                                                                                        fontSize: '9px',
+                                                                                        padding: '1px 4px',
+                                                                                        borderRadius: '3px',
+                                                                                        background: '#4448',
+                                                                                        color: '#aaa',
+                                                                                        marginLeft: '4px',
+                                                                                        fontFamily: 'monospace',
+                                                                                    }}
+                                                                                    title={`Mutual Information: ${sigMI.toFixed(3)} bits`}
+                                                                                    >
+                                                                                        MI:{sigMI.toFixed(2)}
+                                                                                    </span>
+                                                                                )}
+                                                                                <span style={{ color: '#666' }}>{sig.isArrayField ? ' contains ' : ' = '}</span>
+                                                                                <span style={{ color: '#fff' }}>"{sig.value.length > 25 ? sig.value.slice(0, 25) + '...' : sig.value}"</span>
+                                                                                {sig.isArrayField && <span style={{ color: '#666', fontSize: '10px', marginLeft: '4px' }}>(list)</span>}
+                                                                                <div style={{ marginLeft: '12px', fontSize: '11px', color: '#888' }}>
+                                                                                    <span style={{ color: '#4f4' }}>{(sig.clusterPct * 100).toFixed(0)}%</span> have this vs{' '}
+                                                                                    <span>{(sig.overallPct * 100).toFixed(0)}%</span> overall{' '}
+                                                                                    <span style={{ color: '#f84' }}>({sig.lift.toFixed(1)}x)</span>
+                                                                                </div>
+                                                                            </div>
+                                                                        );})}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    );
+                                }
+
+                                // ============ FIELDS VIEW ============
+                                if (clusterAnalysisView === 'fields') {
+                                    return (
+                                        <div>
+                                            <ClusterSummary />
+                                            <div style={{ fontSize: '13px', color: '#888', marginBottom: '16px' }}>
+                                                For each field, which <strong style={{ color: '#4cf' }}>values belong to which clusters</strong>.
+                                                Fields sorted by distinctiveness (most distinguishing first).
+                                                {Object.keys(columnStats).length > 0 && (
+                                                    <span style={{ marginLeft: '8px', color: '#666' }}>
+                                                        MI = Mutual Information (how predictable from other columns)
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                {fieldOwnership.filter(f => f.valueOwners.length > 0).map(({ field, avgOverlap, isArrayField, valueOwners }) => {
+                                                    const overlapColor = avgOverlap < 0.2 ? '#4f4' : avgOverlap < 0.5 ? '#ff4' : '#f44';
+                                                    const fieldStats = columnStats[field];
+                                                    const mi = fieldStats?.mutual_information_bits;
+                                                    const predictability = fieldStats?.predictability_pct;
+                                                    return (
+                                                        <div key={field} style={{
+                                                            background: '#222',
+                                                            borderRadius: '6px',
+                                                            padding: '12px 16px',
+                                                        }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                                                                <span style={{ color: '#4cf', fontWeight: 'bold', fontSize: '13px' }}>{field}</span>
+                                                                {mi !== undefined && mi !== null && (
+                                                                    <span style={{
+                                                                        fontSize: '9px',
+                                                                        padding: '2px 6px',
+                                                                        borderRadius: '4px',
+                                                                        background: mi > 0.5 ? '#9c27b022' : '#4448',
+                                                                        color: mi > 0.5 ? '#ce93d8' : '#aaa',
+                                                                        fontFamily: 'monospace',
+                                                                    }}
+                                                                    title={`Mutual Information: ${mi.toFixed(3)} bits${predictability !== undefined ? ` (${predictability.toFixed(1)}% predictable)` : ''}`}
+                                                                    >
+                                                                        MI: {mi.toFixed(2)}
+                                                                    </span>
+                                                                )}
+                                                                {isArrayField && (
+                                                                    <span style={{
+                                                                        fontSize: '9px',
+                                                                        padding: '2px 5px',
+                                                                        borderRadius: '4px',
+                                                                        background: '#4448',
+                                                                        color: '#aaa',
+                                                                    }}>
+                                                                        list membership
+                                                                    </span>
+                                                                )}
+                                                                <span style={{
+                                                                    fontSize: '10px',
+                                                                    padding: '2px 6px',
+                                                                    borderRadius: '8px',
+                                                                    background: `${overlapColor}22`,
+                                                                    color: overlapColor,
+                                                                }}>
+                                                                    {avgOverlap < 0.2 ? 'DISTINGUISHING' : avgOverlap < 0.5 ? 'MODERATE' : 'COMMON'}
+                                                                </span>
+                                                            </div>
+                                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                                                {valueOwners.map((vo, i) => {
+                                                                    const ownerColor = kColorTable[vo.ownerCluster] || '#888';
+                                                                    return (
+                                                                        <div key={i} style={{
+                                                                            background: '#2a2a2a',
+                                                                            padding: '6px 10px',
+                                                                            borderRadius: '4px',
+                                                                            fontSize: '11px',
+                                                                            borderLeft: `3px solid ${ownerColor}`,
+                                                                        }}>
+                                                                            <span style={{ color: '#ddd' }}>"{vo.value.length > 20 ? vo.value.slice(0, 20) + '...' : vo.value}"</span>
+                                                                            <span style={{ color: ownerColor, marginLeft: '8px', fontWeight: 'bold' }}>
+                                                                                C{vo.ownerCluster} ({(vo.pct * 100).toFixed(0)}%)
+                                                                            </span>
+                                                                            {vo.otherClusters.slice(0, 2).map(oc => (
+                                                                                <span key={oc.cluster} style={{ color: '#666', marginLeft: '4px' }}>
+                                                                                    C{oc.cluster}:{(oc.pct * 100).toFixed(0)}%
+                                                                                </span>
+                                                                            ))}
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    );
+                                }
+
+                                // ============ DETAILS VIEW (original) ============
+                                return (
+                                    <div>
+                                        {/* Cluster summary */}
+                                        <div style={{ marginBottom: '20px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                                            {clusters.map(cluster => {
+                                                const data = clusterData.get(cluster)!;
+                                                const color = kColorTable[cluster] || '#888';
+                                                return (
+                                                    <div key={cluster} style={{
+                                                        background: '#252525',
+                                                        padding: '12px 16px',
+                                                        borderRadius: '8px',
+                                                        borderLeft: `4px solid ${color}`,
+                                                    }}>
+                                                        <div style={{ color, fontWeight: 'bold', fontSize: '14px' }}>Cluster {cluster}</div>
+                                                        <div style={{ color: '#aaa', fontSize: '12px' }}>{data.points.length} points</div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {/* Field analysis table */}
+                                        <div style={{ overflowX: 'auto' }}>
+                                            <table style={{
+                                                width: '100%',
+                                                borderCollapse: 'collapse',
+                                                fontSize: '12px',
+                                                fontFamily: 'monospace'
+                                            }}>
+                                                <thead style={{ position: 'sticky', top: 0, background: '#1a1a1a', zIndex: 1 }}>
+                                                    <tr>
+                                                        <th style={{
+                                                            padding: '10px',
+                                                            textAlign: 'left',
+                                                            borderBottom: '2px solid #444',
+                                                            color: '#4cf',
+                                                            fontWeight: 'bold',
+                                                            minWidth: '150px'
+                                                        }}>
+                                                            Field
+                                                        </th>
+                                                        <th style={{
+                                                            padding: '10px',
+                                                            textAlign: 'center',
+                                                            borderBottom: '2px solid #444',
+                                                            color: '#f84',
+                                                            fontWeight: 'bold',
+                                                            width: '80px'
+                                                        }} title="Average Jaccard similarity across clusters (lower = more distinguishing)">
+                                                            Overlap
+                                                        </th>
+                                                        {clusters.map(cluster => {
+                                                            const color = kColorTable[cluster] || '#888';
+                                                            return (
+                                                                <th key={cluster} style={{
+                                                                    padding: '10px',
+                                                                    textAlign: 'left',
+                                                                    borderBottom: `3px solid ${color}`,
+                                                                    color: '#ddd',
+                                                                    fontWeight: 'bold',
+                                                                    minWidth: '200px'
+                                                                }}>
+                                                                    C{cluster} Top Values
+                                                                </th>
+                                                            );
+                                                        })}
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {fieldStats.map(({ field, distributions, avgOverlap }) => {
+                                                        const overlapColor = avgOverlap < 0.2 ? '#4f4' : avgOverlap < 0.5 ? '#ff4' : '#f44';
+                                                        const overlapLabel = avgOverlap < 0.2 ? 'LOW' : avgOverlap < 0.5 ? 'MED' : 'HIGH';
+
+                                                        return (
+                                                            <tr key={field} style={{ borderBottom: '1px solid #333' }}>
+                                                                <td style={{
+                                                                    padding: '8px 10px',
+                                                                    color: avgOverlap < 0.3 ? '#4cf' : '#888',
+                                                                    fontWeight: avgOverlap < 0.3 ? 'bold' : 'normal',
+                                                                    verticalAlign: 'top'
+                                                                }}>
+                                                                    {field}
+                                                                </td>
+                                                                <td style={{
+                                                                    padding: '8px 10px',
+                                                                    textAlign: 'center',
+                                                                    verticalAlign: 'top'
+                                                                }}>
+                                                                    <div style={{
+                                                                        display: 'inline-block',
+                                                                        padding: '2px 8px',
+                                                                        borderRadius: '10px',
+                                                                        background: overlapColor + '33',
+                                                                        color: overlapColor,
+                                                                        fontSize: '10px',
+                                                                        fontWeight: 'bold'
+                                                                    }}>
+                                                                        {overlapLabel}
+                                                                    </div>
+                                                                    <div style={{ fontSize: '10px', color: '#666', marginTop: '2px' }}>
+                                                                        {(avgOverlap * 100).toFixed(0)}%
+                                                                    </div>
+                                                                </td>
+                                                                {clusters.map(cluster => {
+                                                                    const dist = distributions.get(cluster)!;
+                                                                    const topValues = Array.from(dist.valueCounts.entries())
+                                                                        .sort((a, b) => b[1] - a[1])
+                                                                        .slice(0, 3);
+                                                                    const uniqueCount = dist.valueCounts.size;
+
+                                                                    return (
+                                                                        <td key={cluster} style={{
+                                                                            padding: '8px 10px',
+                                                                            color: '#ccc',
+                                                                            verticalAlign: 'top',
+                                                                            borderLeft: '1px solid #333',
+                                                                            fontSize: '11px'
+                                                                        }}>
+                                                                            {topValues.length > 0 ? (
+                                                                                <>
+                                                                                    {topValues.map(([val, count], i) => (
+                                                                                        <div key={i} style={{ marginBottom: '2px' }}>
+                                                                                            <span style={{ color: '#fff' }}>{val.length > 30 ? val.substring(0, 30) + '...' : val}</span>
+                                                                                            <span style={{ color: '#666', marginLeft: '6px' }}>({count}/{dist.total})</span>
+                                                                                        </div>
+                                                                                    ))}
+                                                                                    {uniqueCount > 3 && (
+                                                                                        <div style={{ color: '#666', fontStyle: 'italic' }}>
+                                                                                            +{uniqueCount - 3} more unique values
+                                                                                        </div>
+                                                                                    )}
+                                                                                </>
+                                                                            ) : (
+                                                                                <span style={{ color: '#555' }}>all null</span>
+                                                                            )}
+                                                                        </td>
+                                                                    );
+                                                                })}
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                    </div>
                 </>
             )}
 
