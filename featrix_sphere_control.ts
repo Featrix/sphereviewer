@@ -444,8 +444,19 @@ function attach_sphere_to_container(sphere: SphereData) {
 /**
  * Update point opacity based on depth relative to camera.
  * Points on the back of the sphere get lower opacity for better depth perception.
+ *
+ * PERFORMANCE: This is expensive - only run every N frames
  */
+let depthOpacityFrameCounter = 0;
+const DEPTH_OPACITY_UPDATE_INTERVAL = 6; // Update every 6 frames (~10fps at 60fps)
+
 function updatePointDepthOpacity(sphere: SphereData) {
+    // PERFORMANCE: Skip most frames to reduce CPU load
+    depthOpacityFrameCounter++;
+    if (depthOpacityFrameCounter % DEPTH_OPACITY_UPDATE_INTERVAL !== 0) {
+        return;
+    }
+
     // Calculate camera direction (normalized vector from center to camera)
     const cameraDir = new THREE.Vector3();
     cameraDir.subVectors(sphere.camera.position, sphere.sceneCenter).normalize();
@@ -563,7 +574,7 @@ function add_point_to_sphere(sphere: SphereData, record: SphereRecord) {
     const opacity = sphere.pointOpacity;
     
 
-    const geometry = new THREE.SphereGeometry(pointSize, 16, 16);
+    const geometry = new THREE.SphereGeometry(pointSize, 8, 6);
     const material = new THREE.MeshBasicMaterial({ color: getColor(record), opacity: opacity, transparent: true });
     const mesh = new THREE.Mesh(geometry, material);
     
@@ -1046,7 +1057,7 @@ export function update_all_point_visuals(sphere: SphereData) {
     sphere.pointObjectsByRecordID.forEach((mesh) => {
         // Update geometry for size change
         mesh.geometry.dispose(); // Clean up old geometry
-        mesh.geometry = new THREE.SphereGeometry(sphere.pointSize, 16, 16);
+        mesh.geometry = new THREE.SphereGeometry(sphere.pointSize, 8, 6);
 
         // CRITICAL: Reset scale to 1.0 - dynamic point sizing may have changed it
         mesh.scale.setScalar(1.0);
