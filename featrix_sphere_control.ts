@@ -1,5 +1,6 @@
 import { TRACE_OUTPUT_VERSION } from "next/dist/shared/lib/constants";
 import * as THREE from "three";
+import * as CANNON from "cannon-es";
 import { v4 as uuid4 } from "uuid";
 
 
@@ -258,6 +259,16 @@ export interface SphereData {
     // Drag-pause state: track what was playing before drag started
     wasPlayingMovieBeforeDrag?: boolean;
     wasAutoRotatingBeforeDrag?: boolean;
+
+    // Physics simulation for restart effect
+    physicsWorld?: CANNON.World;
+    physicsBodies?: Map<string, CANNON.Body>;
+    isPhysicsRunning?: boolean;
+    physicsAnimationRef?: number;
+    originalPositions?: Map<string, THREE.Vector3>;
+
+    // Auto-loop movie with physics effect between loops
+    autoLoopMovie?: boolean;
 }
 
 export type SphereRecord = {
@@ -1221,9 +1232,136 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any, 
     // CRITICAL: Update first frame immediately to set correct colors
     // This prevents red dots from appearing at the start
     update_training_movie_frame(sphere, firstEpochKey);
-    
+
     // Force initial render
     render_sphere(sphere);
+}
+
+// Physics-based reset effect - points fall and bounce when movie loops
+export function start_physics_reset_effect(sphere: SphereData, onComplete: () => void) {
+    // Don't start if already running
+    if (sphere.isPhysicsRunning) return;
+
+    sphere.isPhysicsRunning = true;
+
+    // Create physics world with gravity
+    const world = new CANNON.World();
+    world.gravity.set(0, -15, 0); // Strong gravity for fast fall
+    world.broadphase = new CANNON.NaiveBroadphase();
+    sphere.physicsWorld = world;
+
+    // Create a floor plane at the bottom of the view
+    const floorBody = new CANNON.Body({
+        type: CANNON.Body.STATIC,
+        shape: new CANNON.Plane(),
+    });
+    floorBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0); // Rotate to be horizontal
+    floorBody.position.set(0, -1.5, 0); // Floor below the sphere
+    world.addBody(floorBody);
+
+    // Store original positions and create physics bodies for each point
+    sphere.originalPositions = new Map();
+    sphere.physicsBodies = new Map();
+
+    const pointRadius = sphere.pointSize || 0.02;
+    const sphereShape = new CANNON.Sphere(pointRadius);
+
+    sphere.pointObjectsByRecordID.forEach((mesh, recordId) => {
+        // Store original position
+        sphere.originalPositions!.set(recordId, mesh.position.clone());
+
+        // Create physics body
+        const body = new CANNON.Body({
+            mass: 1,
+            shape: sphereShape,
+            position: new CANNON.Vec3(mesh.position.x, mesh.position.y, mesh.position.z),
+            material: new CANNON.Material({ friction: 0.3, restitution: 0.6 }), // Bouncy!
+        });
+
+        // Add some random initial velocity for tumble effect
+        body.velocity.set(
+            (Math.random() - 0.5) * 2,
+            (Math.random() - 0.5) * 1,
+            (Math.random() - 0.5) * 2
+        );
+
+        // Add slight angular velocity for rotation
+        body.angularVelocity.set(
+            (Math.random() - 0.5) * 5,
+            (Math.random() - 0.5) * 5,
+            (Math.random() - 0.5) * 5
+        );
+
+        world.addBody(body);
+        sphere.physicsBodies!.set(recordId, body);
+    });
+
+    // Run physics simulation
+    const startTime = Date.now();
+    const duration = 2000; // 2 seconds of physics
+    const timeStep = 1 / 60;
+
+    const animatePhysics = () => {
+        if (!sphere.isPhysicsRunning) return;
+
+        const elapsed = Date.now() - startTime;
+
+        // Step the physics world
+        world.step(timeStep);
+
+        // Update Three.js mesh positions from physics bodies
+        sphere.physicsBodies!.forEach((body, recordId) => {
+            const mesh = sphere.pointObjectsByRecordID.get(recordId);
+            if (mesh) {
+                mesh.position.set(body.position.x, body.position.y, body.position.z);
+            }
+        });
+
+        // Render
+        render_sphere(sphere);
+
+        // Check if simulation should end
+        if (elapsed < duration) {
+            sphere.physicsAnimationRef = requestAnimationFrame(animatePhysics);
+        } else {
+            // Cleanup - don't restore positions so points animate from floor to epoch 0
+            stop_physics_effect(sphere, false);
+            onComplete();
+        }
+    };
+
+    // Start the physics animation
+    sphere.physicsAnimationRef = requestAnimationFrame(animatePhysics);
+}
+
+export function stop_physics_effect(sphere: SphereData, restorePositions: boolean = true) {
+    sphere.isPhysicsRunning = false;
+
+    if (sphere.physicsAnimationRef) {
+        cancelAnimationFrame(sphere.physicsAnimationRef);
+        sphere.physicsAnimationRef = undefined;
+    }
+
+    // Optionally restore original positions
+    // When looping, we skip this so points animate from floor to epoch 0
+    if (restorePositions && sphere.originalPositions) {
+        sphere.originalPositions.forEach((pos, recordId) => {
+            const mesh = sphere.pointObjectsByRecordID.get(recordId);
+            if (mesh) {
+                mesh.position.copy(pos);
+            }
+        });
+    }
+
+    // Cleanup physics
+    sphere.physicsWorld = undefined;
+    sphere.physicsBodies = undefined;
+    sphere.originalPositions = undefined;
+}
+
+// Enable or disable auto-loop with physics effect between loops
+export function set_movie_auto_loop(sphere: SphereData, enabled: boolean) {
+    sphere.autoLoopMovie = enabled;
 }
 
 export function play_training_movie(sphere: SphereData, durationSeconds: number = 10) {
@@ -1267,8 +1405,7 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
         sphere.currentEpoch++;
 
         if (sphere.currentEpoch >= totalFrames) {
-            // Training complete - set final state and stop movie timer
-            // Auto-rotation will continue naturally from the animation loop
+            // Training complete - set final state
             const finalEpochKey = epochKeys[epochKeys.length - 1];
             update_training_movie_frame(sphere, finalEpochKey, true); // Force final state
 
@@ -1282,8 +1419,41 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
                 });
             }
 
+            // Check if we should loop with physics effect
+            if (sphere.autoLoopMovie) {
+                // Stop the movie timer during physics
+                sphere.isPlayingMovie = false;
+
+                // Start physics effect - points fall and bounce
+                start_physics_reset_effect(sphere, () => {
+                    // Physics complete - restart movie from beginning
+                    sphere.currentEpoch = 0;
+                    sphere.isPlayingMovie = true;
+
+                    // Notify restart
+                    if (sphere.frameUpdateCallback) {
+                        sphere.frameUpdateCallback({
+                            current: 1,
+                            total: totalFrames,
+                            visible: 0,
+                            phase: 'restarting'
+                        });
+                    }
+
+                    // Immediately update to epoch 0 positions (don't wait for frameDelay)
+                    const firstEpochKey = epochKeys[0];
+                    update_training_movie_frame(sphere, firstEpochKey);
+
+                    // Then schedule next frame
+                    sphere.currentEpoch = 1;
+                    sphere.movieAnimationRef = setTimeout(animate, frameDelay);
+                });
+                return;
+            }
+
+            // No loop - stop the movie, auto-rotation continues
             sphere.isPlayingMovie = false;
-            return; // Stop the training movie timer, auto-rotation continues
+            return;
         }
 
         // Schedule next frame

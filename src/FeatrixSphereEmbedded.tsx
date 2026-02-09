@@ -12,7 +12,7 @@ import React, { Suspense, useEffect, useRef, useState, useCallback, useMemo } fr
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
 import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch, fetch_thumbnail_data, setRetryStatusCallback } from './embed-data-access';
-import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, set_wireframe_opacity, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles, register_event_listener, set_cluster_color_mode, compute_epoch_movement_stats } from '../featrix_sphere_control';
+import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, set_wireframe_opacity, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles, register_event_listener, set_cluster_color_mode, compute_epoch_movement_stats, set_movie_auto_loop } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 import CollapsibleSection from './components/CollapsibleSection';
 import { LossPlotOverlay, MovementPlotOverlay } from './components/Charts';
@@ -325,6 +325,8 @@ const TrainingMovieSphere: React.FC<{
                 (sphereRef.current as any).__resizeObserver = resizeObserver;
             }
             
+            // Enable auto-loop with physics effect between loops
+            set_movie_auto_loop(sphereRef.current, true);
             // Start playing the training movie
             play_training_movie(sphereRef.current, 10);
             // Notify parent that sphere is ready
@@ -412,6 +414,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
     const [showDataInspector, setShowDataInspector] = useState(false);
     const [hideNulls, setHideNulls] = useState(false);
     const [showOnlyDifferences, setShowOnlyDifferences] = useState(false);
+    const [inspectorFieldSearch, setInspectorFieldSearch] = useState('');
     const [inspectorPosition, setInspectorPosition] = useState({ x: 100, y: 100 });
     const [isDraggingInspector, setIsDraggingInspector] = useState(false);
     const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -3709,6 +3712,54 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                         </div>
                     </div>
 
+                    {/* Search field */}
+                    {(() => {
+                        // Compute total field count for display
+                        const allFieldsSet = new Set<string>();
+                        selectedPoints.forEach(point => {
+                            if (point.data) Object.keys(point.data).forEach(f => allFieldsSet.add(f));
+                        });
+                        const totalFields = allFieldsSet.size;
+
+                        return (
+                            <div style={{ marginBottom: '8px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                <input
+                                    type="text"
+                                    placeholder={`Search ${totalFields} fields...`}
+                                    value={inspectorFieldSearch}
+                                    onChange={(e) => setInspectorFieldSearch(e.target.value)}
+                                    style={{
+                                        flex: 1,
+                                        padding: '6px 10px',
+                                        background: '#2a2a2a',
+                                        border: '1px solid #444',
+                                        borderRadius: '4px',
+                                        color: '#ddd',
+                                        fontSize: '12px',
+                                        outline: 'none'
+                                    }}
+                                    onFocus={(e) => e.target.style.borderColor = '#4c4'}
+                                    onBlur={(e) => e.target.style.borderColor = '#444'}
+                                />
+                                {inspectorFieldSearch && (
+                                    <button
+                                        onClick={() => setInspectorFieldSearch('')}
+                                        style={{
+                                            background: 'transparent',
+                                            border: 'none',
+                                            color: '#888',
+                                            cursor: 'pointer',
+                                            fontSize: '14px',
+                                            padding: '4px'
+                                        }}
+                                    >
+                                        ×
+                                    </button>
+                                )}
+                            </div>
+                        );
+                    })()}
+
                     {/* Data table */}
                     <div style={{ overflowY: 'auto', flex: 1 }}>
                         <table style={{
@@ -3780,7 +3831,18 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                                         }
                                     });
 
-                                    const sortedFields = Array.from(allFields).sort();
+                                    const totalFieldCount = allFields.size;
+
+                                    // Filter by search term if provided
+                                    const searchLower = inspectorFieldSearch.toLowerCase();
+                                    const sortedFields = Array.from(allFields)
+                                        .filter(field => !searchLower || field.toLowerCase().includes(searchLower))
+                                        .sort();
+
+                                    // Show field count at start if there are many fields
+                                    const fieldCountInfo = searchLower
+                                        ? `Showing ${sortedFields.length} of ${totalFieldCount} fields`
+                                        : `${totalFieldCount} fields`;
 
                                     // Helper to normalize values for comparison
                                     const normalizeValue = (val: any) => {
