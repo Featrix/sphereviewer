@@ -12,7 +12,7 @@ import React, { Suspense, useEffect, useRef, useState, useCallback, useMemo } fr
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
 import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch, fetch_thumbnail_data, setRetryStatusCallback } from './embed-data-access';
-import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, set_wireframe_opacity, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles, register_event_listener, set_cluster_color_mode, compute_epoch_movement_stats, set_movie_auto_loop, trim_trail_history } from '../featrix_sphere_control';
+import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, set_wireframe_opacity, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles, register_event_listener, set_cluster_color_mode, compute_epoch_movement_stats, set_movie_auto_loop, trim_trail_history, set_playback_speed } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 import CollapsibleSection from './components/CollapsibleSection';
 import { LossPlotOverlay, MovementPlotOverlay } from './components/Charts';
@@ -447,6 +447,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
     const outerContainerRef = useRef<HTMLDivElement>(null);
     const [frameInfo, setFrameInfo] = useState<{ current: number, total: number, visible: number, epoch?: string, validationLoss?: number, sphereCoverage?: number } | null>(null);
     const [isPlaying, setIsPlaying] = useState(true); // Start playing automatically
+    const [playbackSpeed, setPlaybackSpeed] = usePersistedState('playbackSpeed', 1.0); // 1x = normal speed
     const [frameInput, setFrameInput] = useState<string>('');
     const [showDynamicHulls, setShowDynamicHulls] = usePersistedState('showDynamicHulls', false);
     const [trailLength, setTrailLength] = usePersistedState('trailLength', 12);
@@ -564,7 +565,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
     const [rotationEnabled, setRotationEnabled] = usePersistedState('rotationEnabled', true);
 
     // Point visual controls - optimized for performance, persisted
-    const [pointSize, setPointSize] = usePersistedState('pointSize', 0.01);
+    // Mobile gets 2x default point size for better visibility on small screens
+    const [pointSize, setPointSize] = usePersistedState('pointSize', isMobile ? 0.02 : 0.01);
     const [pointAlpha, setPointAlpha] = usePersistedState('pointAlpha', 0.50);
     const [wireframeOpacity, setWireframeOpacity] = usePersistedState('wireframeOpacity', 0.05);
     const [alphaByMovement, setAlphaByMovement] = usePersistedState('alphaByMovement', false);
@@ -1181,6 +1183,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
         if (!sphereRef) return;
         set_cluster_color_mode(sphereRef, clusterColorMode);
     }, [clusterColorMode, sphereRef]);
+
+    // Sync playback speed to sphere
+    useEffect(() => {
+        if (!sphereRef) return;
+        set_playback_speed(sphereRef, playbackSpeed);
+    }, [playbackSpeed, sphereRef]);
 
     // Frame control functions
     const handlePlayPause = () => {
@@ -1846,7 +1854,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                 height: '100vh',
                 background: '#2a2a2a',
                 color: '#d0d0d0',
-                position: 'relative'
+                position: 'relative',
+                fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
             }}>
                 {trainingStatus === 'loading' && (
                     <>
@@ -2031,14 +2040,24 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
 
     return (
         <div ref={outerContainerRef} className="training-progress-display" style={{
-            display: 'grid',
+            display: isMobile || isThumbnail ? 'flex' : 'grid',
+            flexDirection: 'column',
             gridTemplateRows: isThumbnail ? '1fr' : '44px 1fr',
             gridTemplateColumns: isThumbnail || isMobile ? '1fr' : (isWideScreen ? '400px 1fr' : '360px 1fr'),
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
             width: '100%',
-            height: '100vh',
+            maxWidth: '100%',
+            height: '100%',
+            margin: 0,
+            padding: 0,
+            boxSizing: 'border-box',
+            overflow: 'hidden',
             background: '#1e1e1e',
             color: '#e6e6e6',
-            overflow: 'hidden',
             fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
         }}>
             {/* Top Control Strip - spans full width */}
@@ -2046,11 +2065,15 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
             <div style={{
                 gridColumn: '1 / -1',
                 height: '44px',
+                flexShrink: 0,
                 background: '#141414',
                 borderBottom: '1px solid #2a2a2a',
                 display: 'flex',
                 alignItems: 'center',
                 padding: '0 16px',
+                minWidth: 0,
+                overflow: 'hidden',
+                boxSizing: 'border-box',
             }}>
                 {/* Left: Panel button (mobile) or Session name (desktop) */}
                 <div style={{
@@ -3415,13 +3438,16 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
             {/* Sphere Container - fills remaining space */}
             <div style={{
                 gridColumn: isMobile || isThumbnail ? '1' : '2',
+                gridRow: isThumbnail ? '1' : '2',
                 position: 'relative',
                 background: '#232323',
                 minHeight: 0,
+                minWidth: 0,
                 overflow: 'hidden',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
+                width: '100%',
+                height: '100%',
+                boxSizing: 'border-box',
+                flex: isMobile || isThumbnail ? 1 : undefined,
             }}>
                 {/* Countdown Overlay - only temporary, positioned over sphere */}
                 {showCountdown && (
@@ -3502,24 +3528,19 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                         left: 0,
                         right: 0,
                         bottom: 0,
-                        display: 'flex',
-                        alignItems: 'stretch',
-                        justifyContent: 'stretch'
                     }}
                 >
-                    <div 
-                        ref={containerRef} 
-                        style={{ 
-                            width: '100%', 
-                            height: '100%',
-                            minWidth: '100%',
-                            minHeight: '100%',
-                            maxWidth: '100%',
-                            maxHeight: '100%',
+                    <div
+                        ref={containerRef}
+                        style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
                             background: 'transparent',
                             pointerEvents: 'auto',
                             cursor: 'pointer',
-                            flex: '1 1 100%'
                         }}
                     />
                 {trainingData ? (
@@ -3712,6 +3733,31 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                         <span style={{ color: '#888', fontSize: '11px', fontFamily: 'system-ui, -apple-system, sans-serif', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', flexShrink: 0 }}>
                             {frameInfo.current}<span style={{ color: '#555' }}>/</span>{frameInfo.total}
                         </span>
+
+                        {/* Playback speed dropdown */}
+                        <select
+                            value={playbackSpeed}
+                            onChange={(e) => setPlaybackSpeed(parseFloat(e.target.value))}
+                            style={{
+                                background: 'transparent',
+                                border: '1px solid #444',
+                                borderRadius: '4px',
+                                color: '#aaa',
+                                fontSize: '11px',
+                                padding: '2px 4px',
+                                cursor: 'pointer',
+                                marginLeft: '8px',
+                                flexShrink: 0,
+                            }}
+                            title="Playback Speed"
+                        >
+                            <option value={0.25} style={{ background: '#222' }}>0.25x</option>
+                            <option value={0.5} style={{ background: '#222' }}>0.5x</option>
+                            <option value={1} style={{ background: '#222' }}>1x</option>
+                            <option value={2} style={{ background: '#222' }}>2x</option>
+                            <option value={4} style={{ background: '#222' }}>4x</option>
+                            <option value={8} style={{ background: '#222' }}>8x</option>
+                        </select>
                     </div>
                 )}
                 </div>

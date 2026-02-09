@@ -230,7 +230,7 @@ class FeatrixSphereViewer {
       container.id = id;
       const w = width || '100%';
       const h = height || '500px';
-      container.style.cssText = `width: ${w}; height: ${h}; min-height: 300px;`;
+      container.style.cssText = `width: ${w}; max-width: 100vw; height: ${h}; min-height: 300px; overflow: hidden; position: relative; box-sizing: border-box;`;
 
       // Insert after the script tag or at the end of body
       const scripts = document.querySelectorAll('script[src*="sphere-viewer.js"]');
@@ -246,8 +246,26 @@ class FeatrixSphereViewer {
       if (width) container.style.width = width === '100vw' ? '100%' : width;
       if (height) container.style.height = height;
     }
-    // For existing containers without explicit dimensions, leave sizing as-is
-    // The React component uses height: 100% to fill the container
+
+    // ALWAYS constrain existing containers to viewport to fix mobile overflow
+    // Use actual window.innerWidth instead of 100vw (which is broken on iOS)
+    const isMobile = window.innerWidth < 768;
+    if (isMobile) {
+      container.style.width = `${window.innerWidth}px`;
+      container.style.maxWidth = `${window.innerWidth}px`;
+      // Update on resize
+      const resizeHandler = () => {
+        container.style.width = `${window.innerWidth}px`;
+        container.style.maxWidth = `${window.innerWidth}px`;
+      };
+      window.addEventListener('resize', resizeHandler);
+      window.addEventListener('orientationchange', resizeHandler);
+    } else {
+      container.style.maxWidth = '100%';
+    }
+    container.style.overflow = 'hidden';
+    container.style.position = 'relative';
+    container.style.boxSizing = 'border-box';
 
     return container;
   }

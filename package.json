@@ -1,6 +1,6 @@
 {
   "name": "@featrix/sphere-viewer",
-  "version": "1.0.0",
+  "version": "1.220",
   "description": "Embeddable 3D sphere data visualization component using Three.js and React. Copyright (c) 2024-2025 Featrix.",
   "main": "dist/sphere-viewer.js",
   "files": [

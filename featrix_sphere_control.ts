@@ -274,6 +274,9 @@ export interface SphereData {
     // Alpha by movement - transparent for large moves, opaque for small moves (convergence effect)
     alphaByMovement?: boolean;
 
+    // Playback speed multiplier (1.0 = normal, 2.0 = 2x faster, 0.5 = half speed)
+    playbackSpeed?: number;
+
     // Internal: Counter for throttling hull animation updates
     _hullAnimationCounter?: number;
 
@@ -426,10 +429,8 @@ export function remove_similarity_search_results(sphere: SphereData, anchor_id: 
 
 
 function fit_sphere_to_container(sphere: SphereData) {
-    // Use getBoundingClientRect for more reliable dimensions on mobile
-    const rect = sphere.container.getBoundingClientRect();
-    const width = rect.width || sphere.container.clientWidth;
-    const height = rect.height || sphere.container.clientHeight;
+    const width = sphere.container.clientWidth;
+    const height = sphere.container.clientHeight;
 
     // Force minimum height if container has no height
     const effectiveHeight = height > 0 ? height : 500;
@@ -465,7 +466,12 @@ function fit_sphere_to_container(sphere: SphereData) {
 }
 
 function attach_sphere_to_container(sphere: SphereData) {
-    sphere.container.appendChild(sphere.renderer.domElement);
+    // Position canvas at top-left of container to prevent iOS offset issues
+    const canvas = sphere.renderer.domElement;
+    canvas.style.position = 'absolute';
+    canvas.style.top = '0';
+    canvas.style.left = '0';
+    sphere.container.appendChild(canvas);
 }
 
 /**
@@ -1448,6 +1454,11 @@ export function set_movie_auto_loop(sphere: SphereData, enabled: boolean) {
     sphere.autoLoopMovie = enabled;
 }
 
+export function set_playback_speed(sphere: SphereData, speed: number) {
+    // Clamp speed to reasonable range (0.25x to 8x)
+    sphere.playbackSpeed = Math.max(0.25, Math.min(8, speed));
+}
+
 export function play_training_movie(sphere: SphereData, durationSeconds: number = 10, startFromCurrent: boolean = false) {
     if (!sphere.trainingMovieData || sphere.isPlayingMovie) return;
 
@@ -1464,9 +1475,11 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
     });
     const totalFrames = epochKeys.length;
 
-    // Fixed duration per frame (1 second per frame) - total duration scales with frame count
+    // Fixed duration per frame (1 second per frame at 1x speed) - total duration scales with frame count
     // This ensures smooth animation regardless of how many epochs we have
-    const fixedFrameDuration = 1000; // 1 second per frame
+    // Playback speed: 1.0 = normal, 2.0 = 2x faster, 0.5 = half speed
+    const playbackSpeed = sphere.playbackSpeed || 1.0;
+    const fixedFrameDuration = 1000 / playbackSpeed; // Adjusted for playback speed
     const frameDelay = fixedFrameDuration;
 
     // Either start from current position (for resume) or from beginning
@@ -1722,22 +1735,21 @@ function animate_interpolation(sphere: SphereData) {
     // Update memory trails during interpolation so arcs chase the points
     update_memory_trails(sphere);
 
-    // Update convex hulls, great circles, and spotlight during interpolation so they animate with points (throttled)
-    // Only update every 6 frames to balance smoothness vs performance
+    // Update convex hulls every frame for smooth animation (Graham scan is fast)
+    if (sphere.showEmbeddingHull) {
+        compute_embedding_convex_hull(sphere);
+    }
+    if (sphere.showConvexHulls) {
+        compute_cluster_convex_hulls(sphere);
+    }
+
+    // Throttle great circles and spotlight to every 3 frames (more expensive)
     if (!sphere._hullAnimationCounter) sphere._hullAnimationCounter = 0;
     sphere._hullAnimationCounter++;
-    if (sphere._hullAnimationCounter % 6 === 0) {
-        if (sphere.showEmbeddingHull) {
-            compute_embedding_convex_hull(sphere);
-        }
-        if (sphere.showConvexHulls) {
-            compute_cluster_convex_hulls(sphere);
-        }
-        // Update great circles to follow points
+    if (sphere._hullAnimationCounter % 3 === 0) {
         if (sphere.showGreatCircles) {
             update_great_circles(sphere);
         }
-        // Update spotlight lines to follow points
         if (sphere.spotlightCluster !== undefined && sphere.spotlightCluster >= 0) {
             update_cluster_spotlight(sphere);
         }
@@ -2029,8 +2041,9 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
         
         // Start smooth interpolation to target positions
         // Calculate optimal interpolation duration based on frame timing
-        // Fixed 1 second per frame (matches play_training_movie)
-        const fixedFrameDuration = 1000; // 1 second per frame
+        // Fixed 1 second per frame at 1x speed (matches play_training_movie)
+        const playbackSpeed = sphere.playbackSpeed || 1.0;
+        const fixedFrameDuration = 1000 / playbackSpeed; // Adjusted for playback speed
         // Use full frame duration - the next interpolation will start when the timer fires,
         // and will smoothly continue from wherever this one ends
         const interpolationDuration = fixedFrameDuration;
@@ -2948,49 +2961,100 @@ function normalize_points_to_sphere_surface(points: THREE.Vector3[]): THREE.Vect
 
 /**
  * Compute spherical convex hull on the unit sphere surface
- * Uses spherical coordinates and projects points onto sphere surface before computing hull
+ * Projects points to 2D tangent plane, computes 2D convex hull, returns ordered boundary points
  */
 function compute_spherical_convex_hull(points: THREE.Vector3[]): THREE.Vector3[] {
     if (points.length < 3) return points;
-    
+
     // Normalize all points to sphere surface
     const normalizedPoints = normalize_points_to_sphere_surface(points);
-    
-    // For spherical convex hull, we need to find the points that form the boundary
-    // on the sphere surface. We'll use a spherical triangulation approach.
-    
+
     if (normalizedPoints.length < 4) {
         return normalizedPoints;
     }
-    
-    // For a proper spherical convex hull, find boundary points using angular distance
-    // Since all points are already on the sphere surface, we use angular distance from centroid
-    
-    // Compute centroid on sphere
+
+    // Compute centroid on sphere (average direction)
     const centroid = new THREE.Vector3();
     normalizedPoints.forEach(p => centroid.add(p));
     centroid.normalize();
-    
-    // Find boundary points by checking angular distance from centroid
-    // Points with maximum angular distance are likely on the boundary
-    const pointsWithAngularDistance = normalizedPoints.map(p => {
-        // Angular distance = arccos(dot product) since both are unit vectors
-        const dot = p.dot(centroid);
-        const angularDistance = Math.acos(Math.max(-1, Math.min(1, dot)));
-        return { point: p, angularDistance };
+
+    // Create orthonormal basis for tangent plane at centroid
+    // Find a vector not parallel to centroid
+    const up = Math.abs(centroid.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+    const tangentU = new THREE.Vector3().crossVectors(centroid, up).normalize();
+    const tangentV = new THREE.Vector3().crossVectors(centroid, tangentU).normalize();
+
+    // Project all points to 2D tangent plane coordinates
+    const points2D: { x: number, y: number, point3D: THREE.Vector3, index: number }[] = [];
+    normalizedPoints.forEach((p, index) => {
+        // Project onto tangent plane (relative to centroid)
+        const diff = new THREE.Vector3().subVectors(p, centroid);
+        const x = diff.dot(tangentU);
+        const y = diff.dot(tangentV);
+        points2D.push({ x, y, point3D: p, index });
     });
-    
-    // Sort by angular distance (farthest first)
-    pointsWithAngularDistance.sort((a, b) => b.angularDistance - a.angularDistance);
-    
-    // Take the outermost points (boundary of the cluster)
-    // Use a reasonable number based on cluster size
-    const numBoundaryPoints = Math.min(Math.max(8, Math.floor(normalizedPoints.length * 0.3)), 32);
-    const boundaryPoints = pointsWithAngularDistance
-        .slice(0, numBoundaryPoints)
-        .map(item => item.point);
-    
-    return boundaryPoints;
+
+    // Compute 2D convex hull using Graham scan algorithm
+    const hull2D = grahamScan2D(points2D);
+
+    // Return the 3D points in hull order (already sorted counterclockwise)
+    return hull2D.map(p => p.point3D);
+}
+
+/**
+ * Graham scan algorithm for 2D convex hull
+ * Returns points in counterclockwise order
+ */
+function grahamScan2D(points: { x: number, y: number, point3D: THREE.Vector3, index: number }[]): typeof points {
+    if (points.length < 3) return points;
+
+    // Find the bottom-most point (lowest y, then lowest x as tiebreaker)
+    let pivot = points[0];
+    for (const p of points) {
+        if (p.y < pivot.y || (p.y === pivot.y && p.x < pivot.x)) {
+            pivot = p;
+        }
+    }
+
+    // Sort points by polar angle with respect to pivot
+    const sorted = points
+        .filter(p => p !== pivot)
+        .map(p => ({
+            ...p,
+            angle: Math.atan2(p.y - pivot.y, p.x - pivot.x),
+            dist: Math.hypot(p.x - pivot.x, p.y - pivot.y)
+        }))
+        .sort((a, b) => {
+            if (Math.abs(a.angle - b.angle) < 1e-10) {
+                return a.dist - b.dist; // Same angle: closer point first
+            }
+            return a.angle - b.angle;
+        });
+
+    // Graham scan: build hull
+    const hull: typeof points = [pivot];
+
+    for (const p of sorted) {
+        // Remove points that make clockwise turn
+        while (hull.length >= 2 && crossProduct2D(hull[hull.length - 2], hull[hull.length - 1], p) <= 0) {
+            hull.pop();
+        }
+        hull.push(p);
+    }
+
+    return hull;
+}
+
+/**
+ * 2D cross product for determining turn direction
+ * Returns positive for counterclockwise, negative for clockwise, 0 for collinear
+ */
+function crossProduct2D(
+    o: { x: number, y: number },
+    a: { x: number, y: number },
+    b: { x: number, y: number }
+): number {
+    return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
 }
 
 /**
@@ -3097,21 +3161,33 @@ function subdivide_spherical_triangle(v0: THREE.Vector3, v1: THREE.Vector3, v2: 
  * Create a surface mesh geometry on the unit sphere from hull points
  * This creates a triangulated surface that follows the sphere surface by subdividing triangles
  */
+// Calculate adaptive subdivision level based on the longest edge arc length
+function calculate_adaptive_subdivisions(v0: THREE.Vector3, v1: THREE.Vector3, v2: THREE.Vector3): number {
+    // Calculate arc lengths (angles in radians) for each edge
+    const arc01 = v0.angleTo(v1);
+    const arc12 = v1.angleTo(v2);
+    const arc20 = v2.angleTo(v0);
+    const maxArc = Math.max(arc01, arc12, arc20);
+
+    // Target: roughly 0.15 radians (~8.5 degrees) per segment for smooth curves
+    // Min 2 subdivisions, max 12 to prevent excessive vertices
+    const targetRadiansPerSegment = 0.15;
+    const subdivisions = Math.min(12, Math.max(2, Math.ceil(maxArc / targetRadiansPerSegment)));
+
+    return subdivisions;
+}
+
 function create_spherical_hull_geometry(hullPoints: THREE.Vector3[]): THREE.BufferGeometry | null {
     if (hullPoints.length < 3) return null;
-    
+
     // Normalize all points to sphere surface
     const normalizedPoints = normalize_points_to_sphere_surface(hullPoints);
-    
+
     try {
         const geometry = new THREE.BufferGeometry();
         const vertices: number[] = [];
         const indices: number[] = [];
         const vertexMap = new Map<string, number>();
-        
-        // Subdivision level - higher = smoother but more vertices
-        // Increased for better resolution on sphere surface
-        const subdivisions = 6;
         
         // Function to get or add vertex index
         function getVertexIndex(point: THREE.Vector3): number {
@@ -3126,118 +3202,59 @@ function create_spherical_hull_geometry(hullPoints: THREE.Vector3[]): THREE.Buff
         }
         
         const numPoints = normalizedPoints.length;
-        
-        // Create triangles and subdivide them
-        if (numPoints === 3) {
-            // Single triangle - subdivide it
-            const subdivided = subdivide_spherical_triangle(
-                normalizedPoints[0],
-                normalizedPoints[1],
-                normalizedPoints[2],
-                subdivisions
-            );
-            
-            // Create indices for subdivided triangle
+
+        // Helper to add a subdivided triangle with adaptive subdivision based on arc length
+        function addSubdividedTriangle(p0: THREE.Vector3, p1: THREE.Vector3, p2: THREE.Vector3) {
+            const subdivisions = calculate_adaptive_subdivisions(p0, p1, p2);
+
+            const subdivided = subdivide_spherical_triangle(p0, p1, p2, subdivisions);
+
             let baseIndex = vertices.length / 3;
             subdivided.forEach(p => {
                 vertices.push(p.x, p.y, p.z);
             });
-            
-            // Create triangular faces from subdivided vertices
-            let rowStart = baseIndex;
-            for (let i = 0; i < subdivisions; i++) {
-                const nextRowStart = rowStart + (subdivisions - i + 1);
-                const currentRowSize = subdivisions - i + 1;
-                const nextRowSize = subdivisions - i;
-                
-                for (let j = 0; j < currentRowSize - 1; j++) {
-                    const v0 = rowStart + j;
-                    const v1 = rowStart + j + 1;
-                    const v2 = nextRowStart + j;
-                    
-                    indices.push(v0, v1, v2);
-                    
-                    if (j < nextRowSize - 1) {
-                        const v3 = nextRowStart + j + 1;
-                        indices.push(v1, v3, v2);
-                    }
-                }
-                
-                rowStart = nextRowStart;
-            }
-        } else {
-            // Multiple points - use fan triangulation and subdivide each triangle
-            for (let i = 1; i < numPoints - 1; i++) {
-                const tri = subdivide_spherical_triangle(
-                    normalizedPoints[0],
-                    normalizedPoints[i],
-                    normalizedPoints[i + 1],
-                    subdivisions
-                );
-                
-                let baseIndex = vertices.length / 3;
-                tri.forEach(p => {
-                    vertices.push(p.x, p.y, p.z);
-                });
-                
-                // Create triangular faces from subdivided vertices
-                let rowStart = baseIndex;
-                for (let row = 0; row < subdivisions; row++) {
-                    const nextRowStart = rowStart + (subdivisions - row + 1);
-                    const currentRowSize = subdivisions - row + 1;
-                    const nextRowSize = subdivisions - row;
-                    
-                    for (let j = 0; j < currentRowSize - 1; j++) {
-                        const v0 = rowStart + j;
-                        const v1 = rowStart + j + 1;
-                        const v2 = nextRowStart + j;
-                        
-                        indices.push(v0, v1, v2);
-                        
-                        if (j < nextRowSize - 1) {
-                            const v3 = nextRowStart + j + 1;
-                            indices.push(v1, v3, v2);
-                        }
-                    }
-                    
-                    rowStart = nextRowStart;
-                }
-            }
-            
-            // Close the fan
-            const tri = subdivide_spherical_triangle(
-                normalizedPoints[0],
-                normalizedPoints[numPoints - 1],
-                normalizedPoints[1],
-                subdivisions
-            );
-            
-            let baseIndex = vertices.length / 3;
-            tri.forEach(p => {
-                vertices.push(p.x, p.y, p.z);
-            });
-            
+
             // Create triangular faces from subdivided vertices
             let rowStart = baseIndex;
             for (let row = 0; row < subdivisions; row++) {
                 const nextRowStart = rowStart + (subdivisions - row + 1);
                 const currentRowSize = subdivisions - row + 1;
                 const nextRowSize = subdivisions - row;
-                
+
                 for (let j = 0; j < currentRowSize - 1; j++) {
                     const v0 = rowStart + j;
                     const v1 = rowStart + j + 1;
                     const v2 = nextRowStart + j;
-                    
+
                     indices.push(v0, v1, v2);
-                    
+
                     if (j < nextRowSize - 1) {
                         const v3 = nextRowStart + j + 1;
                         indices.push(v1, v3, v2);
                     }
                 }
-                
+
                 rowStart = nextRowStart;
+            }
+        }
+
+        // Compute centroid of hull points (on sphere surface)
+        const centroid = new THREE.Vector3();
+        normalizedPoints.forEach(p => centroid.add(p));
+        centroid.divideScalar(numPoints);
+        centroid.normalize(); // Project back to sphere surface
+
+        // Create triangles using centroid as fan center
+        // This creates proper convex triangulation for spherical hulls
+        if (numPoints === 3) {
+            // Single triangle - subdivide it with adaptive level
+            addSubdividedTriangle(normalizedPoints[0], normalizedPoints[1], normalizedPoints[2]);
+        } else {
+            // Fan triangulation from CENTROID to each edge of the hull boundary
+            // Hull points are already in counterclockwise order from Graham scan
+            for (let i = 0; i < numPoints; i++) {
+                const next = (i + 1) % numPoints;
+                addSubdividedTriangle(centroid, normalizedPoints[i], normalizedPoints[next]);
             }
         }
         
