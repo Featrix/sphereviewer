@@ -287,9 +287,9 @@ const TrainingMovieSphere: React.FC<{
                 });
             }
             
-            // Set up training movie visual options
+            // Set up training movie visual options - use props, not hardcoded values
             set_animation_options(sphereRef.current, rotationEnabled, 0.02, false, sphereRef.current.jsonData);
-            set_visual_options(sphereRef.current, 0.025, 0.9);
+            set_visual_options(sphereRef.current, pointSize, pointAlpha);
             
             // Load training movie data (like it was working)
             load_training_movie(sphereRef.current, trainingData, lossData, sessionProjections);
@@ -595,6 +595,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
 
     // Search state
     const [columnTypes, setColumnTypes] = useState<any>(null);
+    const [columnMiRankings, setColumnMiRankings] = useState<Array<{column: string, type: string, mi_score: number}> | null>(null);
     const [selectedSearchColumn, setSelectedSearchColumn] = useState<string>('');
     const [searchQuery, setSearchQuery] = useState<string>('');
     const [showSearch, setShowSearch] = useState(false);
@@ -944,6 +945,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                     // Use API training metrics for loss plot
                     if (apiTrainingData.training_metrics) {
                         setLossData(apiTrainingData.training_metrics);
+                    }
+
+                    // Store column MI rankings if available
+                    if (apiTrainingData.column_mi_rankings) {
+                        setColumnMiRankings(apiTrainingData.column_mi_rankings);
+                        console.log(`📊 Loaded ${apiTrainingData.column_mi_rankings.length} column MI rankings`);
                     }
                 } else {
                     console.error('No epoch_projections in API response');
@@ -3867,11 +3874,25 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
 
                                     const totalFieldCount = allFields.size;
 
+                                    // Build MI ranking lookup map
+                                    const miRankingMap = new Map<string, number>();
+                                    if (columnMiRankings) {
+                                        columnMiRankings.forEach((item, idx) => {
+                                            miRankingMap.set(item.column, idx);
+                                        });
+                                    }
+
                                     // Filter by search term if provided
                                     const searchLower = inspectorFieldSearch.toLowerCase();
                                     const sortedFields = Array.from(allFields)
                                         .filter(field => !searchLower || field.toLowerCase().includes(searchLower))
-                                        .sort();
+                                        .sort((a, b) => {
+                                            // Sort by MI ranking (most predictable first), then alphabetically
+                                            const rankA = miRankingMap.get(a) ?? Infinity;
+                                            const rankB = miRankingMap.get(b) ?? Infinity;
+                                            if (rankA !== rankB) return rankA - rankB;
+                                            return a.localeCompare(b);
+                                        });
 
                                     // Show field count at start if there are many fields
                                     const fieldCountInfo = searchLower
@@ -3905,6 +3926,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                                         // Determine if this row has differences
                                         const hasDifferences = !allSame && selectedPoints.length > 1;
 
+                                        // Get MI ranking for this field
+                                        const miRank = miRankingMap.get(field);
+                                        const miInfo = columnMiRankings?.find(r => r.column === field);
+
                                         return (
                                             <tr key={field} style={{
                                                 borderBottom: '1px solid #333',
@@ -3915,7 +3940,23 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                                                     color: hasDifferences ? '#fc8' : '#888',
                                                     fontWeight: 'bold',
                                                     verticalAlign: 'top'
-                                                }}>{field}</td>
+                                                }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                        {miRank !== undefined && miRank < 20 && (
+                                                            <span style={{
+                                                                fontSize: '9px',
+                                                                background: miRank < 5 ? '#4c4' : miRank < 10 ? '#884' : '#555',
+                                                                color: '#fff',
+                                                                padding: '1px 4px',
+                                                                borderRadius: '3px',
+                                                                fontWeight: 'normal'
+                                                            }} title={miInfo ? `MI Score: ${miInfo.mi_score.toFixed(1)}` : ''}>
+                                                                #{miRank + 1}
+                                                            </span>
+                                                        )}
+                                                        <span>{field}</span>
+                                                    </div>
+                                                </td>
                                                 {selectedPoints.map((point, idx) => {
                                                     const value = point.data?.[field];
                                                     const displayValue = value === null || value === undefined ? 'null' : String(value);
