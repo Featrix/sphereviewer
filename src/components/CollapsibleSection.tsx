@@ -1,18 +1,54 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
+
+// Safe localStorage utilities - NEVER crash on read/write failures
+const STORAGE_KEY_PREFIX = 'featrix_section_';
+
+function safeGetStorage(key: string, defaultValue: boolean): boolean {
+    try {
+        const item = localStorage.getItem(STORAGE_KEY_PREFIX + key);
+        if (item === null) return defaultValue;
+        return JSON.parse(item) as boolean;
+    } catch {
+        return defaultValue;
+    }
+}
+
+function safeSetStorage(key: string, value: boolean): void {
+    try {
+        localStorage.setItem(STORAGE_KEY_PREFIX + key, JSON.stringify(value));
+    } catch {
+        // silently ignore
+    }
+}
 
 interface CollapsibleSectionProps {
     title: string;
     defaultOpen?: boolean;
+    storageKey?: string; // Optional key to persist open/closed state
     children: React.ReactNode;
 }
 
 const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
     title,
     defaultOpen = true,
+    storageKey,
     children
 }) => {
-    const [isOpen, setIsOpen] = useState(defaultOpen);
+    // If storageKey provided, use persisted state; otherwise use regular state
+    const [isOpen, setIsOpenInternal] = useState(() => {
+        if (storageKey) {
+            return safeGetStorage(storageKey, defaultOpen);
+        }
+        return defaultOpen;
+    });
     const [isHovered, setIsHovered] = useState(false);
+
+    const setIsOpen = useCallback((open: boolean) => {
+        setIsOpenInternal(open);
+        if (storageKey) {
+            safeSetStorage(storageKey, open);
+        }
+    }, [storageKey]);
 
     return (
         <div style={{ marginBottom: 0 }}>

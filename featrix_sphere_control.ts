@@ -252,6 +252,7 @@ export interface SphereData {
     embeddingHull?: THREE.Mesh;
     embeddingHullArea?: number;
     showEmbeddingHull?: boolean;
+    hullExpansionFactor?: number; // Scale factor for hulls (1.0 = normal, 1.2 = expanded for better visibility)
 
     // Set when user manually zooms - prevents auto-fit from overriding
     userHasZoomed?: boolean;
@@ -272,6 +273,12 @@ export interface SphereData {
 
     // Alpha by movement - transparent for large moves, opaque for small moves (convergence effect)
     alphaByMovement?: boolean;
+
+    // Internal: Counter for throttling hull animation updates
+    _hullAnimationCounter?: number;
+
+    // Internal: Track previous spotlight cluster to detect changes
+    _previousSpotlightCluster?: number;
 }
 
 export type SphereRecord = {
@@ -305,11 +312,31 @@ export type SphereRecordIndex = Map<string, SphereRecord>;
 function create_new_sphere(container: HTMLElement): SphereData {
     const scene = new THREE.Scene();
 
+    // Add lighting for nice visual effects
+    // Soft ambient light to ensure nothing is completely dark
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    scene.add(ambientLight);
+
+    // Key light - main directional light from upper right
+    const keyLight = new THREE.DirectionalLight(0xffffff, 0.7);
+    keyLight.position.set(2, 3, 2);
+    scene.add(keyLight);
+
+    // Fill light - softer light from opposite side to reduce harsh shadows
+    const fillLight = new THREE.DirectionalLight(0x8888ff, 0.3);
+    fillLight.position.set(-2, 1, -2);
+    scene.add(fillLight);
+
+    // Rim light - subtle backlight for depth
+    const rimLight = new THREE.DirectionalLight(0xffffff, 0.2);
+    rimLight.position.set(0, -2, -3);
+    scene.add(rimLight);
+
     const init_height = 500;
     const init_width = 500;
     const init_aspect_ratio = init_width / init_height;
     const camera = new THREE.PerspectiveCamera(75, init_aspect_ratio, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ alpha: true});
+    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
 
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
@@ -574,8 +601,14 @@ function add_point_to_sphere(sphere: SphereData, record: SphereRecord) {
     const opacity = sphere.pointOpacity;
     
 
-    const geometry = new THREE.SphereGeometry(pointSize, 8, 6);
-    const material = new THREE.MeshBasicMaterial({ color: getColor(record), opacity: opacity, transparent: true });
+    const geometry = new THREE.SphereGeometry(pointSize, 12, 8);
+    const material = new THREE.MeshPhongMaterial({
+        color: getColor(record),
+        opacity: opacity,
+        transparent: true,
+        shininess: 60,
+        specular: 0x444444,
+    });
     const mesh = new THREE.Mesh(geometry, material);
     
     mesh.position.set(record.coords.x, record.coords.y, record.coords.z);
@@ -1057,16 +1090,17 @@ export function update_all_point_visuals(sphere: SphereData) {
     sphere.pointObjectsByRecordID.forEach((mesh) => {
         // Update geometry for size change
         mesh.geometry.dispose(); // Clean up old geometry
-        mesh.geometry = new THREE.SphereGeometry(sphere.pointSize, 8, 6);
+        mesh.geometry = new THREE.SphereGeometry(sphere.pointSize, 12, 8);
 
         // CRITICAL: Reset scale to 1.0 - dynamic point sizing may have changed it
         mesh.scale.setScalar(1.0);
 
-        // Update material for opacity change
-        if (mesh.material instanceof THREE.MeshBasicMaterial) {
-            mesh.material.opacity = sphere.pointOpacity;
-            mesh.material.transparent = sphere.pointOpacity < 1.0;
-            mesh.material.needsUpdate = true;
+        // Update material for opacity change (works for both MeshBasicMaterial and MeshPhongMaterial)
+        const mat = mesh.material as THREE.MeshPhongMaterial | THREE.MeshBasicMaterial;
+        if (mat && 'opacity' in mat) {
+            mat.opacity = sphere.pointOpacity;
+            mat.transparent = sphere.pointOpacity < 1.0;
+            mat.needsUpdate = true;
         }
     });
 }
@@ -1258,19 +1292,38 @@ export function start_physics_reset_effect(sphere: SphereData, onComplete: () =>
 
     sphere.isPhysicsRunning = true;
 
-    // Create physics world with gravity
+    // Create physics world with strong gravity
     const world = new CANNON.World();
-    world.gravity.set(0, -15, 0); // Strong gravity for fast fall
+    world.gravity.set(0, -60, 0); // Very strong gravity for dramatic fall
     world.broadphase = new CANNON.NaiveBroadphase();
     sphere.physicsWorld = world;
 
-    // Create a floor plane at the bottom of the view
+    // Create materials for floor and balls
+    const floorMaterial = new CANNON.Material('floor');
+    const ballMaterial = new CANNON.Material('ball');
+
+    // Contact material for ball-floor collisions (bouncy)
+    const ballFloorContact = new CANNON.ContactMaterial(ballMaterial, floorMaterial, {
+        friction: 0.4,
+        restitution: 0.7, // Bouncy!
+    });
+    world.addContactMaterial(ballFloorContact);
+
+    // Contact material for ball-ball collisions
+    const ballBallContact = new CANNON.ContactMaterial(ballMaterial, ballMaterial, {
+        friction: 0.2,
+        restitution: 0.5, // Some bounce off each other
+    });
+    world.addContactMaterial(ballBallContact);
+
+    // Create a floor plane at the bottom of the viewport
     const floorBody = new CANNON.Body({
         type: CANNON.Body.STATIC,
         shape: new CANNON.Plane(),
+        material: floorMaterial,
     });
     floorBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0); // Rotate to be horizontal
-    floorBody.position.set(0, -1.5, 0); // Floor below the sphere
+    floorBody.position.set(0, -2.5, 0); // Floor further down for longer fall
     world.addBody(floorBody);
 
     // Store original positions and create physics bodies for each point
@@ -1278,7 +1331,7 @@ export function start_physics_reset_effect(sphere: SphereData, onComplete: () =>
     sphere.physicsBodies = new Map();
 
     const pointRadius = sphere.pointSize || 0.02;
-    const sphereShape = new CANNON.Sphere(pointRadius);
+    const sphereShape = new CANNON.Sphere(pointRadius * 2); // Slightly larger collision radius
 
     sphere.pointObjectsByRecordID.forEach((mesh, recordId) => {
         // Store original position
@@ -1289,21 +1342,24 @@ export function start_physics_reset_effect(sphere: SphereData, onComplete: () =>
             mass: 1,
             shape: sphereShape,
             position: new CANNON.Vec3(mesh.position.x, mesh.position.y, mesh.position.z),
-            material: new CANNON.Material({ friction: 0.3, restitution: 0.6 }), // Bouncy!
+            material: ballMaterial,
+            linearDamping: 0.1, // Slight air resistance to help settle
+            angularDamping: 0.1,
         });
 
-        // Add some random initial velocity for tumble effect
+        // Add random initial velocity - push outward and down
+        const outwardDir = mesh.position.clone().normalize();
         body.velocity.set(
-            (Math.random() - 0.5) * 2,
-            (Math.random() - 0.5) * 1,
-            (Math.random() - 0.5) * 2
+            outwardDir.x * 3 + (Math.random() - 0.5) * 2,
+            -2 + (Math.random() - 0.5) * 1, // Mostly downward
+            outwardDir.z * 3 + (Math.random() - 0.5) * 2
         );
 
-        // Add slight angular velocity for rotation
+        // Add angular velocity for tumbling
         body.angularVelocity.set(
-            (Math.random() - 0.5) * 5,
-            (Math.random() - 0.5) * 5,
-            (Math.random() - 0.5) * 5
+            (Math.random() - 0.5) * 8,
+            (Math.random() - 0.5) * 8,
+            (Math.random() - 0.5) * 8
         );
 
         world.addBody(body);
@@ -1312,7 +1368,8 @@ export function start_physics_reset_effect(sphere: SphereData, onComplete: () =>
 
     // Run physics simulation
     const startTime = Date.now();
-    const duration = 2000; // 2 seconds of physics
+    const minDuration = 6000; // Minimum 6 seconds of physics
+    const maxDuration = 12000; // Maximum 12 seconds
     const timeStep = 1 / 60;
 
     const animatePhysics = () => {
@@ -1324,18 +1381,31 @@ export function start_physics_reset_effect(sphere: SphereData, onComplete: () =>
         world.step(timeStep);
 
         // Update Three.js mesh positions from physics bodies
+        let totalVelocity = 0;
         sphere.physicsBodies!.forEach((body, recordId) => {
             const mesh = sphere.pointObjectsByRecordID.get(recordId);
             if (mesh) {
                 mesh.position.set(body.position.x, body.position.y, body.position.z);
             }
+            // Track velocity to detect when things have settled
+            totalVelocity += body.velocity.length();
         });
 
         // Render
         render_sphere(sphere);
 
-        // Check if simulation should end
-        if (elapsed < duration) {
+        // Calculate average velocity per point
+        const avgVelocity = totalVelocity / (sphere.physicsBodies?.size || 1);
+        const hasSettled = avgVelocity < 0.1; // Very low movement
+
+        // Check if simulation should end:
+        // - Must run at least minDuration
+        // - Can end early after minDuration if things have settled
+        // - Must end at maxDuration regardless
+        const shouldEnd = elapsed >= maxDuration ||
+            (elapsed >= minDuration && hasSettled);
+
+        if (!shouldEnd) {
             sphere.physicsAnimationRef = requestAnimationFrame(animatePhysics);
         } else {
             // Cleanup - don't restore positions so points animate from floor to epoch 0
@@ -1378,9 +1448,9 @@ export function set_movie_auto_loop(sphere: SphereData, enabled: boolean) {
     sphere.autoLoopMovie = enabled;
 }
 
-export function play_training_movie(sphere: SphereData, durationSeconds: number = 10) {
+export function play_training_movie(sphere: SphereData, durationSeconds: number = 10, startFromCurrent: boolean = false) {
     if (!sphere.trainingMovieData || sphere.isPlayingMovie) return;
-    
+
     sphere.isPlayingMovie = true;
 
     // Let auto-rotation continue during training movie - this gives a nice visual effect
@@ -1393,15 +1463,16 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
         return epochA - epochB;
     });
     const totalFrames = epochKeys.length;
-    
+
     // Fixed duration per frame (1 second per frame) - total duration scales with frame count
     // This ensures smooth animation regardless of how many epochs we have
     const fixedFrameDuration = 1000; // 1 second per frame
     const frameDelay = fixedFrameDuration;
-    
 
-    
-    sphere.currentEpoch = 0;
+    // Either start from current position (for resume) or from beginning
+    if (!startFromCurrent || sphere.currentEpoch === undefined) {
+        sphere.currentEpoch = 0;
+    }
 
     const animate = () => {
         if (!sphere.isPlayingMovie) return;
@@ -1504,13 +1575,13 @@ export function resume_training_movie(sphere: SphereData) {
     if (!sphere.trainingMovieData) {
         return;
     }
-    
+
     if (sphere.isPlayingMovie) {
         return;
     }
-    
-    // Resume from current epoch
-    play_training_movie(sphere, 10);
+
+    // Resume from current epoch (don't reset to 0)
+    play_training_movie(sphere, 10, true);
 }
 
 export function step_training_movie_frame(sphere: SphereData, direction: 'forward' | 'backward') {
@@ -1650,6 +1721,27 @@ function animate_interpolation(sphere: SphereData) {
 
     // Update memory trails during interpolation so arcs chase the points
     update_memory_trails(sphere);
+
+    // Update convex hulls, great circles, and spotlight during interpolation so they animate with points (throttled)
+    // Only update every 6 frames to balance smoothness vs performance
+    if (!sphere._hullAnimationCounter) sphere._hullAnimationCounter = 0;
+    sphere._hullAnimationCounter++;
+    if (sphere._hullAnimationCounter % 6 === 0) {
+        if (sphere.showEmbeddingHull) {
+            compute_embedding_convex_hull(sphere);
+        }
+        if (sphere.showConvexHulls) {
+            compute_cluster_convex_hulls(sphere);
+        }
+        // Update great circles to follow points
+        if (sphere.showGreatCircles) {
+            update_great_circles(sphere);
+        }
+        // Update spotlight lines to follow points
+        if (sphere.spotlightCluster !== undefined && sphere.spotlightCluster >= 0) {
+            update_cluster_spotlight(sphere);
+        }
+    }
 
     // Re-render the sphere
     render_sphere(sphere);
@@ -1860,10 +1952,11 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
                     const normalizedDistance = Math.min(moveDistance, maxDistance) / maxDistance;
                     const alpha = maxAlpha - (normalizedDistance * (maxAlpha - minAlpha));
 
-                    if (mesh.material instanceof THREE.MeshBasicMaterial) {
-                        mesh.material.opacity = alpha;
-                        mesh.material.transparent = true;
-                        mesh.material.needsUpdate = true;
+                    const mat = mesh.material as THREE.MeshPhongMaterial | THREE.MeshBasicMaterial;
+                    if (mat && 'opacity' in mat) {
+                        mat.opacity = alpha;
+                        mat.transparent = true;
+                        mat.needsUpdate = true;
                     }
                 }
 
@@ -1959,6 +2052,11 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
     // Update embedding hull if visible (per-cluster convex hulls with cluster colors)
     if (sphere.showEmbeddingHull) {
         compute_embedding_convex_hull(sphere);
+    }
+
+    // Update great circles if enabled
+    if (sphere.showGreatCircles) {
+        update_great_circles(sphere);
     }
 
     // Update bounds box if visible
@@ -2130,6 +2228,11 @@ export function update_memory_trails(sphere: SphereData) {
     const maxTrailPoints = Math.min(200, pointCount); // Max 200 points with trails
     let trailPointsRendered = 0;
 
+    // Check if spotlight is active - get cluster assignment function
+    const spotlightCluster = sphere.spotlightCluster;
+    const hasSpotlight = spotlightCluster !== undefined && spotlightCluster >= 0;
+    const activeClusterCountKey = hasSpotlight ? get_active_cluster_count_key(sphere) : null;
+
     // Create trails for each point
     sphere.pointObjectsByRecordID.forEach((pointMesh, recordId) => {
         if (trailPointsRendered >= maxTrailPoints) return; // Skip excess points
@@ -2138,7 +2241,26 @@ export function update_memory_trails(sphere: SphereData) {
         if (!history || history.length < 2) return;
 
         trailPointsRendered++;
-        
+
+        // Check if this point is in the spotlight cluster
+        let isSpotlightMember = !hasSpotlight; // If no spotlight, treat all as members
+        if (hasSpotlight) {
+            const record = sphere.pointRecordsByID.get(recordId);
+            if (record) {
+                let clusterAssignment = -1;
+                if (activeClusterCountKey !== null && sphere.finalClusterResults?.[activeClusterCountKey]?.cluster_labels) {
+                    const rowOffset = record.featrix_meta?.__featrix_row_offset;
+                    if (rowOffset !== undefined && rowOffset < sphere.finalClusterResults[activeClusterCountKey].cluster_labels.length) {
+                        clusterAssignment = sphere.finalClusterResults[activeClusterCountKey].cluster_labels[rowOffset];
+                    }
+                }
+                isSpotlightMember = clusterAssignment === spotlightCluster;
+            }
+        }
+
+        // Opacity multiplier for non-spotlight members (heavily dimmed)
+        const spotlightDimFactor = isSpotlightMember ? 1.0 : 0.1;
+
         // Get point color
         const pointColor = pointMesh.material.color;
         
@@ -2172,7 +2294,7 @@ export function update_memory_trails(sphere: SphereData) {
             // Active segment fades as the point travels:
             // At start (progress=0): bright (0.6)
             // At end (progress=1): fades to match historical level (0.3)
-            const activeAlpha = 0.6 - (progress * 0.3);
+            const activeAlpha = (0.6 - (progress * 0.3)) * spotlightDimFactor;
 
             const activeArcPoints = createGreatCircleArc(startPos, livePos, 8);
             const activeLineGeometry = new THREE.BufferGeometry().setFromPoints(activeArcPoints);
@@ -2207,8 +2329,8 @@ export function update_memory_trails(sphere: SphereData) {
                 distanceAlpha = 0.5;
             }
 
-            // Combine distance and age: multiply them together
-            const alpha = distanceAlpha * ageFactor;
+            // Combine distance and age: multiply them together, apply spotlight dim
+            const alpha = distanceAlpha * ageFactor * spotlightDimFactor;
 
             // Generate great circle arc points - REDUCED segments for performance
             const segments = Math.max(2, Math.min(8, Math.floor(distance * 4))); // Reduced: 2-8 segments (was 4-16)
@@ -2232,21 +2354,37 @@ export function store_point_position_in_history(sphere: SphereData, recordId: st
     if (!sphere.pointPositionHistory) {
         sphere.pointPositionHistory = new Map();
     }
-    
+
     let history = sphere.pointPositionHistory.get(recordId);
     if (!history) {
         history = [];
         sphere.pointPositionHistory.set(recordId, history);
     }
-    
+
     // Add current position to front of history
     history.unshift(position.clone());
-    
+
     // Keep only last N positions (current + configurable previous)
     const maxLength = (sphere.memoryTrailLength || 5) + 1; // +1 for current position
     if (history.length > maxLength) {
         history.splice(maxLength);
     }
+}
+
+// Trim all existing trail history to match current memoryTrailLength setting
+// Call this when the user changes the trail length setting to immediately apply it
+export function trim_trail_history(sphere: SphereData) {
+    if (!sphere.pointPositionHistory) return;
+
+    const maxLength = (sphere.memoryTrailLength || 5) + 1;
+    sphere.pointPositionHistory.forEach((history) => {
+        if (history.length > maxLength) {
+            history.splice(maxLength);
+        }
+    });
+
+    // Update trails immediately to reflect the change
+    update_memory_trails(sphere);
 }
 
 export function create_3d_loss_plot(sphere: SphereData, lossData: any) {
@@ -2405,21 +2543,24 @@ export function add_new_embedding(sphere: SphereData, new_record: SphereRecord) 
 
 
 export function change_object_color(sphere: SphereData, record_id: string, color: string | number) {
-    
+
     const object = sphere.pointObjectsByRecordID.get(record_id);
     if (object === undefined) {
         return;
     }
 
-    // The object can have multiple materials. We don't deal with mutliple materials.
-    // Not all materials have a simple "color" property - only MeshBasicMaterial does.
+    // The object can have multiple materials. We don't deal with multiple materials.
     const has_multiple_materials = Array.isArray(object.material);
-    if ( has_multiple_materials || !(object.material instanceof THREE.MeshBasicMaterial)) {
-        return
+    if (has_multiple_materials) {
+        return;
     }
 
-    object.material.color.set(color);
-    object.material.needsUpdate = true;
+    // Handle both MeshBasicMaterial and MeshPhongMaterial
+    const mat = object.material as THREE.MeshPhongMaterial | THREE.MeshBasicMaterial;
+    if (mat && 'color' in mat) {
+        mat.color.set(color);
+        mat.needsUpdate = true;
+    }
 }
 
 export function show_search_results(sphere: SphereData, searchResultRecords: SphereRecord[]) {
@@ -2681,11 +2822,11 @@ export function send_event(sphere: SphereData, event_name: string, event: any) {
 // ###########################################################################
 
 function get_object_color(object: THREE.Mesh): THREE.Color | null {
-    if (object.material instanceof THREE.MeshBasicMaterial) {
-        return object.material.color;
-    } else {
-        return null;
+    const mat = object.material as THREE.MeshPhongMaterial | THREE.MeshBasicMaterial;
+    if (mat && 'color' in mat) {
+        return mat.color;
     }
+    return null;
 }
 
 export function get_object_color_string(object: THREE.Mesh): string | null {
@@ -3381,12 +3522,13 @@ function update_dynamic_point_sizes(sphere: SphereData) {
         
         // Update point geometry scale and opacity
         pointMesh.scale.setScalar(newRadius / 0.025);
-        if (pointMesh.material instanceof THREE.MeshBasicMaterial) {
-            pointMesh.material.transparent = true;
-            pointMesh.material.opacity = opacity;
-            pointMesh.material.needsUpdate = true;
+        const mat = pointMesh.material as THREE.MeshPhongMaterial | THREE.MeshBasicMaterial;
+        if (mat && 'opacity' in mat) {
+            mat.transparent = true;
+            mat.opacity = opacity;
+            mat.needsUpdate = true;
         }
-        
+
         pointsResized++;
     });
 }
@@ -3397,10 +3539,11 @@ function reset_point_sizes_to_default(sphere: SphereData) {
         // Reset scale to 1.0 (geometry already has user's pointSize)
         pointMesh.scale.setScalar(1.0);
         // Restore user's opacity setting, not hardcoded 1.0
-        if (pointMesh.material instanceof THREE.MeshBasicMaterial) {
-            pointMesh.material.opacity = sphere.pointOpacity;
-            pointMesh.material.transparent = sphere.pointOpacity < 1.0;
-            pointMesh.material.needsUpdate = true;
+        const mat = pointMesh.material as THREE.MeshPhongMaterial | THREE.MeshBasicMaterial;
+        if (mat && 'opacity' in mat) {
+            mat.opacity = sphere.pointOpacity;
+            mat.transparent = sphere.pointOpacity < 1.0;
+            mat.needsUpdate = true;
         }
         pointsReset++;
     });
@@ -3546,17 +3689,27 @@ function calculateClusterBoundingSphere(points: THREE.Vector3[]): { center: THRE
     return { center, radius };
 }
 
-export function update_cluster_spotlight(sphere: SphereData) {
-    // Clear existing spotlight
+export function update_cluster_spotlight(sphere: SphereData, updateOpacity: boolean = false) {
+    // Clear existing spotlight lines
     if (sphere.clusterSpotlightGroup) {
         sphere.scene.remove(sphere.clusterSpotlightGroup);
         sphere.clusterSpotlightGroup = undefined;
     }
-    
+
     const spotlightCluster = sphere.spotlightCluster;
-    
-    // If spotlight is off (-1) or no cluster selected, return
+
+    // If spotlight is off (-1) or no cluster selected
     if (spotlightCluster === undefined || spotlightCluster < 0) {
+        // Only restore opacity when explicitly requested (when user changes setting)
+        if (updateOpacity) {
+            sphere.pointObjectsByRecordID.forEach((pointMesh) => {
+                const mat = pointMesh.material as THREE.MeshPhongMaterial | THREE.MeshBasicMaterial;
+                if (mat && 'opacity' in mat) {
+                    mat.opacity = sphere.pointOpacity || 0.5;
+                    mat.needsUpdate = true;
+                }
+            });
+        }
         return;
     }
 
@@ -3614,15 +3767,28 @@ export function update_cluster_spotlight(sphere: SphereData) {
                 clusterAssignment = record.featrix_meta.cluster_pre;
             }
             
+            // Collect spotlight members for line drawing
+            const mat = pointMesh.material as THREE.MeshPhongMaterial | THREE.MeshBasicMaterial;
             if (clusterAssignment === spotlightCluster) {
                 clusterPoints.push({
                     position: pointMesh.position.clone(),
-                    color: pointMesh.material.color.clone()
+                    color: mat && 'color' in mat ? mat.color.clone() : new THREE.Color(0xffffff)
                 });
+                // Only update opacity when explicitly requested (user changed setting)
+                if (updateOpacity && mat && 'opacity' in mat) {
+                    mat.opacity = sphere.pointOpacity || 0.5;
+                    mat.needsUpdate = true;
+                }
+            } else {
+                // Only dim non-members when explicitly requested (user changed setting)
+                if (updateOpacity && mat && 'opacity' in mat) {
+                    mat.opacity = (sphere.pointOpacity || 0.5) * 0.15;
+                    mat.needsUpdate = true;
+                }
             }
         }
     });
-    
+
     if (clusterPoints.length === 0) {
         return;
     }
@@ -4026,6 +4192,10 @@ export function compute_embedding_convex_hull(sphere: SphereData) {
     const coveragePercent = (totalArea / unitSphereArea) * 100;
     (sphere as any).embeddingHullCoverage = coveragePercent;
 
+    // Apply hull expansion factor if set (moves hulls outward for better visibility of overlap)
+    const expansionFactor = sphere.hullExpansionFactor || 1.0;
+    hullGroup.scale.setScalar(expansionFactor);
+
     sphere.embeddingHull = hullGroup as any;
     sphere.scene.add(hullGroup);
 }
@@ -4034,14 +4204,75 @@ export function compute_embedding_convex_hull(sphere: SphereData) {
  * Toggle great circles mode - shows great circles through each point for coverage visualization
  * When enabled: reduces point size to 0.01, hides trails, hides unit sphere wireframe
  */
-export function toggle_great_circles(sphere: SphereData, show: boolean) {
-    if (!sphere) {
-        // No sphere provided
+// Update great circles to match current point positions (called during animation)
+export function update_great_circles(sphere: SphereData) {
+    if (!sphere || !sphere.showGreatCircles || !sphere.greatCirclesGroup) {
         return;
     }
-    
+
+    // Clear existing great circles
+    while (sphere.greatCirclesGroup.children.length > 0) {
+        const child = sphere.greatCirclesGroup.children[0];
+        sphere.greatCirclesGroup.remove(child);
+        if (child instanceof THREE.Line) {
+            child.geometry.dispose();
+            if (child.material instanceof THREE.Material) {
+                child.material.dispose();
+            }
+        }
+    }
+
+    // Regenerate great circles at current positions
+    const circleSegments = 64;
+    const circleRadius = 1.0;
+
+    sphere.pointObjectsByRecordID.forEach((pointMesh) => {
+        const pointPos = pointMesh.position.clone().normalize();
+
+        const up = new THREE.Vector3(0, 1, 0);
+        let tangent1: THREE.Vector3;
+        let tangent2: THREE.Vector3;
+
+        if (Math.abs(pointPos.dot(up)) > 0.99) {
+            const right = new THREE.Vector3(1, 0, 0);
+            tangent1 = new THREE.Vector3().crossVectors(pointPos, right).normalize();
+        } else {
+            tangent1 = new THREE.Vector3().crossVectors(pointPos, up).normalize();
+        }
+        tangent2 = new THREE.Vector3().crossVectors(pointPos, tangent1).normalize();
+
+        const circlePoints: THREE.Vector3[] = [];
+        for (let i = 0; i <= circleSegments; i++) {
+            const angle = (i / circleSegments) * Math.PI * 2;
+            const x = Math.cos(angle);
+            const y = Math.sin(angle);
+            const circlePoint = new THREE.Vector3()
+                .addScaledVector(tangent1, x)
+                .addScaledVector(tangent2, y)
+                .normalize()
+                .multiplyScalar(circleRadius);
+            circlePoints.push(circlePoint);
+        }
+
+        const geometry = new THREE.BufferGeometry().setFromPoints(circlePoints);
+        const material = new THREE.LineBasicMaterial({
+            color: 0x00ff00,
+            linewidth: 1,
+            transparent: true,
+            opacity: 0.3
+        });
+        const circleLine = new THREE.Line(geometry, material);
+        sphere.greatCirclesGroup.add(circleLine);
+    });
+}
+
+export function toggle_great_circles(sphere: SphereData, show: boolean) {
+    if (!sphere) {
+        return;
+    }
+
     sphere.showGreatCircles = show;
-    
+
     if (show) {
         // Create great circles group if it doesn't exist
         if (!sphere.greatCirclesGroup) {
@@ -4049,73 +4280,8 @@ export function toggle_great_circles(sphere: SphereData, show: boolean) {
             sphere.scene.add(sphere.greatCirclesGroup);
         }
 
-        // Make sure group is visible
         sphere.greatCirclesGroup.visible = true;
-
-        // Clear existing great circles
-        while (sphere.greatCirclesGroup.children.length > 0) {
-            const child = sphere.greatCirclesGroup.children[0];
-            sphere.greatCirclesGroup.remove(child);
-            if (child instanceof THREE.Line) {
-                child.geometry.dispose();
-                if (child.material instanceof THREE.Material) {
-                    child.material.dispose();
-                }
-            }
-        }
-        
-        // Create great circle for each point
-        // A great circle through a point P is the circle perpendicular to the radius vector OP
-        // This creates the "equator" relative to that point
-        const circleSegments = 64; // Number of segments for smooth circle
-        const circleRadius = 1.0; // Unit sphere radius
-        
-        sphere.pointObjectsByRecordID.forEach((pointMesh, recordId) => {
-            const pointPos = pointMesh.position.clone().normalize(); // Ensure normalized
-            
-            // Find two perpendicular vectors to create the circle plane
-            // Use cross product with a reference vector (e.g., up vector) to get perpendicular
-            const up = new THREE.Vector3(0, 1, 0);
-            let tangent1: THREE.Vector3;
-            let tangent2: THREE.Vector3;
-            
-            // Handle case where point is at north/south pole
-            if (Math.abs(pointPos.dot(up)) > 0.99) {
-                // Point is near pole, use different reference
-                const right = new THREE.Vector3(1, 0, 0);
-                tangent1 = new THREE.Vector3().crossVectors(pointPos, right).normalize();
-            } else {
-                tangent1 = new THREE.Vector3().crossVectors(pointPos, up).normalize();
-            }
-            tangent2 = new THREE.Vector3().crossVectors(pointPos, tangent1).normalize();
-            
-            // Generate circle points
-            const circlePoints: THREE.Vector3[] = [];
-            for (let i = 0; i <= circleSegments; i++) {
-                const angle = (i / circleSegments) * Math.PI * 2;
-                const x = Math.cos(angle);
-                const y = Math.sin(angle);
-                const circlePoint = new THREE.Vector3()
-                    .addScaledVector(tangent1, x)
-                    .addScaledVector(tangent2, y)
-                    .normalize()
-                    .multiplyScalar(circleRadius);
-                circlePoints.push(circlePoint);
-            }
-            
-            // Create line geometry for the great circle
-            const geometry = new THREE.BufferGeometry().setFromPoints(circlePoints);
-            const material = new THREE.LineBasicMaterial({
-                color: 0x00ff00, // Green color for great circles
-                linewidth: 1,
-                transparent: true,
-                opacity: 0.3 // Semi-transparent
-            });
-            const circleLine = new THREE.Line(geometry, material);
-            sphere.greatCirclesGroup.add(circleLine);
-        });
-        
-        // Note: Don't change point size - let user control it via the UI
+        update_great_circles(sphere);
 
     } else {
         // Hide great circles

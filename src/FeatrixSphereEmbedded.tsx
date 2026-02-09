@@ -12,13 +12,55 @@ import React, { Suspense, useEffect, useRef, useState, useCallback, useMemo } fr
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
 import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch, fetch_thumbnail_data, setRetryStatusCallback } from './embed-data-access';
-import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, set_wireframe_opacity, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles, register_event_listener, set_cluster_color_mode, compute_epoch_movement_stats, set_movie_auto_loop } from '../featrix_sphere_control';
+import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, set_wireframe_opacity, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles, register_event_listener, set_cluster_color_mode, compute_epoch_movement_stats, set_movie_auto_loop, trim_trail_history } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 import CollapsibleSection from './components/CollapsibleSection';
 import { LossPlotOverlay, MovementPlotOverlay } from './components/Charts';
 
+// ============================================================================
+// Safe localStorage utilities - NEVER crash on read/write failures
+// ============================================================================
+const STORAGE_KEY_PREFIX = 'featrix_sphere_';
+
+function safeGetStorage<T>(key: string, defaultValue: T): T {
+    try {
+        const item = localStorage.getItem(STORAGE_KEY_PREFIX + key);
+        if (item === null) return defaultValue;
+        return JSON.parse(item) as T;
+    } catch {
+        // localStorage disabled, corrupted, or parse error - silently use default
+        return defaultValue;
+    }
+}
+
+function safeSetStorage<T>(key: string, value: T): void {
+    try {
+        localStorage.setItem(STORAGE_KEY_PREFIX + key, JSON.stringify(value));
+    } catch {
+        // localStorage disabled or full - silently ignore
+    }
+}
+
+// Custom hook for persisted state
+function usePersistedState<T>(key: string, defaultValue: T): [T, React.Dispatch<React.SetStateAction<T>>] {
+    const [state, setState] = useState<T>(() => safeGetStorage(key, defaultValue));
+
+    const setPersistedState: React.Dispatch<React.SetStateAction<T>> = useCallback((value) => {
+        setState((prev) => {
+            const newValue = typeof value === 'function' ? (value as (prev: T) => T)(prev) : value;
+            safeSetStorage(key, newValue);
+            return newValue;
+        });
+    }, [key]);
+
+    return [state, setPersistedState];
+}
+
 // Build timestamp for cache busting verification - set at module load time
 const BUILD_TIMESTAMP = new Date().toISOString();
+
+// Sphere Viewer version (matches package.json, auto-increments with git commits)
+const SPHERE_VIEWER_VERSION = '1.220';
 
 // Distribution Chart Component for Scalar Columns
 const DistributionChart: React.FC<{
@@ -216,7 +258,7 @@ interface TrainingMovieProps {
 }
 
 // Training Movie Sphere Component - handles everything internally
-const TrainingMovieSphere: React.FC<{ 
+const TrainingMovieSphere: React.FC<{
     trainingData: any,
     sessionProjections?: any,
     lossData?: any,
@@ -227,8 +269,9 @@ const TrainingMovieSphere: React.FC<{
     containerRef?: React.RefObject<HTMLDivElement>,
     onLoadingProgress?: (loaded: number, total: number) => void,
     pointSize?: number,
-    pointAlpha?: number
-}> = ({ trainingData, sessionProjections, lossData, onReady, onFrameUpdate, onPointInspected, rotationEnabled = true, containerRef, onLoadingProgress, pointSize = 0.05, pointAlpha = 0.5 }) => {
+    pointAlpha?: number,
+    trailLength?: number
+}> = ({ trainingData, sessionProjections, lossData, onReady, onFrameUpdate, onPointInspected, rotationEnabled = true, containerRef, onLoadingProgress, pointSize = 0.05, pointAlpha = 0.5, trailLength = 12 }) => {
     const internalContainerRef = useRef<HTMLDivElement>(null);
     const actualContainerRef = containerRef || internalContainerRef;
     const sphereRef = useRef<any>(null);
@@ -327,6 +370,8 @@ const TrainingMovieSphere: React.FC<{
             
             // Enable auto-loop with physics effect between loops
             set_movie_auto_loop(sphereRef.current, true);
+            // Set trail length from persisted settings
+            sphereRef.current.memoryTrailLength = trailLength;
             // Start playing the training movie
             play_training_movie(sphereRef.current, 10);
             // Notify parent that sphere is ready
@@ -342,6 +387,15 @@ const TrainingMovieSphere: React.FC<{
             set_animation_options(sphereRef.current, rotationEnabled, 0.02, false, sphereRef.current.jsonData);
         }
     }, [rotationEnabled]);
+
+    // Update trail length when it changes - also trim existing history immediately
+    useEffect(() => {
+        if (sphereRef.current) {
+            sphereRef.current.memoryTrailLength = trailLength;
+            // Trim existing trail history to match new setting immediately
+            trim_trail_history(sphereRef.current);
+        }
+    }, [trailLength]);
 
     // Cleanup on unmount
     useEffect(() => {
@@ -394,10 +448,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
     const [frameInfo, setFrameInfo] = useState<{ current: number, total: number, visible: number, epoch?: string, validationLoss?: number, sphereCoverage?: number } | null>(null);
     const [isPlaying, setIsPlaying] = useState(true); // Start playing automatically
     const [frameInput, setFrameInput] = useState<string>('');
-    const [showDynamicHulls, setShowDynamicHulls] = useState(false);
-    const [trailLength, setTrailLength] = useState(12); // Default 12 epochs
-    const [spotlightCluster, setSpotlightCluster] = useState<number>(-1); // -1 = off, 0+ = cluster number
-    const [clusterColorMode, setClusterColorMode] = useState<'final' | 'per-epoch'>('final');
+    const [showDynamicHulls, setShowDynamicHulls] = usePersistedState('showDynamicHulls', false);
+    const [trailLength, setTrailLength] = usePersistedState('trailLength', 12);
+    const [spotlightCluster, setSpotlightCluster] = useState<number>(-1); // -1 = off, 0+ = cluster number (not persisted - session specific)
+    const [clusterColorMode, setClusterColorMode] = usePersistedState<'final' | 'per-epoch'>('clusterColorMode', 'final');
     const [showCountdown, setShowCountdown] = useState(false);
     const [countdownText, setCountdownText] = useState('');
     const sphereRefForCountdown = useRef<any>(null); // Add ref to store sphere for countdown
@@ -506,19 +560,19 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
         }
     }, [isMobile, loading, trainingData]);
 
-    // Rotation control state
-    const [rotationEnabled, setRotationEnabled] = useState(true); // Default enabled
-    
-    // Point visual controls - optimized for performance
-    const [pointSize, setPointSize] = useState(0.01); // Default point size per spec
-    const [pointAlpha, setPointAlpha] = useState(0.50); // 50% alpha
-    const [wireframeOpacity, setWireframeOpacity] = useState(0.05); // Wireframe sphere opacity
-    const [alphaByMovement, setAlphaByMovement] = useState(false); // Alpha based on point movement distance
+    // Rotation control state - persisted
+    const [rotationEnabled, setRotationEnabled] = usePersistedState('rotationEnabled', true);
+
+    // Point visual controls - optimized for performance, persisted
+    const [pointSize, setPointSize] = usePersistedState('pointSize', 0.01);
+    const [pointAlpha, setPointAlpha] = usePersistedState('pointAlpha', 0.50);
+    const [wireframeOpacity, setWireframeOpacity] = usePersistedState('wireframeOpacity', 0.05);
+    const [alphaByMovement, setAlphaByMovement] = usePersistedState('alphaByMovement', false);
     const [loadingProgress, setLoadingProgress] = useState<{ loaded: number, total: number } | null>(null);
     
     // Movement histogram state
     const [movementData, setMovementData] = useState<Array<{ epoch: string, mean: number, median: number, p90: number, max: number }>>([]);
-    const [showMovementPlot, setShowMovementPlot] = useState(true); // Show by default
+    const [showMovementPlot, setShowMovementPlot] = usePersistedState('showMovementPlot', true);
 
     // Playback overlay visibility state
     const [overlayVisible, setOverlayVisible] = useState(false);
@@ -599,8 +653,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
     const [selectedSearchColumn, setSelectedSearchColumn] = useState<string>('');
     const [searchQuery, setSearchQuery] = useState<string>('');
     const [showSearch, setShowSearch] = useState(false);
-    const [showBoundsBox, setShowBoundsBox] = useState(false);
-    const [showGreatCircles, setShowGreatCircles] = useState(false);
+    const [showBoundsBox, setShowBoundsBox] = usePersistedState('showBoundsBox', false);
+    const [showGreatCircles, setShowGreatCircles] = usePersistedState('showGreatCircles', false);
     const [showModelCard, setShowModelCard] = useState(false);
     const [modelCardData, setModelCardData] = useState<any>(null);
     const [modelCardLoading, setModelCardLoading] = useState(false);
@@ -1112,9 +1166,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
         sphereRef.memoryTrailLength = trailLength;
         sphereRef.spotlightCluster = spotlightCluster;
 
+        // Trim existing trail history to match new setting immediately
+        trim_trail_history(sphereRef);
+
         // Call the unified compute function with all settings
         compute_cluster_convex_hulls(sphereRef);
-        update_cluster_spotlight(sphereRef);
+        update_cluster_spotlight(sphereRef, true); // updateOpacity=true when user changes setting
         render_sphere(sphereRef);
 
     }, [showDynamicHulls, trailLength, spotlightCluster, sphereRef]);
@@ -2087,20 +2144,24 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
 
                 {/* Right: featrix branding + Play/Pause (mobile) + Rotate toggle */}
                 <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px' }}>
-                    <a
-                        href="https://featrix.ai"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{
-                            color: '#6a6a6a',
-                            fontSize: '11px',
-                            textDecoration: 'none',
-                            fontFamily: 'monospace',
-                            marginRight: '8px',
-                        }}
-                    >
-                        featrix.ai
-                    </a>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', marginRight: '8px' }}>
+                        <a
+                            href="https://featrix.ai"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                                color: '#6a6a6a',
+                                fontSize: '11px',
+                                textDecoration: 'none',
+                                fontFamily: 'monospace',
+                            }}
+                        >
+                            featrix.ai
+                        </a>
+                        <span style={{ color: '#4a4a4a', fontSize: '9px', fontFamily: 'monospace' }}>
+                            v{SPHERE_VIEWER_VERSION}
+                        </span>
+                    </div>
                     {/* Mobile: Playback play/pause always visible */}
                     {isMobile && (
                         <button
@@ -2190,7 +2251,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
 
                 {/* Panel 1: SEARCH */}
                 {/* Panel 3: SEARCH (default CLOSED) */}
-                <CollapsibleSection title="SEARCH" defaultOpen={false}>
+                <CollapsibleSection title="SEARCH" defaultOpen={false} storageKey="search">
                     {columnTypes && Object.keys(columnTypes).length > 0 ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                             {/* Column selector */}
@@ -2375,7 +2436,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                 </CollapsibleSection>
 
                 {/* Panel 2: CLUSTER CONTROLS */}
-                <CollapsibleSection title="CLUSTER CONTROLS" defaultOpen={false}>
+                <CollapsibleSection title="CLUSTER CONTROLS" defaultOpen={false} storageKey="clusterControls">
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         {/* Cluster Coloring dropdown */}
                         <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '10px', alignItems: 'center' }}>
@@ -2412,7 +2473,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                                         setSpotlightCluster(cluster);
                                         if (sphereRef) {
                                             sphereRef.spotlightCluster = cluster;
-                                            update_cluster_spotlight(sphereRef);
+                                            update_cluster_spotlight(sphereRef, true);
                                             render_sphere(sphereRef);
                                         }
                                     }}
@@ -2573,7 +2634,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
 
                 {/* Panel 3: MODEL INFO */}
                 {/* Panel 2: MODEL INFO (default CLOSED) */}
-                <CollapsibleSection title="MODEL INFO" defaultOpen={false}>
+                <CollapsibleSection title="MODEL INFO" defaultOpen={false} storageKey="modelInfo">
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
                         {/* Training status and frame info - flat text line */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
@@ -2668,7 +2729,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
 
                 {/* Panel 4: SETTINGS */}
                 {/* Panel 4: SETTINGS */}
-                <CollapsibleSection title="SETTINGS" defaultOpen={false}>
+                <CollapsibleSection title="SETTINGS" defaultOpen={false} storageKey="settings">
                     {/* Rendering group */}
                     <div style={{ marginBottom: '18px' }}>
                         <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginBottom: '8px' }}>Rendering</div>
@@ -2870,6 +2931,26 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                                 />
                                 <span style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>Show Convex Hulls</span>
                             </label>
+
+                            {/* Expand Hulls - only visible when hulls are shown */}
+                            {sphereRef?.showEmbeddingHull && (
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginLeft: '20px' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={(sphereRef?.hullExpansionFactor || 1.0) > 1.0}
+                                        onChange={(e) => {
+                                            if (sphereRef) {
+                                                // Toggle between 1.0 (normal) and 1.3 (expanded)
+                                                sphereRef.hullExpansionFactor = e.target.checked ? 1.3 : 1.0;
+                                                compute_embedding_convex_hull(sphereRef);
+                                                render_sphere(sphereRef);
+                                            }
+                                        }}
+                                        style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#64b5f6' }}
+                                    />
+                                    <span style={{ fontSize: '11px', fontWeight: 400, color: '#a0a0a0' }}>Expand for overlap visibility</span>
+                                </label>
+                            )}
                         </div>
 
                         {/* Sphere Coverage display - updates every epoch */}
@@ -2977,7 +3058,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                     {/* Same accordion content as desktop */}
                     <div style={{ flex: 1, overflowY: 'auto' }}>
                         {/* Panel 0: PLAYBACK - Transport controls */}
-                        <CollapsibleSection title="PLAYBACK" defaultOpen={true}>
+                        <CollapsibleSection title="PLAYBACK" defaultOpen={true} storageKey="playback">
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                 {/* Play/Pause and frame navigation */}
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
@@ -3078,7 +3159,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                         </CollapsibleSection>
 
                         {/* Panel 1: CLUSTER CONTROLS */}
-                        <CollapsibleSection title="CLUSTER CONTROLS" defaultOpen={false}>
+                        <CollapsibleSection title="CLUSTER CONTROLS" defaultOpen={false} storageKey="clusterControls">
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                 <label style={{ color: '#b8b8b8', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                     <span>Cluster Coloring</span>
@@ -3101,7 +3182,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                                                 setSpotlightCluster(cluster);
                                                 if (sphereRef) {
                                                     sphereRef.spotlightCluster = cluster;
-                                                    update_cluster_spotlight(sphereRef);
+                                                    update_cluster_spotlight(sphereRef, true);
                                                     render_sphere(sphereRef);
                                                 }
                                             }}
@@ -3118,7 +3199,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                         </CollapsibleSection>
 
                         {/* Panel 2: SETTINGS */}
-                        <CollapsibleSection title="SETTINGS" defaultOpen={false}>
+                        <CollapsibleSection title="SETTINGS" defaultOpen={false} storageKey="settings">
                             <div style={{ marginBottom: '16px' }}>
                                 <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginTop: '0', marginBottom: '6px' }}>Rendering</div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -3183,7 +3264,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                         </CollapsibleSection>
 
                         {/* Panel 4: SEARCH */}
-                        <CollapsibleSection title="SEARCH" defaultOpen={false}>
+                        <CollapsibleSection title="SEARCH" defaultOpen={false} storageKey="search">
                             {columnTypes && Object.keys(columnTypes).length > 0 ? (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                     {/* Column selector */}
@@ -3446,6 +3527,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                         onLoadingProgress={(loaded, total) => setLoadingProgress({ loaded, total })}
                         pointSize={pointSize}
                         pointAlpha={pointAlpha}
+                        trailLength={trailLength}
                         trainingData={trainingData}
                         sessionProjections={sessionProjections}
                         lossData={lossData}
@@ -3882,11 +3964,26 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                                         });
                                     }
 
+                                    // Internal/special fields that should be moved to the bottom
+                                    const internalFieldPatterns = [
+                                        'cumulative_distance', 'epoch_distance',
+                                        'net_displacement_', 'split', 'label',
+                                        '__featrix', '_row_id', '_row_offset'
+                                    ];
+                                    const isInternalField = (field: string) =>
+                                        internalFieldPatterns.some(pattern => field.toLowerCase().includes(pattern.toLowerCase()));
+
                                     // Filter by search term if provided
                                     const searchLower = inspectorFieldSearch.toLowerCase();
                                     const sortedFields = Array.from(allFields)
                                         .filter(field => !searchLower || field.toLowerCase().includes(searchLower))
                                         .sort((a, b) => {
+                                            // Internal fields go to the bottom
+                                            const aInternal = isInternalField(a);
+                                            const bInternal = isInternalField(b);
+                                            if (aInternal && !bInternal) return 1;
+                                            if (!aInternal && bInternal) return -1;
+
                                             // Sort by MI ranking (most predictable first), then alphabetically
                                             const rankA = miRankingMap.get(a) ?? Infinity;
                                             const rankB = miRankingMap.get(b) ?? Infinity;
@@ -3929,19 +4026,32 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                                         // Get MI ranking for this field
                                         const miRank = miRankingMap.get(field);
                                         const miInfo = columnMiRankings?.find(r => r.column === field);
+                                        const fieldIsInternal = isInternalField(field);
 
                                         return (
                                             <tr key={field} style={{
                                                 borderBottom: '1px solid #333',
-                                                background: hasDifferences ? 'rgba(255, 200, 50, 0.05)' : 'transparent'
+                                                background: hasDifferences ? 'rgba(255, 200, 50, 0.05)' : fieldIsInternal ? 'rgba(100, 100, 100, 0.1)' : 'transparent'
                                             }}>
                                                 <td style={{
                                                     padding: '6px 8px',
-                                                    color: hasDifferences ? '#fc8' : '#888',
+                                                    color: fieldIsInternal ? '#666' : hasDifferences ? '#fc8' : '#888',
                                                     fontWeight: 'bold',
                                                     verticalAlign: 'top'
                                                 }}>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                        {fieldIsInternal && (
+                                                            <span style={{
+                                                                fontSize: '8px',
+                                                                background: '#444',
+                                                                color: '#888',
+                                                                padding: '1px 3px',
+                                                                borderRadius: '2px',
+                                                                fontWeight: 'normal'
+                                                            }} title="Internal system field">
+                                                                sys
+                                                            </span>
+                                                        )}
                                                         {miRank !== undefined && miRank < 20 && (
                                                             <span style={{
                                                                 fontSize: '9px',
@@ -3954,7 +4064,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                                                                 #{miRank + 1}
                                                             </span>
                                                         )}
-                                                        <span>{field}</span>
+                                                        <span style={{ opacity: fieldIsInternal ? 0.6 : 1 }}>{field}</span>
                                                     </div>
                                                 </td>
                                                 {selectedPoints.map((point, idx) => {
