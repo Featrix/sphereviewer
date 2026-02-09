@@ -269,6 +269,9 @@ export interface SphereData {
 
     // Auto-loop movie with physics effect between loops
     autoLoopMovie?: boolean;
+
+    // Alpha by movement - transparent for large moves, opaque for small moves (convergence effect)
+    alphaByMovement?: boolean;
 }
 
 export type SphereRecord = {
@@ -1823,11 +1826,35 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
 
             if (extractedCoords) {
                 const { x, y, z } = extractedCoords;
-                    
+                const targetPos = new THREE.Vector3(x, y, z);
+
                 // Store target position for smooth interpolation instead of direct movement
-                targetPositions.set(recordId, new THREE.Vector3(x, y, z));
+                targetPositions.set(recordId, targetPos);
                 validPoints++;
-                
+
+                // Alpha by movement: transparent for large moves, opaque for small moves
+                if (sphere.alphaByMovement) {
+                    const currentPos = mesh.position;
+                    const moveDistance = currentPos.distanceTo(targetPos);
+
+                    // Map distance to alpha:
+                    // distance >= π/2 (1.57) -> alpha = 0.1 (very transparent)
+                    // distance = 0 -> alpha = 1.0 (fully opaque)
+                    const maxDistance = Math.PI / 2; // ~1.57
+                    const minAlpha = 0.1;
+                    const maxAlpha = sphere.pointOpacity || 1.0;
+
+                    // Clamp distance to [0, maxDistance] and invert for alpha
+                    const normalizedDistance = Math.min(moveDistance, maxDistance) / maxDistance;
+                    const alpha = maxAlpha - (normalizedDistance * (maxAlpha - minAlpha));
+
+                    if (mesh.material instanceof THREE.MeshBasicMaterial) {
+                        mesh.material.opacity = alpha;
+                        mesh.material.transparent = true;
+                        mesh.material.needsUpdate = true;
+                    }
+                }
+
                 // Color based on cluster mode (final-frame or per-epoch)
                 const record = sphere.pointRecordsByID.get(recordId);
 

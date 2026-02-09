@@ -513,6 +513,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
     const [pointSize, setPointSize] = useState(0.01); // Default point size per spec
     const [pointAlpha, setPointAlpha] = useState(0.50); // 50% alpha
     const [wireframeOpacity, setWireframeOpacity] = useState(0.05); // Wireframe sphere opacity
+    const [alphaByMovement, setAlphaByMovement] = useState(false); // Alpha based on point movement distance
     const [loadingProgress, setLoadingProgress] = useState<{ loaded: number, total: number } | null>(null);
     
     // Movement histogram state
@@ -2788,6 +2789,23 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                                     <option value={0.25}>25%</option>
                                 </select>
                             </div>
+                            {/* Alpha by Movement checkbox */}
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '4px' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={alphaByMovement}
+                                    onChange={(e) => {
+                                        const enabled = e.target.checked;
+                                        setAlphaByMovement(enabled);
+                                        if (sphereRef) {
+                                            sphereRef.alphaByMovement = enabled;
+                                        }
+                                    }}
+                                    style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#64b5f6' }}
+                                />
+                                <span style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>Alpha by Movement</span>
+                                <span style={{ fontSize: '10px', color: '#888', marginLeft: '4px' }}>(converging = brighter)</span>
+                            </label>
                         </div>
                     </div>
 
@@ -3136,6 +3154,22 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                                             <option value={0.75}>75%</option>
                                             <option value={1.00}>100%</option>
                                         </select>
+                                    </label>
+                                    {/* Alpha by Movement checkbox */}
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={alphaByMovement}
+                                            onChange={(e) => {
+                                                const enabled = e.target.checked;
+                                                setAlphaByMovement(enabled);
+                                                if (sphereRef) {
+                                                    sphereRef.alphaByMovement = enabled;
+                                                }
+                                            }}
+                                            style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#64b5f6' }}
+                                        />
+                                        <span style={{ fontSize: '12px', color: '#b8b8b8' }}>Alpha by Movement</span>
                                     </label>
                                 </div>
                             </div>
