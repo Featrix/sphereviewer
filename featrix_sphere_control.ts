@@ -1956,6 +1956,11 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
         compute_cluster_convex_hulls(sphere);
     }
 
+    // Update embedding hull if visible (per-cluster convex hulls with cluster colors)
+    if (sphere.showEmbeddingHull) {
+        compute_embedding_convex_hull(sphere);
+    }
+
     // Update bounds box if visible
     if (sphere.showBoundsBox) {
         update_bounds_box(sphere);
@@ -3912,82 +3917,116 @@ export function compute_epoch_movement_stats(trainingMovieData: any): Array<{ ep
 
 export function compute_embedding_convex_hull(sphere: SphereData) {
     if (!sphere || !sphere.pointObjectsByRecordID || sphere.pointObjectsByRecordID.size === 0) {
-        // No points available for embedding convex hull
         return;
     }
-    
-    // Collect all point positions and normalize to sphere surface
-    const allPoints: THREE.Vector3[] = [];
-    sphere.pointObjectsByRecordID.forEach((mesh) => {
-        // Normalize to sphere surface before computing hull
-        allPoints.push(normalize_to_sphere_surface(mesh.position));
-    });
-    
-    if (allPoints.length < 3) {
-        // Need at least 3 points for convex hull
-        return;
-    }
-    
-    // Compute spherical convex hull on sphere surface
-    const hullPoints = compute_spherical_convex_hull(allPoints);
-    
-    // Create spherical geometry from hull points (on sphere surface)
-    const geometry = create_spherical_hull_geometry(hullPoints);
-    
-    if (!geometry) {
-        // Failed to create embedding hull geometry
-        return;
-    }
-    
-    // Calculate surface area on sphere
-    const hullArea = calculateSurfaceArea(geometry);
-    sphere.embeddingHullArea = hullArea;
-    
-    // Unit sphere surface area = 4πr² = 4π (for r=1)
-    const unitSphereArea = 4 * Math.PI;
-    const coveragePercent = (hullArea / unitSphereArea) * 100;
-    
+
     // Remove old hull if exists
     if (sphere.embeddingHull) {
         sphere.scene.remove(sphere.embeddingHull as any);
-        if ((sphere.embeddingHull as any).geometry) {
-            (sphere.embeddingHull as any).geometry.dispose();
-        }
-        if ((sphere.embeddingHull as any).material) {
-            if (Array.isArray((sphere.embeddingHull as any).material)) {
-                (sphere.embeddingHull as any).material.forEach((m: THREE.Material) => m.dispose());
-            } else {
-                ((sphere.embeddingHull as any).material as THREE.Material).dispose();
+        // Dispose all children
+        (sphere.embeddingHull as THREE.Group).traverse((child: any) => {
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) {
+                if (Array.isArray(child.material)) {
+                    child.material.forEach((m: THREE.Material) => m.dispose());
+                } else {
+                    child.material.dispose();
+                }
+            }
+        });
+    }
+
+    // Group points by cluster (same logic as create_dynamic_cluster_hulls)
+    const clusterData: Map<number, {
+        points: THREE.Vector3[],
+        color: number
+    }> = new Map();
+
+    sphere.pointObjectsByRecordID.forEach((pointMesh, recordId) => {
+        const record = sphere.pointRecordsByID.get(recordId);
+        if (!record) return;
+
+        // Get cluster assignment
+        let cluster = -1;
+        const activeClusterKey = get_active_cluster_count_key(sphere);
+        if (activeClusterKey !== null && sphere.finalClusterResults?.[activeClusterKey]?.cluster_labels) {
+            const rowOffset = record.featrix_meta?.__featrix_row_offset;
+            if (rowOffset !== undefined && rowOffset < sphere.finalClusterResults[activeClusterKey].cluster_labels.length) {
+                cluster = sphere.finalClusterResults[activeClusterKey].cluster_labels[rowOffset];
             }
         }
-    }
-    
-    // Create mesh for embedding hull (on sphere surface)
-    const material = new THREE.MeshBasicMaterial({
-        color: 0x00ffff,
-        transparent: true,
-        opacity: 0.2,
-        side: THREE.DoubleSide,
-        wireframe: false
+
+        // Fallback: infer cluster from point color
+        if (cluster === -1) {
+            const pointColor = pointMesh.material.color.getHex();
+            let minDist = Infinity;
+            let bestCluster = 0;
+            kColorTable.forEach((tableColor, idx) => {
+                const dist = Math.abs(pointColor - tableColor);
+                if (dist < minDist) {
+                    minDist = dist;
+                    bestCluster = idx;
+                }
+            });
+            cluster = bestCluster;
+        }
+
+        if (cluster === -1) return;
+
+        const currentPos = normalize_to_sphere_surface(pointMesh.position);
+        const color = pointMesh.material.color.getHex();
+
+        if (!clusterData.has(cluster)) {
+            clusterData.set(cluster, { points: [], color: color });
+        }
+
+        clusterData.get(cluster)!.points.push(currentPos);
     });
-    
-    const wireframeMaterial = new THREE.MeshBasicMaterial({
-        color: 0x00ffff,
-        transparent: true,
-        opacity: 0.6,
-        wireframe: true
-    });
-    
-    const hullMesh = new THREE.Mesh(geometry, material);
-    const wireframeMesh = new THREE.Mesh(geometry.clone(), wireframeMaterial);
-    
-    // Group them
+
+    // Create hull group for all clusters
     const hullGroup = new THREE.Group();
-    hullGroup.add(hullMesh);
-    hullGroup.add(wireframeMesh);
-    
-    sphere.embeddingHull = hullGroup as any; // Store as group
-    (sphere as any).embeddingHullCoverage = coveragePercent; // Store coverage percentage
+    let totalArea = 0;
+
+    clusterData.forEach((clusterInfo, cluster) => {
+        if (clusterInfo.points.length < 3) return;
+
+        // Compute convex hull for this cluster
+        const hullPoints = compute_spherical_convex_hull(clusterInfo.points);
+        const geometry = create_spherical_hull_geometry(hullPoints);
+
+        if (!geometry) return;
+
+        totalArea += calculateSurfaceArea(geometry);
+
+        // Create mesh with cluster color
+        const material = new THREE.MeshBasicMaterial({
+            color: clusterInfo.color,
+            transparent: true,
+            opacity: 0.15,
+            side: THREE.DoubleSide,
+            wireframe: false
+        });
+
+        const wireframeMaterial = new THREE.MeshBasicMaterial({
+            color: clusterInfo.color,
+            transparent: true,
+            opacity: 0.5,
+            wireframe: true
+        });
+
+        const hullMesh = new THREE.Mesh(geometry, material);
+        const wireframeMesh = new THREE.Mesh(geometry.clone(), wireframeMaterial);
+
+        hullGroup.add(hullMesh);
+        hullGroup.add(wireframeMesh);
+    });
+
+    sphere.embeddingHullArea = totalArea;
+    const unitSphereArea = 4 * Math.PI;
+    const coveragePercent = (totalArea / unitSphereArea) * 100;
+    (sphere as any).embeddingHullCoverage = coveragePercent;
+
+    sphere.embeddingHull = hullGroup as any;
     sphere.scene.add(hullGroup);
 }
 
