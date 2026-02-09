@@ -221,7 +221,7 @@ const TrainingMovieSphere: React.FC<{
     sessionProjections?: any,
     lossData?: any,
     onReady?: (sphere: any) => void,
-    onFrameUpdate?: (frameInfo: { current: number, total: number, visible: number, epoch?: string, validationLoss?: number }) => void,
+    onFrameUpdate?: (frameInfo: { current: number, total: number, visible: number, epoch?: string, validationLoss?: number, sphereCoverage?: number }) => void,
     onPointInspected?: (pointInfo: any) => void,
     rotationEnabled?: boolean,
     containerRef?: React.RefObject<HTMLDivElement>,
@@ -391,7 +391,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
     const [sphereRef, setSphereRef] = useState<any>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const outerContainerRef = useRef<HTMLDivElement>(null);
-    const [frameInfo, setFrameInfo] = useState<{ current: number, total: number, visible: number, epoch?: string, validationLoss?: number } | null>(null);
+    const [frameInfo, setFrameInfo] = useState<{ current: number, total: number, visible: number, epoch?: string, validationLoss?: number, sphereCoverage?: number } | null>(null);
     const [isPlaying, setIsPlaying] = useState(true); // Start playing automatically
     const [frameInput, setFrameInput] = useState<string>('');
     const [showDynamicHulls, setShowDynamicHulls] = useState(false);
@@ -2872,10 +2872,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                             </label>
                         </div>
 
-                        {/* Sphere Coverage display - always visible */}
-                        {sphereRef && sphereRef.boundsBoxVolumeUtilization !== undefined && (
+                        {/* Sphere Coverage display - updates every epoch */}
+                        {frameInfo?.sphereCoverage !== undefined && (
                             <div style={{ fontSize: '11px', color: '#8f8f8f', marginTop: '10px' }}>
-                                Sphere Coverage: <span style={{ color: '#e6e6e6', fontFamily: 'monospace' }}>{sphereRef.boundsBoxVolumeUtilization.toFixed(2)}%</span>
+                                Sphere Coverage: <span style={{ color: '#e6e6e6', fontFamily: 'monospace' }}>{frameInfo.sphereCoverage.toFixed(1)}%</span>
                             </div>
                         )}
                     </div>

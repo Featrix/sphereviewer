@@ -1803,7 +1803,8 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
             total: totalFrames,
             visible: visibleClusters,
             epoch: epochKey,
-            validationLoss: validationLoss
+            validationLoss: validationLoss,
+            sphereCoverage: sphere.boundsBoxVolumeUtilization
         });
     }
     
@@ -1954,12 +1955,15 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
     if (sphere.showConvexHulls) {
         compute_cluster_convex_hulls(sphere);
     }
-    
+
     // Update bounds box if visible
     if (sphere.showBoundsBox) {
         update_bounds_box(sphere);
     }
-    
+
+    // Always calculate sphere coverage for UI display (even if bounds box hidden)
+    calculate_sphere_coverage(sphere);
+
     // Always re-render to show the updates
     render_sphere(sphere);
 }
@@ -3156,43 +3160,59 @@ export function hide_convex_hulls(sphere: SphereData) {
     }
 }
 
+// Calculate sphere coverage from current point positions (can be called even without bounds box visible)
+function calculate_sphere_coverage(sphere: SphereData): number {
+    if (!sphere || sphere.pointObjectsByRecordID.size === 0) {
+        return 0;
+    }
+
+    // Calculate bounding box from all current point positions
+    const box = new THREE.Box3();
+    sphere.pointObjectsByRecordID.forEach((mesh) => {
+        box.expandByPoint(mesh.position);
+    });
+
+    const boxSize = box.getSize(new THREE.Vector3());
+
+    // Calculate percentage of unit sphere covered by bounding box
+    const unitSphereRadius = 1.0;
+    const boundingBoxRadius = Math.max(boxSize.x, boxSize.y, boxSize.z) / 2.0;
+    const sphereCoveragePercent = boundingBoxRadius > 0
+        ? (boundingBoxRadius / unitSphereRadius) * 100
+        : 0;
+
+    sphere.boundsBoxVolumeUtilization = sphereCoveragePercent;
+    return sphereCoveragePercent;
+}
+
 function update_bounds_box(sphere: SphereData) {
     if (!sphere || !sphere.showBoundsBox || !sphere.boundsBox) return;
-    
+
     // Calculate bounding box from all current point positions
     const points: THREE.Vector3[] = [];
     sphere.pointObjectsByRecordID.forEach((mesh) => {
         points.push(mesh.position);
     });
-    
+
     if (points.length === 0) {
         return;
     }
-    
+
     // Create a bounding box from points
     const box = new THREE.Box3();
     points.forEach(point => box.expandByPoint(point));
-    
+
     const boxSize = box.getSize(new THREE.Vector3());
     const boxCenter = box.getCenter(new THREE.Vector3());
-    
-    // Calculate percentage of unit sphere covered by bounding box
-    // Unit sphere has radius = 1.0
-    const unitSphereRadius = 1.0;
-    // Bounding box radius is half the largest dimension
-    const boundingBoxRadius = Math.max(boxSize.x, boxSize.y, boxSize.z) / 2.0;
-    // Calculate coverage percentage: what % of the sphere's radius is covered by the bounding box
-    const sphereCoveragePercent = boundingBoxRadius > 0 
-        ? (boundingBoxRadius / unitSphereRadius) * 100 
-        : 0;
-    
-    sphere.boundsBoxVolumeUtilization = sphereCoveragePercent; // Reusing this field name for sphere coverage
-    
+
+    // Calculate coverage (also updates sphere.boundsBoxVolumeUtilization)
+    calculate_sphere_coverage(sphere);
+
     // Update existing bounds box geometry and position
     if (sphere.boundsBox.geometry) {
         sphere.boundsBox.geometry.dispose();
     }
-    
+
     const boxGeometry = new THREE.BoxGeometry(boxSize.x, boxSize.y, boxSize.z);
     const boxEdges = new THREE.EdgesGeometry(boxGeometry);
     sphere.boundsBox.geometry = boxEdges;
