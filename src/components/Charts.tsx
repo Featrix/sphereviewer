@@ -254,3 +254,86 @@ export const MovementPlotOverlay: React.FC<{
 
     return <div ref={containerRef} style={{ width: '100%', height: '100%', ...style }} />;
 };
+
+// ============ MOVEMENT HISTOGRAM BY CLUSTER ============
+export const MovementHistogramByCluster: React.FC<{
+    histogramData: {
+        buckets: Array<{ range: string; min: number; max: number; counts: Record<number, number>; total: number }>;
+        clusterColors: Record<number, string>;
+    } | null;
+    style?: React.CSSProperties;
+}> = ({ histogramData, style }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const plotlyLoaded = useRef(false);
+
+    useEffect(() => {
+        if (!containerRef.current || !histogramData || histogramData.buckets.length === 0) return;
+
+        const renderChart = async () => {
+            try {
+                await loadPlotly();
+                plotlyLoaded.current = true;
+            } catch {
+                console.error('Failed to load Plotly');
+                return;
+            }
+
+            const container = containerRef.current;
+            if (!container) return;
+
+            const { buckets, clusterColors } = histogramData;
+
+            // Get all unique cluster IDs
+            const clusterIds = new Set<number>();
+            buckets.forEach(b => {
+                Object.keys(b.counts).forEach(id => clusterIds.add(parseInt(id)));
+            });
+            const sortedClusterIds = Array.from(clusterIds).sort((a, b) => a - b);
+
+            // Create stacked bar traces for each cluster
+            const traces: any[] = sortedClusterIds.map(clusterId => ({
+                x: buckets.map(b => b.max.toFixed(3)),
+                y: buckets.map(b => b.counts[clusterId] || 0),
+                type: 'bar',
+                name: `Cluster ${clusterId}`,
+                marker: { color: clusterColors[clusterId] || '#888888' },
+                hovertemplate: `Cluster ${clusterId}<br>Range: %{x}<br>Count: %{y}<extra></extra>`,
+            }));
+
+            const layout = {
+                ...darkLayout,
+                barmode: 'stack',
+                xaxis: { ...darkLayout.xaxis, title: { text: 'Movement Distance', font: { size: 10 } } },
+                yaxis: { ...darkLayout.yaxis, title: { text: 'Point Count', font: { size: 10 } } },
+                showlegend: true,
+                legend: {
+                    orientation: 'h' as const,
+                    x: 0.5,
+                    xanchor: 'center' as const,
+                    y: -0.25,
+                    font: { size: 9 },
+                    itemwidth: 30,
+                },
+                margin: { ...darkLayout.margin, b: 55 },
+            };
+
+            Plotly.react(container, traces, layout, config);
+        };
+
+        renderChart();
+    }, [histogramData]);
+
+    useEffect(() => {
+        return () => {
+            if (containerRef.current && plotlyLoaded.current) {
+                try { Plotly.purge(containerRef.current); } catch {}
+            }
+        };
+    }, []);
+
+    if (!histogramData) {
+        return <div style={{ ...style, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666', fontSize: '11px' }}>No movement data</div>;
+    }
+
+    return <div ref={containerRef} style={{ width: '100%', height: '100%', ...style }} />;
+};

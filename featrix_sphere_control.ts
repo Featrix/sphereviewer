@@ -274,6 +274,9 @@ export interface SphereData {
     // Internal: Track pending auto-loop timeout so we can cancel it on pause
     _autoLoopCheckRef?: ReturnType<typeof setTimeout>;
 
+    // Internal: Track if user explicitly paused (prevents auto-restart)
+    _pausedByUser?: boolean;
+
     // Alpha by movement - transparent for large moves, opaque for small moves (convergence effect)
     alphaByMovement?: boolean;
 
@@ -1523,7 +1526,6 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
     // Playback speed: 1.0 = normal, 2.0 = 2x faster, 0.5 = half speed
     const playbackSpeed = sphere.playbackSpeed || 1.0;
     const fixedFrameDuration = 1000 / playbackSpeed; // Adjusted for playback speed
-    const frameDelay = fixedFrameDuration;
 
     // Either start from current position (for resume) or from beginning
     if (!startFromCurrent || sphere.currentEpoch === undefined) {
@@ -1534,21 +1536,45 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
         sphere.currentEpoch = Math.min(sphere.currentEpoch, totalFrames - 1);
     }
 
-    const animate = () => {
+    // Use requestAnimationFrame with time accumulation for smooth playback
+    // This eliminates pauses caused by setTimeout jitter and computation overhead
+    let lastFrameTime = performance.now();
+    let accumulatedTime = fixedFrameDuration; // Start with enough time to trigger first frame immediately
+    let lastProcessedEpoch = -1;
+
+    const animate = (currentTime: number) => {
         if (!sphere.isPlayingMovie) return;
 
-        // Update current frame
-        const currentEpochKey = epochKeys[sphere.currentEpoch];
-        const epochData = sphere.trainingMovieData?.[currentEpochKey];
+        // Accumulate time since last frame
+        const deltaTime = currentTime - lastFrameTime;
+        lastFrameTime = currentTime;
+        accumulatedTime += deltaTime;
 
-        // Check if this epoch has valid data before updating
-        if (epochData && epochData.coords && epochData.coords.length > 0) {
-            update_training_movie_frame(sphere, currentEpochKey);
+        // Recalculate frame duration in case playback speed changed
+        const currentPlaybackSpeed = sphere.playbackSpeed || 1.0;
+        const currentFrameDuration = 1000 / currentPlaybackSpeed;
+
+        // Process frames if enough time has accumulated
+        while (accumulatedTime >= currentFrameDuration && sphere.currentEpoch < totalFrames) {
+            // Only update if we haven't already processed this epoch
+            if (sphere.currentEpoch !== lastProcessedEpoch) {
+                const currentEpochKey = epochKeys[sphere.currentEpoch];
+                const epochData = sphere.trainingMovieData?.[currentEpochKey];
+
+                // Check if this epoch has valid data before updating
+                if (epochData && epochData.coords && epochData.coords.length > 0) {
+                    update_training_movie_frame(sphere, currentEpochKey);
+                }
+
+                lastProcessedEpoch = sphere.currentEpoch;
+            }
+
+            // Increment epoch
+            sphere.currentEpoch++;
+            accumulatedTime -= currentFrameDuration;
         }
 
-        // Increment epoch and check for completion
-        sphere.currentEpoch++;
-
+        // Check for completion
         if (sphere.currentEpoch >= totalFrames) {
             // Training complete - set final state
             const finalEpochKey = epochKeys[epochKeys.length - 1];
@@ -1571,8 +1597,8 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
                 const minRotation = Math.PI; // 180 degrees
 
                 const checkConditionsAndStart = () => {
-                    // If movie was paused/stopped, abort the loop check
-                    if (!sphere.autoLoopMovie) {
+                    // If movie was paused/stopped by user, abort the loop check
+                    if (!sphere.autoLoopMovie || sphere._pausedByUser) {
                         sphere._autoLoopCheckRef = undefined;
                         return;
                     }
@@ -1597,8 +1623,8 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
                 };
 
                 const onPhysicsComplete = () => {
-                    // If auto-loop was disabled (user paused), don't restart
-                    if (!sphere.autoLoopMovie) {
+                    // If user paused or auto-loop was disabled, don't restart
+                    if (!sphere.autoLoopMovie || sphere._pausedByUser) {
                         return;
                     }
 
@@ -1616,13 +1642,16 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
                         });
                     }
 
-                    // Immediately update to epoch 0 positions (don't wait for frameDelay)
+                    // Immediately update to epoch 0 positions (don't wait)
                     const firstEpochKey = epochKeys[0];
                     update_training_movie_frame(sphere, firstEpochKey);
 
-                    // Then schedule next frame
+                    // Reset timing and restart animation loop
                     sphere.currentEpoch = 1;
-                    sphere.movieAnimationRef = setTimeout(animate, frameDelay);
+                    lastProcessedEpoch = 0;
+                    lastFrameTime = performance.now();
+                    accumulatedTime = 0;
+                    sphere.movieAnimationRef = requestAnimationFrame(animate);
                 };
 
                 // Start checking conditions
@@ -1635,20 +1664,20 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
             return;
         }
 
-        // Schedule next frame
+        // Schedule next frame using requestAnimationFrame for smooth 60fps timing
         if (sphere.isPlayingMovie) {
-            sphere.movieAnimationRef = setTimeout(animate, frameDelay);
+            sphere.movieAnimationRef = requestAnimationFrame(animate);
         }
     };
-    
-    // Start immediately
-    animate();
+
+    // Start immediately with requestAnimationFrame
+    sphere.movieAnimationRef = requestAnimationFrame(animate);
 }
 
 export function stop_training_movie(sphere: SphereData) {
     sphere.isPlayingMovie = false;
     if (sphere.movieAnimationRef) {
-        clearTimeout(sphere.movieAnimationRef);
+        cancelAnimationFrame(sphere.movieAnimationRef);
         sphere.movieAnimationRef = 0;
     }
 
@@ -1671,8 +1700,10 @@ export function stop_training_movie(sphere: SphereData) {
 
 export function pause_training_movie(sphere: SphereData) {
     sphere.isPlayingMovie = false;
+    sphere._pausedByUser = true; // Flag to prevent auto-restart
+
     if (sphere.movieAnimationRef) {
-        clearTimeout(sphere.movieAnimationRef);
+        cancelAnimationFrame(sphere.movieAnimationRef);
         sphere.movieAnimationRef = 0;
     }
 
@@ -1698,6 +1729,8 @@ export function resume_training_movie(sphere: SphereData) {
     if (sphere.isPlayingMovie) {
         return;
     }
+
+    sphere._pausedByUser = false; // Clear pause flag on explicit resume
 
     // Resume from current epoch (don't reset to 0)
     play_training_movie(sphere, 10, true);
@@ -4183,6 +4216,93 @@ function calculateSurfaceArea(geometry: THREE.BufferGeometry): number {
  * each point moved and returns summary statistics (mean, median, p90, max).
  * Used for the movement histogram overlay to evaluate convergence.
  */
+// Compute per-point movement with cluster assignments for histogram visualization
+export function compute_movement_histogram_data(
+    sphere: SphereData,
+    trainingMovieData: any,
+    epochKey: string
+): { buckets: Array<{ range: string, min: number, max: number, counts: Record<number, number>, total: number }>, clusterColors: Record<number, string> } | null {
+    if (!trainingMovieData || !sphere?.finalClusterResults) return null;
+
+    const epochKeys = Object.keys(trainingMovieData).sort((a, b) => {
+        const epochA = parseInt(a.replace('epoch_', ''));
+        const epochB = parseInt(b.replace('epoch_', ''));
+        return epochA - epochB;
+    });
+
+    const epochIndex = epochKeys.indexOf(epochKey);
+    if (epochIndex < 1) return null; // Need previous epoch
+
+    const prevKey = epochKeys[epochIndex - 1];
+    const prevData = trainingMovieData[prevKey];
+    const currData = trainingMovieData[epochKey];
+
+    if (!prevData?.coords || !currData?.coords) return null;
+
+    // Get cluster labels from finalClusterResults
+    const activeClusterKey = get_active_cluster_count_key(sphere);
+    const clusterLabels = activeClusterKey ? sphere.finalClusterResults[activeClusterKey]?.cluster_labels : null;
+
+    // Calculate movement for each point
+    const movements: Array<{ distance: number, clusterId: number }> = [];
+    const numPoints = Math.min(prevData.coords.length, currData.coords.length);
+
+    for (let p = 0; p < numPoints; p++) {
+        const prevCoords = extractCoordinates(prevData.coords[p]);
+        const currCoords = extractCoordinates(currData.coords[p]);
+        if (!prevCoords || !currCoords) continue;
+
+        const dx = currCoords.x - prevCoords.x;
+        const dy = currCoords.y - prevCoords.y;
+        const dz = currCoords.z - prevCoords.z;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        const clusterId = clusterLabels ? clusterLabels[p] : 0;
+        movements.push({ distance: dist, clusterId });
+    }
+
+    if (movements.length === 0) return null;
+
+    // Find max movement to set bucket ranges
+    const maxMovement = Math.max(...movements.map(m => m.distance));
+    const bucketCount = 10;
+    const bucketSize = maxMovement / bucketCount;
+
+    // Initialize buckets
+    const buckets: Array<{ range: string, min: number, max: number, counts: Record<number, number>, total: number }> = [];
+    for (let i = 0; i < bucketCount; i++) {
+        const min = i * bucketSize;
+        const max = (i + 1) * bucketSize;
+        buckets.push({
+            range: `${min.toFixed(2)}-${max.toFixed(2)}`,
+            min,
+            max,
+            counts: {},
+            total: 0
+        });
+    }
+
+    // Count movements per bucket per cluster
+    const allClusterIds = new Set<number>();
+    movements.forEach(({ distance, clusterId }) => {
+        allClusterIds.add(clusterId);
+        const bucketIndex = Math.min(Math.floor(distance / bucketSize), bucketCount - 1);
+        if (!buckets[bucketIndex].counts[clusterId]) {
+            buckets[bucketIndex].counts[clusterId] = 0;
+        }
+        buckets[bucketIndex].counts[clusterId]++;
+        buckets[bucketIndex].total++;
+    });
+
+    // Get cluster colors
+    const clusterColors: Record<number, string> = {};
+    allClusterIds.forEach(clusterId => {
+        const color = get_cluster_color(sphere, clusterId);
+        clusterColors[clusterId] = `#${color.toString(16).padStart(6, '0')}`;
+    });
+
+    return { buckets, clusterColors };
+}
+
 export function compute_epoch_movement_stats(trainingMovieData: any): Array<{ epoch: string, mean: number, median: number, p90: number, max: number }> {
     if (!trainingMovieData) return [];
 

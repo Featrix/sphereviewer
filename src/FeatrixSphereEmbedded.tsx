@@ -12,10 +12,10 @@ import React, { Suspense, useEffect, useRef, useState, useCallback, useMemo } fr
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
 import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch, fetch_thumbnail_data, fetch_model_card, setRetryStatusCallback, ModelCard } from './embed-data-access';
-import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, set_wireframe_opacity, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles, register_event_listener, set_cluster_color_mode, compute_epoch_movement_stats, set_movie_auto_loop, trim_trail_history, set_playback_speed } from '../featrix_sphere_control';
+import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, set_wireframe_opacity, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles, register_event_listener, set_cluster_color_mode, compute_epoch_movement_stats, compute_movement_histogram_data, set_movie_auto_loop, trim_trail_history, set_playback_speed } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 import CollapsibleSection from './components/CollapsibleSection';
-import { LossPlotOverlay, MovementPlotOverlay } from './components/Charts';
+import { LossPlotOverlay, MovementPlotOverlay, MovementHistogramByCluster } from './components/Charts';
 
 // ============================================================================
 // Safe localStorage utilities - NEVER crash on read/write failures
@@ -586,6 +586,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
         return movementData.find(d => d.epoch === frameInfo.epoch) || null;
     }, [frameInfo?.epoch, movementData]);
 
+    // Compute histogram data for current epoch (movement distribution by cluster)
+    const currentHistogramData = useMemo(() => {
+        if (!sphereRef || !frameInfo?.epoch || !trainingData) return null;
+        return compute_movement_histogram_data(sphereRef, trainingData, frameInfo.epoch);
+    }, [sphereRef, frameInfo?.epoch, trainingData]);
+
     // Playback overlay visibility state
     const [overlayVisible, setOverlayVisible] = useState(false);
     const overlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1104,17 +1110,25 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                             
                             // Update sphere with new epochs if it's already loaded
                             if (sphereRef && sphereRef.trainingMovieData) {
+                                // Check if movie was playing before we reload
+                                const wasPlaying = sphereRef.isPlayingMovie || false;
+                                const wasPaused = sphereRef._pausedByUser || false;
+
                                 // Stop current movie
                                 stop_training_movie(sphereRef);
-                                
+
                                 // Reload training movie with updated data
                                 load_training_movie(sphereRef, updatedTrainingData, latestData.training_metrics || lossData, sessionProjections);
-                                
-                                // Reset to frame 1 and replay
-                                goto_training_movie_frame(sphereRef, 1);
-                                setIsPlaying(true);
-                                play_training_movie(sphereRef);
-                                
+
+                                // Only auto-restart if user hadn't paused
+                                if (!wasPaused) {
+                                    goto_training_movie_frame(sphereRef, 1);
+                                    setIsPlaying(true);
+                                    play_training_movie(sphereRef);
+                                } else {
+                                    // Stay paused but update to current frame
+                                    goto_training_movie_frame(sphereRef, sphereRef.currentEpoch || 1);
+                                }
                             }
 
                             // Update loss data if available
@@ -3062,6 +3076,22 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                                     movementData={movementData}
                                     currentEpoch={frameInfo?.epoch}
                                     style={{ width: '100%', height: '120px', pointerEvents: 'none', borderRadius: '4px', border: '1px solid #1a1a1a' }}
+                                />
+                            </div>
+                        )}
+
+                        {/* Divider before histogram */}
+                        {currentHistogramData && (
+                            <div style={{ height: '1px', background: '#2a2a2a', margin: '14px 0' }} />
+                        )}
+
+                        {/* Movement Histogram by Cluster */}
+                        {currentHistogramData && (
+                            <div>
+                                <div style={{ fontSize: '12px', fontWeight: 600, color: '#e6e6e6', marginBottom: '6px' }}>Movement Distribution by Cluster</div>
+                                <MovementHistogramByCluster
+                                    histogramData={currentHistogramData}
+                                    style={{ width: '100%', height: '150px', borderRadius: '4px', border: '1px solid #1a1a1a' }}
                                 />
                             </div>
                         )}
