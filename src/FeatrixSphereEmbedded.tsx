@@ -1404,7 +1404,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
 
     // Filter record list for search with improved boolean handling and array support
     const filter_record_list = (queryColumnType: any, queryColumn: any, queryValue: any) => {
-        if (!sphereRef || !sphereRef.current || !sphereRef.current.pointRecordsByID) {
+        if (!sphereRef || !sphereRef.pointRecordsByID) {
             console.log('🔍 Search: No sphere or records');
             return [];
         }
@@ -1417,7 +1417,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
         let results: any = [];
         let checked = 0;
         let sampleValue: any = null;
-        for (const record of sphereRef.current.pointRecordsByID.values()) {
+        for (const record of sphereRef.pointRecordsByID.values()) {
             checked++;
             const columnValue = record.original[queryColumn];
 
@@ -1650,7 +1650,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
     
     // Extract search submit logic to reusable function
     const handleSearchSubmit = () => {
-        if (!sphereRef || !sphereRef.current) {
+        if (!sphereRef) {
             return;
         }
         
@@ -1715,7 +1715,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
         const inputValue = e.target.value;
         setSearchQuery(inputValue);
 
-        if (!sphereRef || !sphereRef.current) {
+        if (!sphereRef) {
             return;
         }
 
@@ -1741,28 +1741,28 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
         const GREEN = 0x4caf50; // Material green
         const GRAY = 0x555555;  // Dark gray
 
-        sphereRef.current.pointObjectsByRecordID?.forEach((mesh: any, recordId: string) => {
+        sphereRef.pointObjectsByRecordID?.forEach((mesh: any, recordId: string) => {
             if (mesh.material && 'color' in mesh.material) {
                 if (matchingIds.has(recordId)) {
                     // Match: bright green, full opacity
                     mesh.material.color.setHex(GREEN);
-                    mesh.material.opacity = sphereRef.current!.pointOpacity || 0.5;
+                    mesh.material.opacity = sphereRef.pointOpacity || 0.5;
                 } else {
                     // No match: gray, reduced opacity
                     mesh.material.color.setHex(GRAY);
-                    mesh.material.opacity = (sphereRef.current!.pointOpacity || 0.5) * 0.3;
+                    mesh.material.opacity = (sphereRef.pointOpacity || 0.5) * 0.3;
                 }
                 mesh.material.needsUpdate = true;
             }
         });
 
         // Trigger a render to show the preview
-        render_sphere(sphereRef.current);
+        render_sphere(sphereRef);
 
         // Update stats display
         setSearchResultStats({
             yes: theRecords.length,
-            no: (sphereRef.current.pointObjectsByRecordID?.size || 0) - theRecords.length,
+            no: (sphereRef.pointObjectsByRecordID?.size || 0) - theRecords.length,
             unknown: 0,
             isBoolean: false
         });
@@ -1772,20 +1772,20 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
     
     // Fetch vocabulary/distribution when column changes
     useEffect(() => {
-        if (!selectedSearchColumn || !sphereRef || !sphereRef.current || !sphereRef.current.pointRecordsByID || !columnTypes) {
+        if (!selectedSearchColumn || !sphereRef || !sphereRef.pointRecordsByID || !columnTypes) {
             setColumnVocabulary(null);
             return;
         }
-        
+
         const colType = columnTypes[selectedSearchColumn];
         if (!colType) {
             setColumnVocabulary(null);
             return;
         }
-        
+
         // Collect all values for this column
         const values: any[] = [];
-        for (const record of sphereRef.current.pointRecordsByID.values()) {
+        for (const record of sphereRef.pointRecordsByID.values()) {
             const val = record.original[selectedSearchColumn];
             if (val !== undefined && val !== null) {
                 values.push(val);
@@ -2905,10 +2905,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                                                     type="color"
                                                     value={color}
                                                     onChange={(e) => {
-                                                        if (sphereRef && sphereRef.current) {
+                                                        if (sphereRef) {
                                                             const newColor = e.target.value;
-                                                            set_cluster_color(sphereRef.current, i, newColor);
-                                                            render_sphere(sphereRef.current);
+                                                            set_cluster_color(sphereRef, i, newColor);
+                                                            render_sphere(sphereRef);
                                                         }
                                                     }}
                                                     style={{
@@ -2927,9 +2927,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                                 </div>
                                 <button
                                     onClick={() => {
-                                        if (sphereRef && sphereRef.current) {
-                                            clear_cluster_colors(sphereRef.current);
-                                            render_sphere(sphereRef.current);
+                                        if (sphereRef) {
+                                            clear_cluster_colors(sphereRef);
+                                            render_sphere(sphereRef);
                                         }
                                     }}
                                     style={{
