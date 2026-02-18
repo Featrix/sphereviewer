@@ -248,6 +248,9 @@ export interface SphereData {
     // 'per-epoch' uses each epoch's own cluster_results for that frame
     clusterColorMode: 'final' | 'per-epoch';
 
+    // Manifold visualization mode: uses prob_positive diverging color instead of clusters
+    isManifoldViz?: boolean;
+
     // Embedding convex hull
     embeddingHull?: THREE.Mesh;
     embeddingHullArea?: number;
@@ -603,6 +606,49 @@ const getColor = (record: SphereRecord): number => {
     } catch (ex) {
         return 0x4488cc;
     }
+}
+
+/**
+ * Diverging red↔gray↔green color for manifold visualization.
+ * prob_positive: 0.0 → red (#ef4444), 0.5 → gray (#d1d5db), 1.0 → green (#22c55e)
+ */
+function get_manifold_color(probPositive: number): number {
+    const p = Math.max(0, Math.min(1, probPositive));
+
+    let r: number, g: number, b: number;
+
+    if (p < 0.5) {
+        // Red (#ef4444) → Gray (#d1d5db)
+        const t = p / 0.5;
+        r = Math.round(0xef + t * (0xd1 - 0xef));
+        g = Math.round(0x44 + t * (0xd5 - 0x44));
+        b = Math.round(0x44 + t * (0xdb - 0x44));
+    } else {
+        // Gray (#d1d5db) → Green (#22c55e)
+        const t = (p - 0.5) / 0.5;
+        r = Math.round(0xd1 + t * (0x22 - 0xd1));
+        g = Math.round(0xd5 + t * (0xc5 - 0xd5));
+        b = Math.round(0xdb + t * (0x5e - 0xdb));
+    }
+
+    return (r << 16) | (g << 8) | b;
+}
+
+/**
+ * Get prob_positive for a point in a given epoch from the training movie data.
+ */
+function get_prob_positive_for_point(sphere: SphereData, rowOffset: number, epochKey: string): number | null {
+    const epochData = sphere.trainingMovieData?.[epochKey];
+    if (!epochData?.coords || rowOffset >= epochData.coords.length) return null;
+
+    const coord = epochData.coords[rowOffset];
+    if (!coord) return null;
+
+    const probPositive = coord.scalar_columns?.prob_positive;
+    if (typeof probPositive === 'number' && !isNaN(probPositive)) {
+        return probPositive;
+    }
+    return null;
 }
 
 function add_point_to_sphere(sphere: SphereData, record: SphereRecord) {
@@ -982,6 +1028,17 @@ function recolor_points_for_mode(sphere: SphereData, epochKey: string) {
             return;
         }
 
+        if (sphere.isManifoldViz) {
+            const rowOffset = parseInt(recordId);
+            const probPositive = get_prob_positive_for_point(sphere, rowOffset, epochKey);
+            if (probPositive !== null) {
+                mesh.material.color.setHex(get_manifold_color(probPositive));
+                mesh.material.opacity = sphere.pointOpacity ?? 0.5;
+                mesh.material.needsUpdate = true;
+            }
+            return;
+        }
+
         const record = sphere.pointRecordsByID.get(recordId);
         if (!record) return;
 
@@ -1161,39 +1218,51 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any, 
     sphere.trainingMovieData = trainingMovieData;
     sphere.lossData = lossData;
     sphere.currentEpoch = 0;
-    
+
+    // Detect manifold visualization mode from epoch data
+    const firstTrainingKey = Object.keys(trainingMovieData)[0];
+    sphere.isManifoldViz = firstTrainingKey ? trainingMovieData[firstTrainingKey]?.is_manifold_viz === true : false;
+    if (sphere.isManifoldViz) {
+        console.log('🔬 Manifold visualization mode enabled - using prob_positive color scale');
+    }
+
     // Note: Loss plot is now handled as 2D screen overlay, not 3D scene object
-    
+
     // Initialize memory trails system
     create_memory_trails(sphere);
-    
+
     // Store initial positions for any existing points
     sphere.pointObjectsByRecordID.forEach((mesh: any, recordId: string) => {
         store_point_position_in_history(sphere, recordId, mesh.position);
     });
-    
+
     // GET FINAL CLUSTER RESULTS from session data for convergence visualization
     sphere.finalClusterResults = null;
 
-    // Use server-provided cluster results if available
-    const serverResults = sphere.jsonData?.entire_cluster_results;
-    if (serverResults && Object.keys(serverResults).length > 0) {
-        sphere.finalClusterResults = serverResults;
-        console.log('Using server cluster results:', Object.keys(serverResults));
+    if (sphere.isManifoldViz) {
+        // Manifold mode doesn't use cluster coloring
+        sphere.finalClusterResults = {};
     } else {
-        // Server didn't provide cluster results — compute from final epoch positions
-        console.log('No server cluster results, running client-side k-means on final epoch positions...');
-        const clientResults = compute_client_side_clusters(trainingMovieData);
-        if (Object.keys(clientResults).length > 0) {
-            sphere.finalClusterResults = clientResults;
-            // Also store back on jsonData so other code paths can find it
-            if (sphere.jsonData) {
-                sphere.jsonData.entire_cluster_results = clientResults;
-            }
-            console.log('Client-side cluster results ready:', Object.keys(clientResults));
+        // Use server-provided cluster results if available
+        const serverResults = sphere.jsonData?.entire_cluster_results;
+        if (serverResults && Object.keys(serverResults).length > 0) {
+            sphere.finalClusterResults = serverResults;
+            console.log('Using server cluster results:', Object.keys(serverResults));
         } else {
-            sphere.finalClusterResults = {};
-            console.warn('Could not compute clusters (too few points?)');
+            // Server didn't provide cluster results — compute from final epoch positions
+            console.log('No server cluster results, running client-side k-means on final epoch positions...');
+            const clientResults = compute_client_side_clusters(trainingMovieData);
+            if (Object.keys(clientResults).length > 0) {
+                sphere.finalClusterResults = clientResults;
+                // Also store back on jsonData so other code paths can find it
+                if (sphere.jsonData) {
+                    sphere.jsonData.entire_cluster_results = clientResults;
+                }
+                console.log('Client-side cluster results ready:', Object.keys(clientResults));
+            } else {
+                sphere.finalClusterResults = {};
+                console.warn('Could not compute clusters (too few points?)');
+            }
         }
     }
     
@@ -2111,12 +2180,21 @@ function update_training_movie_frame(sphere: SphereData, epochKey: string, force
                     }
                 }
 
-                // Color based on cluster mode (final-frame or per-epoch)
+                // Color based on visualization mode
                 const record = sphere.pointRecordsByID.get(recordId);
 
                 // Check if this record is manually selected (e.g., by search) - preserve its color
                 if (sphere.selectedRecords && sphere.selectedRecords.has(recordId)) {
                     // Skip color update for manually selected records - preserve search/selection colors
+                } else if (sphere.isManifoldViz) {
+                    // MANIFOLD MODE: Use diverging red↔green color based on prob_positive
+                    const probPositive = get_prob_positive_for_point(sphere, rowOffset, epochKey);
+                    if (probPositive !== null) {
+                        const manifoldColor = get_manifold_color(probPositive);
+                        mesh.material.color.setHex(manifoldColor);
+                        mesh.material.opacity = sphere.pointOpacity ?? 0.5;
+                        mesh.material.needsUpdate = true;
+                    }
                 } else if (record) {
                     const clusterAssignment = get_cluster_assignment_for_point(sphere, record, epochKey);
 

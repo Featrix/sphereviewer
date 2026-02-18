@@ -11,7 +11,7 @@
 import React, { Suspense, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
-import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch, fetch_thumbnail_data, fetch_model_card, setRetryStatusCallback, ModelCard } from './embed-data-access';
+import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch, fetch_thumbnail_data, fetch_model_card, fetch_from_data_endpoint, setRetryStatusCallback, ModelCard } from './embed-data-access';
 import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, set_wireframe_opacity, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles, register_event_listener, set_cluster_color_mode, compute_epoch_movement_stats, compute_movement_histogram_data, set_movie_auto_loop, trim_trail_history, set_playback_speed } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 import CollapsibleSection from './components/CollapsibleSection';
@@ -255,6 +255,8 @@ interface TrainingMovieProps {
     apiBaseUrl?: string;
     // Display mode: 'thumbnail' hides all UI controls
     mode?: 'thumbnail' | 'full';
+    // Custom data endpoint URL - overrides the default epoch_projections URL
+    dataEndpoint?: string;
 }
 
 // Training Movie Sphere Component - handles everything internally
@@ -428,7 +430,7 @@ const TrainingMovieSphere: React.FC<{
     );
 };
 
-const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mode }) => {
+const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mode, dataEndpoint }) => {
     // NOTE: Loading training movie from API (the working version)
     const [trainingData, setTrainingData] = useState<any>(null);
     const [lossData, setLossData] = useState<any>(null);
@@ -456,6 +458,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
     const [clusterAnalysisView, setClusterAnalysisView] = useState<'signatures' | 'fields' | 'details'>('signatures');
     const [analysisClusterCount, setAnalysisClusterCount] = useState<string | null>(null); // null = use active, "4", "8", "12" etc
     const [clusterColorMode, setClusterColorMode] = usePersistedState<'final' | 'per-epoch'>('clusterColorMode', 'final');
+    const [isManifoldViz, setIsManifoldViz] = useState(false);
     const [showCountdown, setShowCountdown] = useState(false);
     const [countdownText, setCountdownText] = useState('');
     const sphereRefForCountdown = useRef<any>(null); // Add ref to store sphere for countdown
@@ -852,43 +855,52 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
 
                 // TRAINING MOVIE: Load from API with retry logic for 504/500 errors
                 let apiTrainingData;
-                let retryCount = 0;
-                const maxRetries = 3;
 
-                while (retryCount <= maxRetries) {
-                    try {
-                        apiTrainingData = await fetch_training_metrics(
-                            sessionId,
-                            apiBaseUrl,
-                            10000,
-                            (info) => {
-                                if (info.phase === 'downloading') {
-                                    const progress = info.totalBytes
-                                        ? `${formatBytes(info.bytesLoaded)} / ${formatBytes(info.totalBytes)}`
-                                        : `Downloaded ${formatBytes(info.bytesLoaded)}`;
-                                    setLoadingDetail(progress);
-                                } else if (info.phase === 'parsing') {
-                                    setLoadingStep('Parsing epoch data...');
-                                    setLoadingDetail(formatBytes(info.bytesLoaded));
+                const progressCallback = (info: { bytesLoaded: number, totalBytes?: number, phase: string }) => {
+                    if (info.phase === 'downloading') {
+                        const progress = info.totalBytes
+                            ? `${formatBytes(info.bytesLoaded)} / ${formatBytes(info.totalBytes)}`
+                            : `Downloaded ${formatBytes(info.bytesLoaded)}`;
+                        setLoadingDetail(progress);
+                    } else if (info.phase === 'parsing') {
+                        setLoadingStep('Parsing epoch data...');
+                        setLoadingDetail(formatBytes(info.bytesLoaded));
+                    }
+                };
+
+                if (dataEndpoint) {
+                    // Custom data endpoint (e.g., manifold_viz)
+                    apiTrainingData = await fetch_from_data_endpoint(dataEndpoint, undefined, progressCallback);
+                } else {
+                    // Default: fetch from session epoch_projections with retry
+                    let retryCount = 0;
+                    const maxRetries = 3;
+
+                    while (retryCount <= maxRetries) {
+                        try {
+                            apiTrainingData = await fetch_training_metrics(
+                                sessionId,
+                                apiBaseUrl,
+                                10000,
+                                progressCallback
+                            );
+                            break; // Success
+                        } catch (err: any) {
+                            const is504 = err.message?.includes('504') || err.message?.includes('Gateway Timeout');
+                            const is500 = err.message?.includes('500') || err.message?.includes('Internal Server Error');
+                            if ((is504 || is500) && retryCount < maxRetries) {
+                                retryCount++;
+                                const waitTime = retryCount * 5;
+                                setLoadingStep(`Server timeout, retrying (${retryCount}/${maxRetries})...`);
+                                for (let i = waitTime; i > 0; i--) {
+                                    setLoadingDetail(`Retrying in ${i}s...`);
+                                    await new Promise(resolve => setTimeout(resolve, 1000));
                                 }
+                                setLoadingStep('Fetching training epochs...');
+                                setLoadingDetail('');
+                            } else {
+                                throw err;
                             }
-                        );
-                        break; // Success
-                    } catch (err: any) {
-                        const is504 = err.message?.includes('504') || err.message?.includes('Gateway Timeout');
-                        const is500 = err.message?.includes('500') || err.message?.includes('Internal Server Error');
-                        if ((is504 || is500) && retryCount < maxRetries) {
-                            retryCount++;
-                            const waitTime = retryCount * 5;
-                            setLoadingStep(`Server timeout, retrying (${retryCount}/${maxRetries})...`);
-                            for (let i = waitTime; i > 0; i--) {
-                                setLoadingDetail(`Retrying in ${i}s...`);
-                                await new Promise(resolve => setTimeout(resolve, 1000));
-                            }
-                            setLoadingStep('Fetching training epochs...');
-                            setLoadingDetail('');
-                        } else {
-                            throw err;
                         }
                     }
                 }
@@ -898,64 +910,75 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                     const epochCount = Object.keys(apiTrainingData.epoch_projections).length;
                     const firstEpochKey = Object.keys(apiTrainingData.epoch_projections)[0];
                     const pointCount = apiTrainingData.epoch_projections[firstEpochKey]?.coords?.length || 0;
-                    setLoadingStep('Fetching full projections...');
-                    setLoadingDetail(`${epochCount} epochs, ${pointCount} points per epoch`);
+
+                    // Detect manifold visualization mode
+                    const detectedManifoldViz = apiTrainingData.epoch_projections[firstEpochKey]?.is_manifold_viz === true;
+                    if (detectedManifoldViz) {
+                        console.log('🔬 Manifold visualization mode detected');
+                        setIsManifoldViz(true);
+                    }
 
                     // Try to fetch final projections for cluster results AND full dataset
                     let clusterResults = {};
                     let fullProjectionsCoords: any[] = [];
                     let sourceDataByRowId: Map<number, any> = new Map();
 
-                    const baseUrl = apiBaseUrl || (window.location.hostname === 'localhost'
-                        ? window.location.origin + '/proxy/featrix'
-                        : 'https://sphere-api.featrix.com');
+                    // Skip supplementary fetches for custom data endpoints (e.g., manifold_viz)
+                    if (!dataEndpoint) {
+                        setLoadingStep('Fetching full projections...');
+                        setLoadingDetail(`${epochCount} epochs, ${pointCount} points per epoch`);
 
-                    // First try /projections endpoint (only available after training completes)
-                    try {
-                        const projectionsResponse = await fetch(`${baseUrl}/compute/session/${sessionId}/projections?limit=10000`);
-                        if (projectionsResponse.ok) {
-                            const projectionsData = await projectionsResponse.json();
-                            if (projectionsData.projections?.entire_cluster_results) {
-                                clusterResults = projectionsData.projections.entire_cluster_results;
-                                console.log('Found cluster results in final projections:', Object.keys(clusterResults).length, 'cluster counts');
-                            }
-                            if (projectionsData.projections?.coords) {
-                                fullProjectionsCoords = projectionsData.projections.coords;
-                                console.log('📊 Got full projections with', fullProjectionsCoords.length, 'coords');
-                            }
-                        } else {
-                            console.log('⚠️ /projections returned', projectionsResponse.status, '- will try include_source_data fallback');
-                        }
-                    } catch (err) {
-                        console.log('⚠️ /projections failed - will try include_source_data fallback:', err);
-                    }
+                        const baseUrl = apiBaseUrl || (window.location.hostname === 'localhost'
+                            ? window.location.origin + '/proxy/featrix'
+                            : 'https://sphere-api.featrix.com');
 
-                    // Fallback: If /projections didn't give us data, fetch source_data via epoch_projections
-                    // This works even during training since __featrix_row_id is stable across epochs
-                    if (fullProjectionsCoords.length === 0) {
+                        // First try /projections endpoint (only available after training completes)
                         try {
-                            setLoadingStep('Fetching source data...');
-                            const sourceDataResponse = await fetch(
-                                `${baseUrl}/compute/session/${sessionId}/epoch_projections?include_source_data=true&limit=1`
-                            );
-                            if (sourceDataResponse.ok) {
-                                const sourceData = await sourceDataResponse.json();
-                                if (sourceData.source_data_enriched && sourceData.epoch_projections) {
-                                    // Get the single epoch that was returned
-                                    const epochKey = Object.keys(sourceData.epoch_projections)[0];
-                                    const epochCoords = sourceData.epoch_projections[epochKey]?.coords || [];
-
-                                    // Cache source_data by __featrix_row_id for joining with other epochs
-                                    epochCoords.forEach((coord: any) => {
-                                        if (coord.source_data && coord.__featrix_row_id !== undefined) {
-                                            sourceDataByRowId.set(coord.__featrix_row_id, coord.source_data);
-                                        }
-                                    });
-                                    console.log('📊 Cached source_data for', sourceDataByRowId.size, 'points via include_source_data');
+                            const projectionsResponse = await fetch(`${baseUrl}/compute/session/${sessionId}/projections?limit=10000`);
+                            if (projectionsResponse.ok) {
+                                const projectionsData = await projectionsResponse.json();
+                                if (projectionsData.projections?.entire_cluster_results) {
+                                    clusterResults = projectionsData.projections.entire_cluster_results;
+                                    console.log('Found cluster results in final projections:', Object.keys(clusterResults).length, 'cluster counts');
                                 }
+                                if (projectionsData.projections?.coords) {
+                                    fullProjectionsCoords = projectionsData.projections.coords;
+                                    console.log('📊 Got full projections with', fullProjectionsCoords.length, 'coords');
+                                }
+                            } else {
+                                console.log('⚠️ /projections returned', projectionsResponse.status, '- will try include_source_data fallback');
                             }
                         } catch (err) {
-                            console.error('Error fetching source data fallback:', err);
+                            console.log('⚠️ /projections failed - will try include_source_data fallback:', err);
+                        }
+
+                        // Fallback: If /projections didn't give us data, fetch source_data via epoch_projections
+                        // This works even during training since __featrix_row_id is stable across epochs
+                        if (fullProjectionsCoords.length === 0) {
+                            try {
+                                setLoadingStep('Fetching source data...');
+                                const sourceDataResponse = await fetch(
+                                    `${baseUrl}/compute/session/${sessionId}/epoch_projections?include_source_data=true&limit=1`
+                                );
+                                if (sourceDataResponse.ok) {
+                                    const sourceData = await sourceDataResponse.json();
+                                    if (sourceData.source_data_enriched && sourceData.epoch_projections) {
+                                        // Get the single epoch that was returned
+                                        const epochKey = Object.keys(sourceData.epoch_projections)[0];
+                                        const epochCoords = sourceData.epoch_projections[epochKey]?.coords || [];
+
+                                        // Cache source_data by __featrix_row_id for joining with other epochs
+                                        epochCoords.forEach((coord: any) => {
+                                            if (coord.source_data && coord.__featrix_row_id !== undefined) {
+                                                sourceDataByRowId.set(coord.__featrix_row_id, coord.source_data);
+                                            }
+                                        });
+                                        console.log('📊 Cached source_data for', sourceDataByRowId.size, 'points via include_source_data');
+                                    }
+                                }
+                            } catch (err) {
+                                console.error('Error fetching source data fallback:', err);
+                            }
                         }
                     }
 
@@ -1046,29 +1069,11 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
 
     // Poll for new epochs if training is in progress
     useEffect(() => {
-        if (!sessionId || !trainingData) return;
+        if (!trainingData) return;
+        if (!sessionId && !dataEndpoint) return;
 
         const checkForNewEpochs = async () => {
             try {
-                // Check session status to see if training is in progress
-                const sessionStatus = await fetch_session_status(sessionId, apiBaseUrl);
-                if (!sessionStatus) return;
-
-                // Check if training is still in progress
-                const isTraining = sessionStatus.session?.status === 'training' || 
-                                  sessionStatus.session?.status === 'running' ||
-                                  sessionStatus.session?.status === 'pending';
-                
-                if (!isTraining) {
-                    // Training complete, stop polling
-                    setTrainingStatus('completed');
-                    return;
-                }
-                
-                // Set training status
-                setTrainingStatus('training');
-                setNextCheckCountdown(30); // Reset countdown
-
                 // Get current epoch keys
                 const currentEpochKeys = Object.keys(trainingData);
                 const currentMaxEpoch = Math.max(...currentEpochKeys.map(k => {
@@ -1076,8 +1081,32 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                     return isNaN(epochNum) ? 0 : epochNum;
                 }));
 
-                // Fetch latest epoch projections to see if there are new epochs
-                const latestData = await fetch_training_metrics(sessionId, apiBaseUrl);
+                let latestData;
+
+                if (dataEndpoint) {
+                    // Custom endpoint: poll with start_epoch for efficiency
+                    setNextCheckCountdown(30);
+                    latestData = await fetch_from_data_endpoint(dataEndpoint, currentMaxEpoch + 1);
+                } else {
+                    // Session-based: check status first, then fetch
+                    const sessionStatus = await fetch_session_status(sessionId, apiBaseUrl);
+                    if (!sessionStatus) return;
+
+                    const isTraining = sessionStatus.session?.status === 'training' ||
+                                      sessionStatus.session?.status === 'running' ||
+                                      sessionStatus.session?.status === 'pending';
+
+                    if (!isTraining) {
+                        setTrainingStatus('completed');
+                        return;
+                    }
+
+                    setTrainingStatus('training');
+                    setNextCheckCountdown(30);
+
+                    latestData = await fetch_training_metrics(sessionId, apiBaseUrl);
+                }
+
                 if (latestData && latestData.epoch_projections) {
                     const newEpochKeys = Object.keys(latestData.epoch_projections);
                     const newMaxEpoch = Math.max(...newEpochKeys.map(k => {
@@ -1163,7 +1192,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
             clearInterval(pollInterval);
             clearInterval(countdownInterval);
         };
-    }, [sessionId, apiBaseUrl, trainingData, sphereRef]);
+    }, [sessionId, apiBaseUrl, trainingData, sphereRef, dataEndpoint]);
 
     // Compute epoch movement stats whenever training data changes
     useEffect(() => {
@@ -2785,8 +2814,28 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                     )}
                 </CollapsibleSection>
 
-                {/* Panel 2: CLUSTER CONTROLS */}
-                <CollapsibleSection title="CLUSTER CONTROLS" defaultOpen={false} storageKey="clusterControls">
+                {/* Panel 2: CLUSTER CONTROLS / MANIFOLD LEGEND */}
+                <CollapsibleSection title={isManifoldViz ? "PREDICTION COLORS" : "CLUSTER CONTROLS"} defaultOpen={isManifoldViz} storageKey="clusterControls">
+                    {isManifoldViz ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>prob_positive</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontSize: '11px', color: '#b8b8b8' }}>0.0</span>
+                                <div style={{
+                                    flex: 1,
+                                    height: '16px',
+                                    borderRadius: '4px',
+                                    background: 'linear-gradient(to right, #ef4444, #d1d5db, #22c55e)',
+                                }} />
+                                <span style={{ fontSize: '11px', color: '#b8b8b8' }}>1.0</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#8f8f8f' }}>
+                                <span>Negative</span>
+                                <span>Uncertain</span>
+                                <span>Positive</span>
+                            </div>
+                        </div>
+                    ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         {/* Cluster Coloring dropdown */}
                         <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '10px', alignItems: 'center' }}>
@@ -3005,6 +3054,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                             </div>
                         )}
                     </div>
+                    )}
                 </CollapsibleSection>
 
                 {/* Panel 3: MODEL INFO */}
@@ -3549,8 +3599,28 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                             </div>
                         </CollapsibleSection>
 
-                        {/* Panel 1: CLUSTER CONTROLS */}
-                        <CollapsibleSection title="CLUSTER CONTROLS" defaultOpen={false} storageKey="clusterControls">
+                        {/* Panel 1: CLUSTER CONTROLS / MANIFOLD LEGEND */}
+                        <CollapsibleSection title={isManifoldViz ? "PREDICTION COLORS" : "CLUSTER CONTROLS"} defaultOpen={isManifoldViz} storageKey="clusterControls">
+                            {isManifoldViz ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    <div style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>prob_positive</div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <span style={{ fontSize: '11px', color: '#b8b8b8' }}>0.0</span>
+                                        <div style={{
+                                            flex: 1,
+                                            height: '16px',
+                                            borderRadius: '4px',
+                                            background: 'linear-gradient(to right, #ef4444, #d1d5db, #22c55e)',
+                                        }} />
+                                        <span style={{ fontSize: '11px', color: '#b8b8b8' }}>1.0</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#8f8f8f' }}>
+                                        <span>Negative</span>
+                                        <span>Uncertain</span>
+                                        <span>Positive</span>
+                                    </div>
+                                </div>
+                            ) : (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                 <label style={{ color: '#b8b8b8', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                     <span>Cluster Coloring</span>
@@ -3587,6 +3657,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                                     </label>
                                 )}
                             </div>
+                            )}
                         </CollapsibleSection>
 
                         {/* Panel 2: SETTINGS */}
@@ -5465,6 +5536,8 @@ interface SphereEmbeddedProps {
     onSphereReady?: (sphereRef: any) => void;
     // Display mode: 'thumbnail' hides all UI controls, 'full' shows everything
     mode?: 'thumbnail' | 'full';
+    // Custom data endpoint URL - overrides the default epoch_projections URL
+    dataEndpoint?: string;
 }
 
 // Final Sphere View Component - shows the completed sphere with all points
@@ -5627,7 +5700,7 @@ const FinalSphereView: React.FC<{
     );
 };
 
-export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity, onSphereReady, mode }: SphereEmbeddedProps) {
+export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity, onSphereReady, mode, dataEndpoint }: SphereEmbeddedProps) {
     // Check if we have final sphere data (coords + cluster_results) or just a session ID
     const hasFinalData = initial_data?.coords && initial_data?.coords.length > 0 && initial_data?.entire_cluster_results;
     const sessionId = initial_data?.session?.session_id;
@@ -5656,7 +5729,7 @@ export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, isRota
         return (
             <div className="sphere-embedded-container">
                 <div className="mx-auto">
-                    <TrainingMovie sessionId={sessionId} apiBaseUrl={apiBaseUrl} mode={mode} />
+                    <TrainingMovie sessionId={sessionId} apiBaseUrl={apiBaseUrl} mode={mode} dataEndpoint={dataEndpoint} />
                 </div>
             </div>
         );

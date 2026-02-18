@@ -39,6 +39,9 @@ interface FeatrixSphereViewerConfig {
   pointOpacity?: number;
   // Display mode: 'thumbnail' hides all UI controls, 'full' shows everything
   mode?: 'thumbnail' | 'full';
+  // Custom data endpoint URL - overrides the default epoch_projections URL.
+  // Response format must match epoch_projections (same JSON structure).
+  dataEndpoint?: string;
   // Callback when sphere is ready
   onSphereReady?: (sphereRef: any) => void;
 }
@@ -68,6 +71,7 @@ class FeatrixSphereViewer {
       const apiBaseUrl = script.getAttribute('data-api-base-url');
       const dataUrl = script.getAttribute('data-featrix-data');
       const windowDataKey = script.getAttribute('data-use-window-data');
+      const dataEndpoint = script.getAttribute('data-endpoint') || undefined;
       
       // Animation control attributes
       const isRotating = script.getAttribute('data-is-rotating') !== 'false'; // default true
@@ -101,6 +105,7 @@ class FeatrixSphereViewer {
         pointSize,
         pointOpacity,
         mode,
+        dataEndpoint,
         onSphereReady: (window as any).onSphereReady || undefined
       };
 
@@ -300,6 +305,7 @@ class FeatrixSphereViewer {
         pointSize={config.pointSize}
         pointOpacity={config.pointOpacity}
         mode={config.mode}
+        dataEndpoint={config.dataEndpoint}
         onSphereReady={(sphereRef: any) => {
           this.sphereRef = sphereRef;
           if (config.onSphereReady) {
@@ -335,6 +341,7 @@ class FeatrixSphereViewer {
           animateClusters={config.animateClusters}
           pointSize={config.pointSize}
           pointOpacity={config.pointOpacity}
+          dataEndpoint={config.dataEndpoint}
         />
       );
     }

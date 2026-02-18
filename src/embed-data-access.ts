@@ -317,6 +317,66 @@ export async function fetch_training_metrics(
     };
 }
 
+// Fetch from a custom data endpoint (e.g., manifold_viz). Response format must match epoch_projections.
+export async function fetch_from_data_endpoint(
+    dataEndpoint: string,
+    startEpoch?: number,
+    onProgress?: (info: { bytesLoaded: number, totalBytes?: number, phase: string }) => void
+) {
+    let url = dataEndpoint;
+    if (startEpoch !== undefined) {
+        url += (url.includes('?') ? '&' : '?') + `start_epoch=${startEpoch}`;
+    }
+
+    console.log('🔗 Fetching from data endpoint:', url);
+    const response = await fetchWithRetry(url);
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Data endpoint error:', response.status, errorText);
+        throw new Error(`Data endpoint request failed: ${response.status} ${response.statusText}`);
+    }
+
+    let data;
+    const contentLength = response.headers.get('Content-Length');
+    const totalBytes = contentLength ? parseInt(contentLength, 10) : undefined;
+
+    if (onProgress && response.body) {
+        const reader = response.body.getReader();
+        const chunks: Uint8Array[] = [];
+        let bytesLoaded = 0;
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            bytesLoaded += value.length;
+            onProgress({ bytesLoaded, totalBytes, phase: 'downloading' });
+        }
+
+        onProgress({ bytesLoaded, totalBytes, phase: 'parsing' });
+        const allChunks = new Uint8Array(bytesLoaded);
+        let position = 0;
+        for (const chunk of chunks) {
+            allChunks.set(chunk, position);
+            position += chunk.length;
+        }
+        data = JSON.parse(new TextDecoder().decode(allChunks));
+    } else {
+        data = await response.json();
+    }
+
+    console.log('🔗 Data endpoint response:', Object.keys(data));
+    if (data.epoch_projections) {
+        console.log('📊 Data endpoint epochs:', Object.keys(data.epoch_projections).length);
+    }
+
+    return {
+        ...data,
+        training_metrics: data.training_metrics || null
+    };
+}
+
 export async function fetch_session_status(session_id: string, apiBaseUrl?: string) {
     const baseUrl = getApiBaseUrl(apiBaseUrl);
     try {
