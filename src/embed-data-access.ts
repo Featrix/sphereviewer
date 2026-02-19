@@ -147,6 +147,12 @@ async function fetchWithRetry(
     }
 }
 
+// Helper to build auth headers from an optional JWT token
+function getAuthHeaders(authToken?: string): HeadersInit | undefined {
+    if (!authToken) return undefined;
+    return { 'Authorization': `Bearer ${authToken}` };
+}
+
 // Helper to get the API base URL - use proxy if on localhost
 function getApiBaseUrl(apiBaseUrl?: string): string {
     if (apiBaseUrl) {
@@ -159,21 +165,21 @@ function getApiBaseUrl(apiBaseUrl?: string): string {
     return 'https://sphere-api.featrix.com';
 }
 
-export async function fetch_session_data(session_id: string, apiBaseUrl?: string) {
+export async function fetch_session_data(session_id: string, apiBaseUrl?: string, authToken?: string) {
     const baseUrl = getApiBaseUrl(apiBaseUrl);
-    const data_raw = await fetchWithRetry(`${baseUrl}/compute/session/${session_id}`);
+    const data_raw = await fetchWithRetry(`${baseUrl}/compute/session/${session_id}`, { headers: getAuthHeaders(authToken) });
 
     const data = await data_raw.json();
     return data;
 }
 
-export async function fetch_session_projections(session_id: string, apiBaseUrl?: string, limit?: number) {
+export async function fetch_session_projections(session_id: string, apiBaseUrl?: string, limit?: number, authToken?: string) {
     const baseUrl = getApiBaseUrl(apiBaseUrl);
     let url = `${baseUrl}/compute/session/${session_id}/projections`;
     if (limit !== undefined) {
         url += `?limit=${limit}`;
     }
-    const data_raw = await fetchWithRetry(url);
+    const data_raw = await fetchWithRetry(url, { headers: getAuthHeaders(authToken) });
     const data = await data_raw.json();
     const projections = data.projections;
     if (projections && projections.coords) {
@@ -186,9 +192,11 @@ export async function fetch_training_metrics(
     session_id: string,
     apiBaseUrl?: string,
     limit?: number,
-    onProgress?: (info: { bytesLoaded: number, totalBytes?: number, phase: string }) => void
+    onProgress?: (info: { bytesLoaded: number, totalBytes?: number, phase: string }) => void,
+    authToken?: string
 ) {
     const baseUrl = getApiBaseUrl(apiBaseUrl);
+    const headers = getAuthHeaders(authToken);
 
     // Fetch epoch projections (3D coordinates) - CRITICAL for training movie
     console.time('🔗 API_EPOCH_PROJECTIONS');
@@ -198,7 +206,7 @@ export async function fetch_training_metrics(
         projectionsUrl += `?limit=${limit}`;
     }
     console.log('🔗 Fetching from:', projectionsUrl);
-    const projectionsResponse = await fetchWithRetry(projectionsUrl);
+    const projectionsResponse = await fetchWithRetry(projectionsUrl, { headers });
 
     if (!projectionsResponse.ok) {
         const errorText = await projectionsResponse.text();
@@ -267,7 +275,7 @@ export async function fetch_training_metrics(
         console.log('🔗 API_CALL_START: training_metrics');
         const metricsUrl = `${baseUrl}/compute/session/${session_id}/training_metrics`;
         console.log('🔗 Fetching training metrics from:', metricsUrl);
-        const metricsResponse = await fetchWithRetry(metricsUrl);
+        const metricsResponse = await fetchWithRetry(metricsUrl, { headers });
         if (metricsResponse.ok) {
             trainingMetrics = await metricsResponse.json();
             console.timeEnd('🔗 API_TRAINING_METRICS');
@@ -321,7 +329,8 @@ export async function fetch_training_metrics(
 export async function fetch_from_data_endpoint(
     dataEndpoint: string,
     startEpoch?: number,
-    onProgress?: (info: { bytesLoaded: number, totalBytes?: number, phase: string }) => void
+    onProgress?: (info: { bytesLoaded: number, totalBytes?: number, phase: string }) => void,
+    authToken?: string
 ) {
     let url = dataEndpoint;
     if (startEpoch !== undefined) {
@@ -329,7 +338,7 @@ export async function fetch_from_data_endpoint(
     }
 
     console.log('🔗 Fetching from data endpoint:', url);
-    const response = await fetchWithRetry(url);
+    const response = await fetchWithRetry(url, { headers: getAuthHeaders(authToken) });
 
     if (!response.ok) {
         const errorText = await response.text();
@@ -377,10 +386,10 @@ export async function fetch_from_data_endpoint(
     };
 }
 
-export async function fetch_session_status(session_id: string, apiBaseUrl?: string) {
+export async function fetch_session_status(session_id: string, apiBaseUrl?: string, authToken?: string) {
     const baseUrl = getApiBaseUrl(apiBaseUrl);
     try {
-        const response = await fetchWithRetry(`${baseUrl}/compute/session/${session_id}`);
+        const response = await fetchWithRetry(`${baseUrl}/compute/session/${session_id}`, { headers: getAuthHeaders(authToken) });
         if (response.ok) {
             const data = await response.json();
             return data;

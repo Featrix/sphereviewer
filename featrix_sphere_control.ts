@@ -267,6 +267,7 @@ export interface SphereData {
     // Physics simulation for restart effect
     physicsWorld?: CANNON.World;
     physicsBodies?: Map<string, CANNON.Body>;
+    physicsLineBodies?: Array<{ body: CANNON.Body; object: THREE.Object3D; originalPos: THREE.Vector3; originalQuat: THREE.Quaternion }>;
     isPhysicsRunning?: boolean;
     physicsAnimationRef?: number;
     originalPositions?: Map<string, THREE.Vector3>;
@@ -1483,6 +1484,103 @@ export function start_physics_reset_effect(sphere: SphereData, onComplete: () =>
         sphere.physicsBodies!.set(recordId, body);
     });
 
+    // Create physics bodies for line objects (trails, hulls, wireframe, unit sphere)
+    sphere.physicsLineBodies = [];
+    const lineMaterial = new CANNON.Material('line');
+    const lineFloorContact = new CANNON.ContactMaterial(lineMaterial, floorMaterial, {
+        friction: 0.6,
+        restitution: 0.4, // Lines bounce less than balls
+    });
+    world.addContactMaterial(lineFloorContact);
+    const lineBallContact = new CANNON.ContactMaterial(lineMaterial, ballMaterial, {
+        friction: 0.3,
+        restitution: 0.3,
+    });
+    world.addContactMaterial(lineBallContact);
+
+    // Helper: create a physics body for a THREE.Object3D with line geometry
+    const addLineBody = (obj: THREE.Object3D, massMultiplier: number = 1) => {
+        // Compute world-space bounding box
+        const box = new THREE.Box3().setFromObject(obj);
+        if (box.isEmpty()) return;
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+
+        // Minimum thickness so thin lines still have a physical shape
+        const minDim = 0.02;
+        const hx = Math.max(size.x / 2, minDim);
+        const hy = Math.max(size.y / 2, minDim);
+        const hz = Math.max(size.z / 2, minDim);
+
+        const shape = new CANNON.Box(new CANNON.Vec3(hx, hy, hz));
+        const body = new CANNON.Body({
+            mass: massMultiplier * (hx * hy * hz * 200 + 0.5), // Mass proportional to volume
+            shape,
+            position: new CANNON.Vec3(center.x, center.y, center.z),
+            material: lineMaterial,
+            linearDamping: 0.15,
+            angularDamping: 0.15,
+        });
+
+        // Copy current object rotation to physics body
+        const worldQuat = new THREE.Quaternion();
+        obj.getWorldQuaternion(worldQuat);
+        body.quaternion.set(worldQuat.x, worldQuat.y, worldQuat.z, worldQuat.w);
+
+        // Random initial velocity - mostly downward with some scatter
+        const outward = center.clone().normalize();
+        body.velocity.set(
+            outward.x * 2 + (Math.random() - 0.5) * 1.5,
+            -1.5 + (Math.random() - 0.5) * 1,
+            outward.z * 2 + (Math.random() - 0.5) * 1.5
+        );
+
+        // Angular velocity for tumbling - this is what makes them land differently
+        body.angularVelocity.set(
+            (Math.random() - 0.5) * 6,
+            (Math.random() - 0.5) * 6,
+            (Math.random() - 0.5) * 6
+        );
+
+        world.addBody(body);
+        sphere.physicsLineBodies!.push({
+            body,
+            object: obj,
+            originalPos: obj.position.clone(),
+            originalQuat: obj.quaternion.clone(),
+        });
+    };
+
+    // Add trail lines - limit to max 50 to avoid O(n²) CANNON collision perf issues
+    if (sphere.memoryTrailsGroup) {
+        const trailChildren = sphere.memoryTrailsGroup.children;
+        const maxTrailBodies = 50;
+        if (trailChildren.length <= maxTrailBodies) {
+            trailChildren.forEach(child => addLineBody(child));
+        } else {
+            // Sample evenly from trail children
+            const step = trailChildren.length / maxTrailBodies;
+            for (let i = 0; i < maxTrailBodies; i++) {
+                addLineBody(trailChildren[Math.floor(i * step)]);
+            }
+        }
+    }
+
+    // Add convex hull lines/meshes
+    if (sphere.convexHullsGroup) {
+        sphere.convexHullsGroup.children.forEach(child => addLineBody(child, 2));
+    }
+
+    // Add unit sphere wireframe as a single heavy body
+    if (sphere.unitSphere && sphere.unitSphere.visible) {
+        addLineBody(sphere.unitSphere, 5);
+    }
+
+    // Add unit sphere cube if visible
+    if ((sphere as any).unitSphereCube && (sphere as any).unitSphereCube.visible) {
+        addLineBody((sphere as any).unitSphereCube, 5);
+    }
+
     // Run physics simulation
     const startTime = Date.now();
     const minDuration = 6000; // Minimum 6 seconds of physics
@@ -1508,11 +1606,22 @@ export function start_physics_reset_effect(sphere: SphereData, onComplete: () =>
             totalVelocity += body.velocity.length();
         });
 
+        // Update line object positions and rotations from physics bodies
+        if (sphere.physicsLineBodies) {
+            for (const entry of sphere.physicsLineBodies) {
+                const { body, object } = entry;
+                object.position.set(body.position.x, body.position.y, body.position.z);
+                object.quaternion.set(body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w);
+                totalVelocity += body.velocity.length();
+            }
+        }
+
         // Render
         render_sphere(sphere);
 
-        // Calculate average velocity per point
-        const avgVelocity = totalVelocity / (sphere.physicsBodies?.size || 1);
+        // Calculate average velocity across all bodies (points + lines)
+        const totalBodies = (sphere.physicsBodies?.size || 0) + (sphere.physicsLineBodies?.length || 0);
+        const avgVelocity = totalVelocity / (totalBodies || 1);
         const hasSettled = avgVelocity < 0.1; // Very low movement
 
         // Check if simulation should end:
@@ -1554,9 +1663,19 @@ export function stop_physics_effect(sphere: SphereData, restorePositions: boolea
         });
     }
 
+    // Always restore line objects to their original positions/rotations
+    // (lines get rebuilt each epoch, so leaving them on the floor looks wrong)
+    if (sphere.physicsLineBodies) {
+        for (const entry of sphere.physicsLineBodies) {
+            entry.object.position.copy(entry.originalPos);
+            entry.object.quaternion.copy(entry.originalQuat);
+        }
+    }
+
     // Cleanup physics
     sphere.physicsWorld = undefined;
     sphere.physicsBodies = undefined;
+    sphere.physicsLineBodies = undefined;
     sphere.originalPositions = undefined;
 }
 
@@ -1661,9 +1780,9 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
 
             // Check if we should loop with physics effect
             if (sphere.autoLoopMovie) {
-                // Wait until sphere has rotated 180° OR 10 seconds elapsed, whichever is LONGER
-                const minWaitTime = 10000; // 10 seconds minimum
-                const minRotation = Math.PI; // 180 degrees
+                // Wait for minimum time AND some rotation before starting physics reset
+                const minWaitTime = 8000; // 8 seconds minimum
+                const minRotation = Math.PI / 6; // 30 degrees - achievable with slow rotation
 
                 const checkConditionsAndStart = () => {
                     // If movie was paused/stopped by user, abort the loop check

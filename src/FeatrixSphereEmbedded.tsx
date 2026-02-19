@@ -259,6 +259,250 @@ interface TrainingMovieProps {
     dataEndpoint?: string;
 }
 
+// ============================================================================
+// Canvas2D Software Fallback Renderer - used when WebGL is unavailable
+// ============================================================================
+const kFallbackColors = [
+    '#4C78A8', '#72B7B2', '#F58518', '#E45756', '#54A24B', '#B279A2',
+    '#FF9DA6', '#9D755D', '#BAB0AC', '#79706E', '#D37295', '#8F6D31',
+];
+
+const Canvas2DFallback: React.FC<{
+    trainingData: any;
+    sessionProjections?: any;
+    onFrameUpdate?: (frameInfo: { current: number; total: number; visible: number; epoch?: string }) => void;
+    onReady?: (fakeSpherRef: any) => void;
+    containerRef?: React.RefObject<HTMLDivElement>;
+}> = ({ trainingData, sessionProjections, onFrameUpdate, onReady, containerRef }) => {
+    const internalRef = useRef<HTMLDivElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const actualRef = containerRef || internalRef;
+    const animRef = useRef<number>(0);
+    const stateRef = useRef({
+        rotY: 0.3,
+        rotX: 0.4,
+        autoRotate: true,
+        dragging: false,
+        lastMouse: { x: 0, y: 0 },
+        currentFrame: 0,
+        playing: true,
+        paused: false,
+        frameTimer: 0,
+    });
+
+    useEffect(() => {
+        if (!trainingData || !canvasRef.current) return;
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const epochKeys = Object.keys(trainingData).sort((a, b) => {
+            return parseInt(a.replace('epoch_', '')) - parseInt(b.replace('epoch_', ''));
+        });
+        if (epochKeys.length === 0) return;
+
+        const totalFrames = epochKeys.length;
+        const state = stateRef.current;
+
+        // Get cluster labels from session projections
+        const getClusterLabel = (coord: any, epochKey: string): number => {
+            const epochData = trainingData[epochKey];
+            if (epochData?.entire_cluster_results) {
+                const keys = Object.keys(epochData.entire_cluster_results);
+                for (const k of keys) {
+                    const cr = epochData.entire_cluster_results[k];
+                    if (cr?.cluster_labels) {
+                        const idx = epochData.coords.indexOf(coord);
+                        if (idx >= 0 && idx < cr.cluster_labels.length) {
+                            return cr.cluster_labels[idx];
+                        }
+                    }
+                }
+            }
+            // Fallback: use cluster from coord itself
+            if (coord.__featrix_cluster !== undefined) return coord.__featrix_cluster;
+            if (coord.featrix_meta?.cluster_pre !== undefined) return coord.featrix_meta.cluster_pre;
+            return 0;
+        };
+
+        const resize = () => {
+            const parent = actualRef.current;
+            if (!parent || !canvas) return;
+            const w = parent.clientWidth || 800;
+            const h = parent.clientHeight || 600;
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = w * dpr;
+            canvas.height = h * dpr;
+            canvas.style.width = w + 'px';
+            canvas.style.height = h + 'px';
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        };
+        resize();
+        const ro = new ResizeObserver(resize);
+        if (actualRef.current) ro.observe(actualRef.current);
+
+        // Project a 3D point to 2D given rotation angles
+        const project = (x: number, y: number, z: number, w: number, h: number) => {
+            // Rotate around Y axis
+            const cosY = Math.cos(state.rotY), sinY = Math.sin(state.rotY);
+            let rx = x * cosY + z * sinY;
+            let rz = -x * sinY + z * cosY;
+            // Rotate around X axis
+            const cosX = Math.cos(state.rotX), sinX = Math.sin(state.rotX);
+            let ry = y * cosX - rz * sinX;
+            rz = y * sinX + rz * cosX;
+            // Perspective projection
+            const fov = 3.0;
+            const scale = fov / (fov + rz + 2);
+            return {
+                sx: w / 2 + rx * scale * w * 0.35,
+                sy: h / 2 - ry * scale * h * 0.35,
+                depth: rz,
+                scale,
+            };
+        };
+
+        const renderFrame = () => {
+            const w = canvas.width / (window.devicePixelRatio || 1);
+            const h = canvas.height / (window.devicePixelRatio || 1);
+            ctx.clearRect(0, 0, w, h);
+
+            // Background
+            ctx.fillStyle = '#0a0a0a';
+            ctx.fillRect(0, 0, w, h);
+
+            const epochKey = epochKeys[state.currentFrame];
+            const epochData = trainingData[epochKey];
+            if (!epochData?.coords) return;
+
+            // Project all points
+            const projected = epochData.coords.map((coord: any, i: number) => {
+                const px = coord.x ?? 0;
+                const py = coord.y ?? 0;
+                const pz = coord.z ?? 0;
+                const p = project(px, py, pz, w, h);
+                const cluster = getClusterLabel(coord, epochKey);
+                return { ...p, cluster, index: i };
+            });
+
+            // Sort by depth (far to near) for painter's algorithm
+            projected.sort((a: any, b: any) => a.depth - b.depth);
+
+            // Draw points
+            for (const pt of projected) {
+                const radius = Math.max(1.5, 4 * pt.scale);
+                const color = kFallbackColors[pt.cluster % kFallbackColors.length];
+                const alpha = 0.3 + 0.5 * pt.scale;
+                ctx.globalAlpha = Math.min(1, alpha);
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(pt.sx, pt.sy, radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+
+            // Epoch label
+            ctx.fillStyle = 'rgba(255,255,255,0.6)';
+            ctx.font = '11px monospace';
+            ctx.fillText(`${epochKey}  (Canvas2D fallback - WebGL unavailable)`, 10, h - 10);
+
+            if (onFrameUpdate) {
+                onFrameUpdate({
+                    current: state.currentFrame,
+                    total: totalFrames,
+                    visible: epochData.coords.length,
+                    epoch: epochKey,
+                });
+            }
+        };
+
+        // Animation loop
+        let lastFrameTime = 0;
+        const frameInterval = 1500; // ms per epoch frame
+        const loop = (time: number) => {
+            if (state.autoRotate && !state.dragging) {
+                state.rotY += 0.003;
+            }
+            if (state.playing && !state.paused) {
+                if (time - lastFrameTime > frameInterval) {
+                    state.currentFrame = (state.currentFrame + 1) % totalFrames;
+                    lastFrameTime = time;
+                }
+            }
+            renderFrame();
+            animRef.current = requestAnimationFrame(loop);
+        };
+        animRef.current = requestAnimationFrame(loop);
+
+        // Mouse/touch interaction for orbit
+        const onMouseDown = (e: MouseEvent) => {
+            state.dragging = true;
+            state.lastMouse = { x: e.clientX, y: e.clientY };
+        };
+        const onMouseMove = (e: MouseEvent) => {
+            if (!state.dragging) return;
+            const dx = e.clientX - state.lastMouse.x;
+            const dy = e.clientY - state.lastMouse.y;
+            state.rotY += dx * 0.005;
+            state.rotX += dy * 0.005;
+            state.rotX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, state.rotX));
+            state.lastMouse = { x: e.clientX, y: e.clientY };
+        };
+        const onMouseUp = () => { state.dragging = false; };
+
+        canvas.addEventListener('mousedown', onMouseDown);
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+
+        // Expose a minimal fake sphere interface so parent can call pause/resume
+        // IMPORTANT: Do NOT include trainingMovieData - this makes all real sphere
+        // control functions (pause/resume/step/goto) bail early with their guard checks
+        const fakeSphere: any = {
+            _canvas2dFallback: true,
+            isPlayingMovie: true,
+            _pausedByUser: false,
+            currentEpoch: 0,
+            // Stubs so real sphere functions don't crash if called on fake sphere
+            pointObjectsByRecordID: new Map(),
+            pointRecordsByID: new Map(),
+            pointPositionHistory: new Map(),
+            autoLoopMovie: false,
+            movieAnimationRef: 0,
+            _autoLoopCheckRef: undefined,
+            isPhysicsRunning: false,
+            physicsAnimationRef: undefined,
+            frameUpdateCallback: onFrameUpdate || null,
+            memoryTrailsGroup: null,
+            convexHullsGroup: null,
+            scene: null,
+            camera: null,
+            renderer: null,
+            pause: () => { state.paused = true; state.playing = false; fakeSphere._pausedByUser = true; fakeSphere.isPlayingMovie = false; },
+            resume: () => { state.paused = false; state.playing = true; fakeSphere._pausedByUser = false; fakeSphere.isPlayingMovie = true; },
+            gotoFrame: (f: number) => { state.currentFrame = Math.max(0, Math.min(f, totalFrames - 1)); },
+        };
+        if (onReady) onReady(fakeSphere);
+
+        return () => {
+            cancelAnimationFrame(animRef.current);
+            canvas.removeEventListener('mousedown', onMouseDown);
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onMouseUp);
+            ro.disconnect();
+        };
+    }, [trainingData, sessionProjections]);
+
+    if (containerRef) {
+        // Render into parent's container via portal-style: just the canvas
+        return <canvas ref={canvasRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} />;
+    }
+    return (
+        <div ref={internalRef} style={{ width: '100%', height: '100%', position: 'relative' }}>
+            <canvas ref={canvasRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} />
+        </div>
+    );
+};
+
 // Training Movie Sphere Component - handles everything internally
 const TrainingMovieSphere: React.FC<{
     trainingData: any,
@@ -277,9 +521,10 @@ const TrainingMovieSphere: React.FC<{
     const internalContainerRef = useRef<HTMLDivElement>(null);
     const actualContainerRef = containerRef || internalContainerRef;
     const sphereRef = useRef<any>(null);
+    const [webglFailed, setWebglFailed] = useState(false);
 
     useEffect(() => {
-        if (!actualContainerRef.current || !trainingData) {
+        if (!actualContainerRef.current || !trainingData || webglFailed) {
             return;
         }
 
@@ -308,12 +553,18 @@ const TrainingMovieSphere: React.FC<{
             const recordList = create_record_list(filteredSessionData);
             // Use batched loading for large datasets (batchSize = 200 points per frame)
             const batchSize = recordList.length > 500 ? 200 : 0; // 0 = no batching for small datasets
-            sphereRef.current = initialize_sphere(actualContainerRef.current, recordList, batchSize, onLoadingProgress || undefined);
+            try {
+                sphereRef.current = initialize_sphere(actualContainerRef.current, recordList, batchSize, onLoadingProgress || undefined);
+            } catch (webglErr: any) {
+                console.error('WebGL initialization failed, switching to Canvas2D fallback:', webglErr);
+                setWebglFailed(true);
+                return;
+            }
             // Set initial visual options
             if (sphereRef.current) {
                 set_visual_options(sphereRef.current, pointSize, pointAlpha);
             }
-            
+
             // Set session projections data for training movie with cluster results from first epoch
             sphereRef.current.jsonData = {
                 ...filteredSessionData,
@@ -381,7 +632,7 @@ const TrainingMovieSphere: React.FC<{
                 onReady(sphereRef.current);
             }
         }
-    }, [trainingData, sessionProjections, onReady, onLoadingProgress, pointSize, pointAlpha, rotationEnabled]);
+    }, [trainingData, sessionProjections, onReady, onLoadingProgress, pointSize, pointAlpha, rotationEnabled, webglFailed]);
 
     // Update rotation controls when rotationEnabled changes
     useEffect(() => {
@@ -412,17 +663,30 @@ const TrainingMovieSphere: React.FC<{
         };
     }, []);
 
+    // WebGL failed - render Canvas2D fallback
+    if (webglFailed) {
+        return (
+            <Canvas2DFallback
+                trainingData={trainingData}
+                sessionProjections={sessionProjections}
+                onFrameUpdate={onFrameUpdate}
+                onReady={onReady}
+                containerRef={containerRef}
+            />
+        );
+    }
+
     // If containerRef is provided from parent, don't render our own div
     // The parent will handle the container div
     if (containerRef) {
         return null;
     }
-    
+
     return (
-        <div 
+        <div
             ref={internalContainerRef}
-            style={{ 
-                width: '100%', 
+            style={{
+                width: '100%',
                 height: '100%',
                 background: 'transparent'
             }}
@@ -437,13 +701,18 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
     const [sessionProjections, setSessionProjections] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [waitingForData, setWaitingForData] = useState(false);
+    const [waitingCountdown, setWaitingCountdown] = useState(30);
+    const [waitingSessionInfo, setWaitingSessionInfo] = useState<any>(null);
+    const [loadRetryTrigger, setLoadRetryTrigger] = useState(0);
     
-    // Performance timing  
+    // Performance timing
     const componentStartTime = useRef(performance.now());
     const hasLoggedInit = useRef(false);
     if (!hasLoggedInit.current) {
         hasLoggedInit.current = true;
     }
+    const initialLoadCompleteTime = useRef<number>(0); // Track when initial load finished
     const [sphereRef, setSphereRef] = useState<any>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const outerContainerRef = useRef<HTMLDivElement>(null);
@@ -804,7 +1073,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                             setShowCountdown(false);
                             // Start the training movie using the ref
                             if (sphereRefForCountdown.current) {
-                                resume_training_movie(sphereRefForCountdown.current);
+                                if (sphereRefForCountdown.current._canvas2dFallback) {
+                                    // Canvas2D fallback handles its own playback
+                                    sphereRefForCountdown.current.resume();
+                                } else {
+                                    resume_training_movie(sphereRefForCountdown.current);
+                                }
                                 setIsPlaying(true);
                             } else {
                                 // No sphere reference available after countdown
@@ -1057,15 +1331,77 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                     throw new Error('No training movie data from API');
                 }
             } catch (err) {
-                console.error('Error loading training movie:', err);
-                setError(err instanceof Error ? err.message : 'Failed to load training movie');
+                const errMsg = err instanceof Error ? err.message : String(err);
+                const is404 = errMsg.includes('404') || errMsg.includes('Not Found');
+
+                if (is404) {
+                    // No data yet - training is probably still early. Enter waiting mode.
+                    console.log('Training data not available yet (404), will poll...');
+                    setWaitingForData(true);
+                    setError(null);
+                } else {
+                    console.error('Error loading training movie:', err);
+                    setError(errMsg);
+                }
             } finally {
                 setLoading(false);
+                initialLoadCompleteTime.current = Date.now();
             }
         };
 
         loadTrainingData();
-    }, [sessionId, apiBaseUrl, mode]); // Load when sessionId, apiBaseUrl, or mode changes
+    }, [sessionId, apiBaseUrl, mode, loadRetryTrigger]); // Load when sessionId, apiBaseUrl, mode changes, or retry triggered
+
+    // Poll session status while waiting for training data
+    useEffect(() => {
+        if (!waitingForData) return;
+
+        const pollSession = async () => {
+            try {
+                const status = await fetch_session_status(sessionId, apiBaseUrl);
+                if (status) {
+                    setWaitingSessionInfo(status);
+
+                    // If training is done, try loading projections again (but not forever)
+                    const sessionStatus = status.session?.status || status.status;
+                    if (sessionStatus === 'done' || sessionStatus === 'completed') {
+                        if (loadRetryTrigger >= 3) {
+                            // Already retried multiple times with status "done" but data still 404
+                            console.error('Training is done but projection data is unavailable after', loadRetryTrigger, 'retries');
+                            setWaitingForData(false);
+                            setError('Training completed but projection data is not available. The data may have been cleaned up.');
+                            return;
+                        }
+                        console.log('Training complete, loading projections (attempt', loadRetryTrigger + 1, ')...');
+                        setWaitingForData(false);
+                        setLoading(true);
+                        setError(null);
+                        setLoadRetryTrigger(prev => prev + 1);
+                        return;
+                    }
+                }
+            } catch {
+                // Session status fetch failed, keep waiting
+            }
+        };
+
+        // Fetch immediately
+        pollSession();
+
+        // Poll session status every 5 seconds for live progress
+        const statusTimer = setInterval(pollSession, 5000);
+
+        // Countdown display (resets every 5s to match poll interval)
+        setWaitingCountdown(5);
+        const countdownTimer = setInterval(() => {
+            setWaitingCountdown(prev => prev <= 1 ? 5 : prev - 1);
+        }, 1000);
+
+        return () => {
+            clearInterval(statusTimer);
+            clearInterval(countdownTimer);
+        };
+    }, [waitingForData, sessionId, apiBaseUrl]);
 
     // Poll for new epochs if training is in progress
     useEffect(() => {
@@ -1073,6 +1409,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
         if (!sessionId && !dataEndpoint) return;
 
         const checkForNewEpochs = async () => {
+            // Skip if initial load just completed (avoid duplicate fetch)
+            if (initialLoadCompleteTime.current && Date.now() - initialLoadCompleteTime.current < 25000) {
+                return;
+            }
             try {
                 // Get current epoch keys
                 const currentEpochKeys = Object.keys(trainingData);
@@ -1139,24 +1479,28 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                             
                             // Update sphere with new epochs if it's already loaded
                             if (sphereRef && sphereRef.trainingMovieData) {
-                                // Check if movie was playing before we reload
-                                const wasPlaying = sphereRef.isPlayingMovie || false;
-                                const wasPaused = sphereRef._pausedByUser || false;
+                                // Skip sphere manipulation for Canvas2D fallback -
+                                // it picks up new data from trainingData state automatically
+                                if (!sphereRef._canvas2dFallback) {
+                                    // Check if movie was playing before we reload
+                                    const wasPlaying = sphereRef.isPlayingMovie || false;
+                                    const wasPaused = sphereRef._pausedByUser || false;
 
-                                // Stop current movie
-                                stop_training_movie(sphereRef);
+                                    // Stop current movie
+                                    stop_training_movie(sphereRef);
 
-                                // Reload training movie with updated data
-                                load_training_movie(sphereRef, updatedTrainingData, latestData.training_metrics || lossData, sessionProjections);
+                                    // Reload training movie with updated data
+                                    load_training_movie(sphereRef, updatedTrainingData, latestData.training_metrics || lossData, sessionProjections);
 
-                                // Only auto-restart if user hadn't paused
-                                if (!wasPaused) {
-                                    goto_training_movie_frame(sphereRef, 1);
-                                    setIsPlaying(true);
-                                    play_training_movie(sphereRef);
-                                } else {
-                                    // Stay paused but update to current frame
-                                    goto_training_movie_frame(sphereRef, sphereRef.currentEpoch || 1);
+                                    // Only auto-restart if user hadn't paused
+                                    if (!wasPaused) {
+                                        goto_training_movie_frame(sphereRef, 1);
+                                        setIsPlaying(true);
+                                        play_training_movie(sphereRef);
+                                    } else {
+                                        // Stay paused but update to current frame
+                                        goto_training_movie_frame(sphereRef, sphereRef.currentEpoch || 1);
+                                    }
                                 }
                             }
 
@@ -1185,8 +1529,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
             });
         }, 1000);
         
-        // Check immediately on mount
-        checkForNewEpochs();
+        // Don't check immediately - the initial load already fetched the data.
+        // The 30s interval will pick up new epochs.
 
         return () => {
             clearInterval(pollInterval);
@@ -1251,12 +1595,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
     // Frame control functions
     const handlePlayPause = () => {
         if (!sphereRef) return;
-        
+
         if (isPlaying) {
-            pause_training_movie(sphereRef);
+            if (sphereRef._canvas2dFallback) { sphereRef.pause(); } else { pause_training_movie(sphereRef); }
             setIsPlaying(false);
         } else {
-            resume_training_movie(sphereRef);
+            if (sphereRef._canvas2dFallback) { sphereRef.resume(); } else { resume_training_movie(sphereRef); }
             setIsPlaying(true);
         }
     };
@@ -1752,8 +2096,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
             return;
         }
 
-        // If empty, restore original cluster colors
+        // If empty, clear selection and restore original cluster colors
         if (inputValue === "") {
+            clear_selected_objects(sphereRef);
             applyColorRules();
             setSearchResultStats(null);
             return;
@@ -1766,20 +2111,23 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
         // Create a set of matching record IDs for fast lookup
         const matchingIds = new Set(theRecords.map(r => r.id));
 
-        // LIVE PREVIEW: Color all points - green for matches, gray for non-matches
-        const GREEN = 0x4caf50; // Material green
-        const GRAY = 0x555555;  // Dark gray
+        // Clear previous selection and apply yellow highlight via selectedRecords
+        // This ensures frame updates preserve the selection colors
+        clear_colors(sphereRef);
+        clear_selected_objects(sphereRef);
+
+        const YELLOW = '#ffff00';
 
         sphereRef.pointObjectsByRecordID?.forEach((mesh: any, recordId: string) => {
             if (mesh.material && 'color' in mesh.material) {
                 if (matchingIds.has(recordId)) {
-                    // Match: bright green, full opacity
-                    mesh.material.color.setHex(GREEN);
+                    // Match: yellow highlight, full opacity, added to selectedRecords for persistence
+                    add_selected_record(sphereRef, recordId);
+                    change_object_color(sphereRef, recordId, YELLOW);
                     mesh.material.opacity = sphereRef.pointOpacity || 0.5;
                 } else {
-                    // No match: gray, reduced opacity
-                    mesh.material.color.setHex(GRAY);
-                    mesh.material.opacity = (sphereRef.pointOpacity || 0.5) * 0.3;
+                    // No match: dim
+                    mesh.material.opacity = (sphereRef.pointOpacity || 0.5) * 0.15;
                 }
                 mesh.material.needsUpdate = true;
             }
@@ -2126,6 +2474,98 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
         );
     }
 
+    if (waitingForData) {
+        // Extract training progress from session info
+        const sessionStatus = waitingSessionInfo?.session?.status || waitingSessionInfo?.status || 'unknown';
+        const jobPlan = waitingSessionInfo?.job_plan || waitingSessionInfo?.session?.job_plan || [];
+        const activeJob = jobPlan.find((j: any) => j.status === 'running') || jobPlan[jobPlan.length - 1];
+        const currentEpoch = activeJob?.current_epoch || activeJob?.progress?.current_epoch;
+        const currentLoss = activeJob?.current_loss || activeJob?.progress?.current_loss;
+        const validationLoss = activeJob?.validation_loss || activeJob?.progress?.validation_loss;
+
+        return (
+            <div className="training-progress-display" style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: '100vh',
+                background: '#2a2a2a',
+                color: '#d0d0d0',
+            }}>
+                <style>{`@keyframes spin { to { transform: rotate(360deg) } } @keyframes pulse { 0%, 100% { opacity: 0.4 } 50% { opacity: 1 } }`}</style>
+                <div style={{
+                    width: '40px',
+                    height: '40px',
+                    border: '3px solid #555',
+                    borderTop: '3px solid #64b5f6',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite',
+                    marginBottom: '20px'
+                }}></div>
+                <div style={{ fontSize: '16px', color: '#64b5f6', marginBottom: '8px' }}>
+                    Waiting for training data...
+                </div>
+                <div style={{ fontSize: '13px', color: '#888', marginBottom: '16px' }}>
+                    Training is in progress. The visualization will load once projections are available.
+                </div>
+
+                {/* Training progress stats */}
+                {waitingSessionInfo && (
+                    <div style={{
+                        display: 'flex',
+                        gap: '24px',
+                        marginBottom: '20px',
+                        padding: '12px 24px',
+                        background: '#222',
+                        borderRadius: '8px',
+                        border: '1px solid #333',
+                    }}>
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: '10px', color: '#888', textTransform: 'uppercase', marginBottom: '4px' }}>Status</div>
+                            <div style={{ fontSize: '14px', color: sessionStatus === 'running' ? '#64b5f6' : '#e6e6e6', fontWeight: 600 }}>
+                                {sessionStatus}
+                            </div>
+                        </div>
+                        {currentEpoch != null && (
+                            <div style={{ textAlign: 'center' }}>
+                                <div style={{ fontSize: '10px', color: '#888', textTransform: 'uppercase', marginBottom: '4px' }}>Epoch</div>
+                                <div style={{ fontSize: '14px', color: '#e6e6e6', fontFamily: 'monospace' }}>{currentEpoch}</div>
+                            </div>
+                        )}
+                        {currentLoss != null && (
+                            <div style={{ textAlign: 'center' }}>
+                                <div style={{ fontSize: '10px', color: '#888', textTransform: 'uppercase', marginBottom: '4px' }}>Loss</div>
+                                <div style={{ fontSize: '14px', color: '#e6e6e6', fontFamily: 'monospace' }}>{Number(currentLoss).toFixed(4)}</div>
+                            </div>
+                        )}
+                        {validationLoss != null && (
+                            <div style={{ textAlign: 'center' }}>
+                                <div style={{ fontSize: '10px', color: '#888', textTransform: 'uppercase', marginBottom: '4px' }}>Val Loss</div>
+                                <div style={{ fontSize: '14px', color: '#e6e6e6', fontFamily: 'monospace' }}>{Number(validationLoss).toFixed(4)}</div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                <div style={{
+                    fontSize: '20px',
+                    fontFamily: 'monospace',
+                    color: '#64b5f6',
+                    animation: 'pulse 2s ease-in-out infinite',
+                }}>
+                    {waitingCountdown}s
+                </div>
+                <div style={{ fontSize: '11px', color: '#555', marginTop: '4px' }}>
+                    next poll
+                </div>
+                <div style={{ fontSize: '11px', color: '#444', marginTop: '16px', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
+                    {sessionId}
+                </div>
+            </div>
+        );
+    }
+
     if (error) {
         return (
             <div className="training-progress-display" style={{
@@ -2337,15 +2777,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                     {/* Mobile: Playback play/pause always visible */}
                     {isMobile && (
                         <button
-                            onClick={() => {
-                                if (isPlaying) {
-                                    pause_training_movie(sphereRef);
-                                    setIsPlaying(false);
-                                } else {
-                                    resume_training_movie(sphereRef);
-                                    setIsPlaying(true);
-                                }
-                            }}
+                            onClick={handlePlayPause}
                             style={{
                                 background: 'transparent',
                                 border: 'none',
@@ -2585,6 +3017,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                                         onClick={() => {
                                             setSearchQuery('');
                                             setSearchResultStats(null);
+                                            if (sphereRef) clear_selected_objects(sphereRef);
                                             applyColorRules();
                                         }}
                                         style={{
@@ -3525,15 +3958,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="5" width="3" height="14"/><polygon points="19,5 9,12 19,19"/></svg>
                                     </button>
                                     <button
-                                        onClick={() => {
-                                            if (isPlaying) {
-                                                pause_training_movie(sphereRef);
-                                                setIsPlaying(false);
-                                            } else {
-                                                resume_training_movie(sphereRef);
-                                                setIsPlaying(true);
-                                            }
-                                        }}
+                                        onClick={handlePlayPause}
                                         style={{
                                             background: isPlaying ? '#64b5f6' : '#252525',
                                             border: '1px solid #3a3a3a',
@@ -4031,16 +4456,22 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                             // Training movie sphere ready
                             setSphereRef(sphere);
                             sphereRefForCountdown.current = sphere; // Store sphere in ref
-                            
+
+                            // Canvas2D fallback handles its own playback - skip countdown/pause
+                            if (sphere._canvas2dFallback) {
+                                setIsPlaying(true);
+                                return;
+                            }
+
                             // Start with paused state for countdown
                             setIsPlaying(false);
-                            
+
                             // Pause the sphere initially
                             if (sphere) {
                                 pause_training_movie(sphere);
                             }
-                            
-                            
+
+
                             // Start countdown after a brief delay (skip for thumbnail mode)
                             if (mode === 'thumbnail') {
                                 // Thumbnail: immediately start rotation, no countdown
