@@ -42,6 +42,8 @@ interface FeatrixSphereViewerConfig {
   // Custom data endpoint URL - overrides the default epoch_projections URL.
   // Response format must match epoch_projections (same JSON structure).
   dataEndpoint?: string;
+  // JWT auth token - sent as Bearer token in Authorization header on all API requests
+  authToken?: string;
   // Callback when sphere is ready
   onSphereReady?: (sphereRef: any) => void;
 }
@@ -72,7 +74,8 @@ class FeatrixSphereViewer {
       const dataUrl = script.getAttribute('data-featrix-data');
       const windowDataKey = script.getAttribute('data-use-window-data');
       const dataEndpoint = script.getAttribute('data-endpoint') || undefined;
-      
+      const authToken = script.getAttribute('data-auth-token') || undefined;
+
       // Animation control attributes
       const isRotating = script.getAttribute('data-is-rotating') !== 'false'; // default true
       const rotationSpeed = parseFloat(script.getAttribute('data-rotation-speed') || '0.1');
@@ -106,6 +109,7 @@ class FeatrixSphereViewer {
         pointOpacity,
         mode,
         dataEndpoint,
+        authToken,
         onSphereReady: (window as any).onSphereReady || undefined
       };
 
@@ -299,6 +303,7 @@ class FeatrixSphereViewer {
       <FeatrixSphereEmbedded
         initial_data={initial_data}
         apiBaseUrl={apiBaseUrl}
+        authToken={config.authToken}
         isRotating={config.isRotating}
         rotationSpeed={config.rotationSpeed}
         animateClusters={config.animateClusters}
@@ -333,9 +338,10 @@ class FeatrixSphereViewer {
     if (this.root && (config.data || config.sessionId)) {
       const initial_data = config.data || { session: { session_id: config.sessionId } };
       this.root.render(
-        <FeatrixSphereEmbedded 
+        <FeatrixSphereEmbedded
           initial_data={initial_data}
           apiBaseUrl={config.apiBaseUrl}
+          authToken={config.authToken}
           isRotating={config.isRotating}
           rotationSpeed={config.rotationSpeed}
           animateClusters={config.animateClusters}
@@ -386,9 +392,10 @@ class FeatrixSphereViewer {
     if (this.root) {
       const initial_data = this.currentConfig.data || { session: { session_id: this.currentConfig.sessionId } };
       this.root.render(
-        <FeatrixSphereEmbedded 
+        <FeatrixSphereEmbedded
           initial_data={initial_data}
           apiBaseUrl={this.currentConfig.apiBaseUrl}
+          authToken={this.currentConfig.authToken}
           isRotating={this.currentConfig.isRotating}
           rotationSpeed={this.currentConfig.rotationSpeed}
           animateClusters={this.currentConfig.animateClusters}

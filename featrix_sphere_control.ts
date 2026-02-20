@@ -8,6 +8,74 @@ const RED = "#ff0000";
 const BLACK = "#000000";
 const GRAY = "#dddddd";
 
+// --- Cached sprite textures for rocket mode ---
+let _fireTexture: THREE.CanvasTexture | null = null;
+let _smokeTexture: THREE.CanvasTexture | null = null;
+let _glowTexture: THREE.CanvasTexture | null = null;
+
+function getFireTexture(): THREE.CanvasTexture {
+    if (_fireTexture) return _fireTexture;
+    const size = 64;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    // Teardrop-ish flame shape: radial gradient biased upward
+    const cx = size / 2, cy = size * 0.55;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 0.45);
+    grad.addColorStop(0, 'rgba(255, 255, 220, 1.0)');   // white-hot core
+    grad.addColorStop(0.15, 'rgba(255, 240, 120, 0.95)'); // bright yellow
+    grad.addColorStop(0.35, 'rgba(255, 180, 40, 0.8)');   // orange
+    grad.addColorStop(0.6, 'rgba(255, 80, 10, 0.5)');     // red-orange
+    grad.addColorStop(0.85, 'rgba(200, 30, 5, 0.2)');     // dark red
+    grad.addColorStop(1.0, 'rgba(100, 10, 0, 0.0)');      // transparent
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+    _fireTexture = new THREE.CanvasTexture(canvas);
+    _fireTexture.needsUpdate = true;
+    return _fireTexture;
+}
+
+function getSmokeTexture(): THREE.CanvasTexture {
+    if (_smokeTexture) return _smokeTexture;
+    const size = 64;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    // Soft cloudy smoke puff
+    const cx = size / 2, cy = size / 2;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 0.45);
+    grad.addColorStop(0, 'rgba(180, 175, 170, 0.6)');    // warm gray center
+    grad.addColorStop(0.3, 'rgba(160, 155, 150, 0.4)');
+    grad.addColorStop(0.6, 'rgba(140, 135, 130, 0.2)');
+    grad.addColorStop(1.0, 'rgba(120, 115, 110, 0.0)');   // transparent edge
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+    _smokeTexture = new THREE.CanvasTexture(canvas);
+    _smokeTexture.needsUpdate = true;
+    return _smokeTexture;
+}
+
+function getGlowTexture(): THREE.CanvasTexture {
+    if (_glowTexture) return _glowTexture;
+    const size = 64;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    const cx = size / 2, cy = size / 2;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 0.48);
+    grad.addColorStop(0, 'rgba(255, 200, 80, 0.8)');
+    grad.addColorStop(0.4, 'rgba(255, 120, 20, 0.4)');
+    grad.addColorStop(1.0, 'rgba(200, 50, 0, 0.0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+    _glowTexture = new THREE.CanvasTexture(canvas);
+    _glowTexture.needsUpdate = true;
+    return _glowTexture;
+}
+
 /**
  * Simple k-means clustering on 3D points.
  * Returns an array of cluster labels (one per point).
@@ -451,7 +519,12 @@ function fit_sphere_to_container(sphere: SphereData) {
     sphere.camera.aspect = aspect;
     sphere.camera.fov = fov;
     sphere.camera.updateProjectionMatrix();
-    sphere.renderer.setSize(width, effectiveHeight);
+    // Only call setSize when dimensions actually change — setSize clears the canvas
+    // buffer every call, which can cause black flashes between frames
+    const currentSize = sphere.renderer.getSize(new THREE.Vector2());
+    if (Math.abs(currentSize.x - width) > 0.5 || Math.abs(currentSize.y - effectiveHeight) > 0.5) {
+        sphere.renderer.setSize(width, effectiveHeight);
+    }
 
     // Auto-fit orbit radius to show the whole sphere, unless user has manually zoomed
     if (!sphere.userHasZoomed) {
@@ -528,6 +601,7 @@ function updatePointDepthOpacity(sphere: SphereData) {
 }
 
 export function render_sphere(sphere: SphereData) {
+    if (!sphere.container || !sphere.renderer) return;
     const beforeWidth = sphere.container.clientWidth;
     const beforeHeight = sphere.container.clientHeight;
     
@@ -1849,6 +1923,11 @@ export function play_training_movie(sphere: SphereData, durationSeconds: number 
 
             // No loop - stop the movie, auto-rotation continues
             sphere.isPlayingMovie = false;
+
+            // Fade out trails after a pregnant pause
+            setTimeout(() => {
+                fade_out_trails(sphere);
+            }, 2000);
             return;
         }
 
@@ -2056,6 +2135,21 @@ function animate_interpolation(sphere: SphereData) {
             // Use Hermite interpolation for smooth velocity-continuous motion
             const newPos = hermiteInterpolate(startPos, inVel, targetPos, outVel, easedProgress);
             mesh.position.copy(newPos);
+
+            // Sport mode: vary point size based on movement speed
+            if (sphere.sportMode) {
+                // Fast movers get bigger and brighter, slow movers shrink
+                const baseSize = sphere.pointSize || 0.05;
+                const speedFactor = Math.min(distance / 0.3, 1.0); // normalize to 0..1
+                const scale = 0.6 + speedFactor * 1.8; // 0.6x to 2.4x base size
+                mesh.scale.setScalar(scale);
+                // Brighter for fast movers
+                const mat = mesh.material;
+                if (mat && 'emissive' in mat) {
+                    const warmth = speedFactor * 0.4;
+                    mat.emissive.setRGB(warmth, warmth * 0.5, 0);
+                }
+            }
         }
     });
 
@@ -2133,6 +2227,11 @@ function stop_point_interpolation(sphere: SphereData) {
                     const velocity = new THREE.Vector3().subVectors(targetPos, startPos).normalize();
                     sphere.pointStartVelocities?.set(recordId, velocity);
                 }
+
+                // Record the snapped position in trail history — without this,
+                // trails always draw back to the initial position because
+                // history only updated when interpolation naturally completes
+                store_point_position_in_history(sphere, recordId, mesh.position);
             }
         });
     }
@@ -2487,11 +2586,12 @@ function createGreatCircleArc(start: THREE.Vector3, end: THREE.Vector3, segments
     const arcProportionalSegments = Math.max(2, Math.ceil(angle / (Math.PI / 12)));
     const segments = Math.min(arcProportionalSegments, 24); // Cap at 24 for performance
 
-    // If points are very close, just return interpolated line
+    // If points are very close, interpolate and project onto sphere surface
     if (angle < 0.01) {
         for (let i = 0; i <= segments; i++) {
             const t = i / segments;
             const point = new THREE.Vector3().lerpVectors(start, end, t);
+            point.normalize().multiplyScalar(avgRadius);
             points.push(point);
         }
         return points;
@@ -2543,6 +2643,14 @@ export function update_memory_trails(sphere: SphereData) {
         return;
     }
 
+    // Hide trails if trail length is 0
+    if (sphere.memoryTrailLength === 0) {
+        if (sphere.memoryTrailsGroup.visible) {
+            sphere.memoryTrailsGroup.visible = false;
+        }
+        return;
+    }
+
     // PERFORMANCE: Skip trail updates if disabled or if we have too many points
     const pointCount = sphere.pointObjectsByRecordID.size;
     if (pointCount > 1000) {
@@ -2553,14 +2661,20 @@ export function update_memory_trails(sphere: SphereData) {
         return;
     }
 
-    // Clear existing trail lines - dispose geometries and materials properly
+    // Ensure trails are visible
+    if (!sphere.memoryTrailsGroup.visible) {
+        sphere.memoryTrailsGroup.visible = true;
+    }
+
+    // Clear existing trail lines and sprites - dispose geometries and materials properly
+    // Note: sprite textures (fire/smoke/glow) are cached singletons, do NOT dispose them here
     while (sphere.memoryTrailsGroup.children.length > 0) {
-        const child = sphere.memoryTrailsGroup.children[0];
+        const child = sphere.memoryTrailsGroup.children[0] as any;
         sphere.memoryTrailsGroup.remove(child);
         if (child.geometry) child.geometry.dispose();
         if (child.material) {
             if (Array.isArray(child.material)) {
-                child.material.forEach(m => m.dispose());
+                child.material.forEach((m: any) => m.dispose());
             } else {
                 child.material.dispose();
             }
@@ -2608,88 +2722,231 @@ export function update_memory_trails(sphere: SphereData) {
         // Get point color - use gray for non-spotlight members
         const pointColor = isSpotlightMember ? pointMesh.material.color : GRAY_COLOR;
         
-        // Create trail segments (up to 5 segments)
-        const maxSegments = Math.min(5, history.length - 1);
-        
-        // First pass: calculate all distances to determine max distance for normalization
-        const distances: number[] = [];
-        for (let i = 0; i < maxSegments; i++) {
-            // For first segment (i=0): connect live position to history[1] (previous epoch)
-            // For subsequent segments: connect history[i] to history[i+1]
-            const currentPos = (i === 0) ? pointMesh.position.clone() : history[i].clone();
-            const previousPos = history[i + 1].clone();
-            const distance = currentPos.distanceTo(previousPos);
-            distances.push(distance);
-        }
-        const maxDistance = Math.max(...distances);
-        const minDistance = Math.min(...distances);
-        const distanceRange = maxDistance - minDistance;
-        
-        // First: Draw "current movement" trail from start of interpolation to live position
-        // This makes the trail visibly chase the point during animation
+        // Create trail segments based on configured trail length
+        const trailLen = sphere.memoryTrailLength || 5;
+        const maxSegments = Math.min(trailLen, history.length - 1);
+
         const livePos = pointMesh.position.clone();
-        const startPos = history[0].clone(); // Where point was at start of this transition
+        const startPos = history[0].clone();
         const currentMoveDistance = livePos.distanceTo(startPos);
 
         // Get interpolation progress (0 = just started, 1 = complete)
         const progress = sphere.interpolationProgress || 0;
 
+        // Build trail waypoints: livePos → history[0] → history[1] → ...
+        // All points are projected onto the sphere surface so arcs don't cut through the interior.
+        const sphereRadius = startPos.length() || 1.0; // Use history[0]'s radius as reference
+        const waypoints: THREE.Vector3[] = [];
         if (currentMoveDistance > 0.001) {
-            // Active segment fades as the point travels:
-            // At start (progress=0): bright (0.6)
-            // At end (progress=1): fades to match historical level (0.3)
-            const activeAlpha = (0.6 - (progress * 0.3)) * spotlightDimFactor;
-
-            const activeArcPoints = createGreatCircleArc(startPos, livePos, 8);
-            const activeLineGeometry = new THREE.BufferGeometry().setFromPoints(activeArcPoints);
-            const activeLineMaterial = new THREE.LineBasicMaterial({
-                color: pointColor.clone(),
-                transparent: true,
-                opacity: activeAlpha,
-                linewidth: 1
-            });
-            const activeLine = new THREE.Line(activeLineGeometry, activeLineMaterial);
-            sphere.memoryTrailsGroup.add(activeLine);
+            waypoints.push(livePos.clone().normalize().multiplyScalar(sphereRadius));
+        }
+        for (let i = 0; i <= maxSegments; i++) {
+            waypoints.push(history[i].clone().normalize().multiplyScalar(sphereRadius));
         }
 
-        // Then: Draw historical trail segments (older positions fade out)
-        for (let i = 0; i < maxSegments; i++) {
-            // Connect history[i] to history[i+1] (older historical positions)
-            const currentPos = history[i].clone();
-            const previousPos = history[i + 1].clone();
-            const distance = distances[i];
+        // Pre-compute distances for normalization
+        const segDistances: number[] = [];
+        for (let i = 0; i < waypoints.length - 1; i++) {
+            segDistances.push(waypoints[i].distanceTo(waypoints[i + 1]));
+        }
+        const maxDistance = segDistances.length > 0 ? Math.max(...segDistances) : 0;
+        const minDistance = segDistances.length > 0 ? Math.min(...segDistances) : 0;
+        const distanceRange = maxDistance - minDistance;
 
-            // Age-based fade: newest (i=0) is brightest, oldest fades out
-            // ageFactor goes from 0.8 (newest historical) to ~0.1 (oldest)
-            const ageFactor = 0.8 - (i / maxSegments) * 0.7;
+        // Draw each segment between consecutive waypoints
+        for (let i = 0; i < waypoints.length - 1; i++) {
+            const segStart = waypoints[i];
+            const segEnd = waypoints[i + 1];
+            const distance = segDistances[i];
+            if (distance < 0.0005) continue;
+
+            // Age-based fade: segment 0 is newest (brightest), older segments fade
+            const ageFactor = 0.8 - (i / Math.max(1, waypoints.length - 1)) * 0.7;
 
             // Distance-based alpha: longer segments are lighter
             let distanceAlpha;
             if (distanceRange > 0.001) {
-                const normalizedDistance = (distance - minDistance) / distanceRange;
+                const normalizedDistance = Math.min(1, (distance - minDistance) / distanceRange);
                 const exponentialFactor = Math.pow(normalizedDistance, 1.5);
-                distanceAlpha = 0.5 - (exponentialFactor * 0.4); // 0.5 to 0.1
+                distanceAlpha = 0.5 - (exponentialFactor * 0.4);
             } else {
                 distanceAlpha = 0.5;
             }
 
-            // Combine distance and age: multiply them together, apply spotlight dim
-            const alpha = distanceAlpha * ageFactor * spotlightDimFactor;
+            let alpha = distanceAlpha * ageFactor * spotlightDimFactor;
+            let segmentColor = pointColor.clone();
 
-            // Generate great circle arc points - REDUCED segments for performance
-            const segments = Math.max(2, Math.min(8, Math.floor(distance * 4))); // Reduced: 2-8 segments (was 4-16)
-            const arcPoints = createGreatCircleArc(previousPos, currentPos, segments);
+            // Bloom effect for newest segment: bright/oversaturated, ramping down
+            // DISABLED: too distracting visually — keeping code for future use
+            // if (i === 0) {
+            //     const bloomIntensity = Math.pow(1.0 - progress, 2);
+            //     alpha = Math.min(1.0, alpha + bloomIntensity * 0.5);
+            //     segmentColor.lerp(new THREE.Color(1, 1, 1), bloomIntensity * 0.5);
+            // }
 
-            const lineGeometry = new THREE.BufferGeometry().setFromPoints(arcPoints);
-            const lineMaterial = new THREE.LineBasicMaterial({
-                color: pointColor.clone(),
+            // Farewell bloom for oldest segment: briefly brightens before fading out
+            // DISABLED: too distracting visually — keeping code for future use
+            if (false && i === waypoints.length - 2 && waypoints.length > 2) {
+                const farewellBloom = Math.pow(Math.sin(progress * Math.PI * 0.8), 2) * 0.5;
+                alpha = Math.min(1.0, alpha + farewellBloom);
+                segmentColor.lerp(new THREE.Color(1, 1, 1), farewellBloom * 0.3);
+            }
+
+            // For the active segment (i=0 with live position), trace the actual Hermite
+            // interpolation path so the trail hugs the point's real trajectory.
+            // For historical segments, use great circle arcs.
+            // Generate arc points on the sphere surface.
+            // For the active segment, sample the Hermite path then project onto the sphere.
+            // For historical segments, use SLERP (great circle arcs stay on surface by construction).
+            let segPoints: THREE.Vector3[];
+            const isActiveSegment = i === 0 && currentMoveDistance > 0.001;
+            if (isActiveSegment && sphere.isInterpolating && progress > 0.01) {
+                const interpStart = sphere.pointStartPositions?.get(recordId);
+                const interpTarget = sphere.pointTargetPositions?.get(recordId);
+                const interpVel = sphere.pointStartVelocities?.get(recordId);
+                if (interpStart && interpTarget) {
+                    const displacement = new THREE.Vector3().subVectors(interpTarget, interpStart);
+                    const dist = displacement.length();
+                    const inVel = interpVel ? interpVel.clone().multiplyScalar(dist * 0.5) : new THREE.Vector3(0, 0, 0);
+                    const outVel = displacement.clone().multiplyScalar(0.5);
+                    // Sample the Hermite curve, project each point onto the sphere surface
+                    const samples = Math.max(4, Math.ceil(progress * 12));
+                    segPoints = [];
+                    for (let s = samples; s >= 0; s--) {
+                        const t = (s / samples) * progress;
+                        const pt = hermiteInterpolate(interpStart, inVel, interpTarget, outVel, t);
+                        // Project onto sphere surface
+                        pt.normalize().multiplyScalar(sphereRadius);
+                        segPoints.push(pt);
+                    }
+                } else {
+                    segPoints = createGreatCircleArc(segStart, segEnd, 8);
+                }
+            } else {
+                segPoints = createGreatCircleArc(segStart, segEnd, 8);
+            }
+            const lineGeometry = new THREE.BufferGeometry().setFromPoints(segPoints);
+
+            if (sphere.rocketMode) {
+                // Rocket mode: dense smoke plume along arc — no guide line
+                const smokeTex = getSmokeTexture();
+                // More puffs for denser smoke, especially on newer segments
+                const basePuffCount = Math.max(3, segPoints.length);
+                // Newer segments (closer to rocket) get more puffs
+                const densityBoost = i === 0 ? 2.0 : (i === 1 ? 1.5 : 1.0);
+                const puffCount = Math.ceil(basePuffCount * densityBoost);
+
+                for (let p = 0; p < puffCount; p++) {
+                    // t=0 is near the rocket (start of segment), t=1 is the tail end
+                    const t = p / Math.max(1, puffCount - 1);
+                    // Interpolate position along arc segment
+                    const idx = Math.min(Math.floor(t * (segPoints.length - 1)), segPoints.length - 1);
+                    const nextIdx = Math.min(idx + 1, segPoints.length - 1);
+                    const localT = (t * (segPoints.length - 1)) - idx;
+                    const puffPos = segPoints[idx].clone().lerp(segPoints[nextIdx], localT);
+
+                    // Jitter increases with distance from rocket (smoke disperses)
+                    const dispersal = 0.003 + t * 0.012 + (1.0 - ageFactor) * 0.008;
+                    puffPos.x += (Math.random() - 0.5) * dispersal;
+                    puffPos.y += (Math.random() - 0.5) * dispersal;
+                    puffPos.z += (Math.random() - 0.5) * dispersal;
+                    puffPos.normalize().multiplyScalar(sphereRadius);
+
+                    // Size: small near rocket, bigger further away (expanding plume)
+                    const puffSize = 0.015 + t * 0.025 + (1.0 - ageFactor) * 0.015 + Math.random() * 0.01;
+                    // Opacity: dense near rocket, fading toward tail
+                    const proximityOpacity = 1.0 - t * 0.5;
+                    const puffOpacity = Math.min(0.55, alpha * 1.5 * ageFactor * proximityOpacity) * spotlightDimFactor;
+                    // Color: warmer near rocket (from flame), cooler gray further away
+                    const warmth = Math.max(0, 1.0 - t * 1.5 - i * 0.3);
+                    const r = 0.65 + warmth * 0.25 + Math.random() * 0.08;
+                    const g = 0.62 + warmth * 0.1 + Math.random() * 0.06;
+                    const b = 0.58 - warmth * 0.05 + Math.random() * 0.05;
+
+                    const puffMat = new THREE.SpriteMaterial({
+                        map: smokeTex,
+                        transparent: true,
+                        opacity: puffOpacity,
+                        depthWrite: false,
+                        blending: THREE.NormalBlending,
+                        color: new THREE.Color(r, g, b),
+                    });
+                    const puffSprite = new THREE.Sprite(puffMat);
+                    puffSprite.position.copy(puffPos);
+                    puffSprite.scale.set(puffSize, puffSize, 1);
+                    sphere.memoryTrailsGroup.add(puffSprite);
+                }
+            } else {
+                // Normal mode: colored trail line
+                const lineMaterial = new THREE.LineBasicMaterial({
+                    color: segmentColor,
+                    transparent: true,
+                    opacity: alpha,
+                    linewidth: 1
+                });
+                const line = new THREE.Line(lineGeometry, lineMaterial);
+                sphere.memoryTrailsGroup.add(line);
+            }
+        }
+
+        // Rocket mode: add sprite-based flame effects behind each moving point
+        if (sphere.rocketMode && currentMoveDistance > 0.002) {
+            const moveDir = new THREE.Vector3().subVectors(livePos, startPos).normalize();
+            const fireTex = getFireTexture();
+            const glowTex = getGlowTexture();
+
+            // Main flame sprite (right behind the point)
+            const flameOffset = 0.025 + Math.random() * 0.008;
+            const flamePos = livePos.clone().addScaledVector(moveDir, -flameOffset);
+            flamePos.normalize().multiplyScalar(sphereRadius);
+
+            const flameMat = new THREE.SpriteMaterial({
+                map: fireTex,
                 transparent: true,
-                opacity: alpha,
-                linewidth: 1
+                opacity: 0.85,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending,
+                color: new THREE.Color(1.0, 0.95, 0.7),
             });
+            const flameSprite = new THREE.Sprite(flameMat);
+            flameSprite.position.copy(flamePos);
+            const flameSize = 0.04 + Math.random() * 0.01;
+            flameSprite.scale.set(flameSize, flameSize * 1.3, 1); // taller than wide
+            sphere.memoryTrailsGroup.add(flameSprite);
 
-            const line = new THREE.Line(lineGeometry, lineMaterial);
-            sphere.memoryTrailsGroup.add(line);
+            // Secondary flame (slightly further back, larger, more orange)
+            const flame2Pos = livePos.clone().addScaledVector(moveDir, -(flameOffset + 0.015));
+            flame2Pos.normalize().multiplyScalar(sphereRadius);
+            const flame2Mat = new THREE.SpriteMaterial({
+                map: fireTex,
+                transparent: true,
+                opacity: 0.6 + Math.random() * 0.15,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending,
+                color: new THREE.Color(1.0, 0.5 + Math.random() * 0.2, 0.1),
+            });
+            const flame2Sprite = new THREE.Sprite(flame2Mat);
+            flame2Sprite.position.copy(flame2Pos);
+            const flame2Size = 0.03 + Math.random() * 0.015;
+            flame2Sprite.scale.set(flame2Size, flame2Size * 1.2, 1);
+            sphere.memoryTrailsGroup.add(flame2Sprite);
+
+            // Glow halo around the flame
+            const glowPos = livePos.clone().addScaledVector(moveDir, -flameOffset * 0.5);
+            glowPos.normalize().multiplyScalar(sphereRadius);
+            const glowMat = new THREE.SpriteMaterial({
+                map: glowTex,
+                transparent: true,
+                opacity: 0.35,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending,
+                color: new THREE.Color(1.0, 0.7, 0.2),
+            });
+            const glowSprite = new THREE.Sprite(glowMat);
+            glowSprite.position.copy(glowPos);
+            const glowSize = 0.06 + Math.random() * 0.02;
+            glowSprite.scale.set(glowSize, glowSize, 1);
+            sphere.memoryTrailsGroup.add(glowSprite);
         }
     });
 }
@@ -2729,6 +2986,53 @@ export function trim_trail_history(sphere: SphereData) {
 
     // Update trails immediately to reflect the change
     update_memory_trails(sphere);
+}
+
+// Fade out trails over ~1 second, then clear them
+function fade_out_trails(sphere: SphereData) {
+    if (!sphere.memoryTrailsGroup || sphere.memoryTrailsGroup.children.length === 0) return;
+
+    const duration = 1000;
+    const startTime = Date.now();
+
+    const animateFade = () => {
+        const elapsed = Date.now() - startTime;
+        const t = Math.min(elapsed / duration, 1.0);
+
+        // Fade all trail children
+        sphere.memoryTrailsGroup?.children.forEach((child: any) => {
+            if (child.material) {
+                child.material.opacity = child.material.opacity * (1.0 - t * 0.15);
+            }
+        });
+
+        render_sphere(sphere);
+
+        if (t < 1.0) {
+            requestAnimationFrame(animateFade);
+        } else {
+            // Clear all trails and history
+            if (sphere.memoryTrailsGroup) {
+                while (sphere.memoryTrailsGroup.children.length > 0) {
+                    const child = sphere.memoryTrailsGroup.children[0];
+                    sphere.memoryTrailsGroup.remove(child);
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) {
+                        if (Array.isArray(child.material)) {
+                            child.material.forEach((m: any) => m.dispose());
+                        } else {
+                            child.material.dispose();
+                        }
+                    }
+                }
+            }
+            // Clear position history so trails don't reappear
+            sphere.pointPositionHistory?.clear();
+            render_sphere(sphere);
+        }
+    };
+
+    requestAnimationFrame(animateFade);
 }
 
 export function create_3d_loss_plot(sphere: SphereData, lossData: any) {

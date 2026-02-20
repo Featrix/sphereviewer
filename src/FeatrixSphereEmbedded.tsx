@@ -253,6 +253,8 @@ function fix_server_cluster_pre_assignments(serverData: any) {
 interface TrainingMovieProps {
     sessionId: string;
     apiBaseUrl?: string;
+    // JWT auth token - sent as Bearer token on all API requests
+    authToken?: string;
     // Display mode: 'thumbnail' hides all UI controls
     mode?: 'thumbnail' | 'full';
     // Custom data endpoint URL - overrides the default epoch_projections URL
@@ -621,8 +623,8 @@ const TrainingMovieSphere: React.FC<{
                 (sphereRef.current as any).__resizeObserver = resizeObserver;
             }
             
-            // Enable auto-loop with physics effect between loops
-            set_movie_auto_loop(sphereRef.current, true);
+            // Disable physics effect between loops - sphere stays put
+            set_movie_auto_loop(sphereRef.current, false);
             // Set trail length from persisted settings
             sphereRef.current.memoryTrailLength = trailLength;
             // Start playing the training movie
@@ -694,7 +696,7 @@ const TrainingMovieSphere: React.FC<{
     );
 };
 
-const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mode, dataEndpoint }) => {
+const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, authToken, mode, dataEndpoint }) => {
     // NOTE: Loading training movie from API (the working version)
     const [trainingData, setTrainingData] = useState<any>(null);
     const [lossData, setLossData] = useState<any>(null);
@@ -723,6 +725,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
     const [showDynamicHulls, setShowDynamicHulls] = usePersistedState('showDynamicHulls', false);
     const [trailLength, setTrailLength] = usePersistedState('trailLength', 12);
     const [spotlightCluster, setSpotlightCluster] = useState<number>(-1); // -1 = off, 0+ = cluster number (not persisted - session specific)
+    const [sportMode, setSportMode] = useState(false); // Sport mode: fire trails + premium visuals
     const [showClusterAnalysis, setShowClusterAnalysis] = useState(false); // Cluster analysis modal
     const [clusterAnalysisView, setClusterAnalysisView] = useState<'signatures' | 'fields' | 'details'>('signatures');
     const [analysisClusterCount, setAnalysisClusterCount] = useState<string | null>(null); // null = use active, "4", "8", "12" etc
@@ -1026,7 +1029,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
 
                 // Fetch model card data from API
                 const baseUrl = apiBaseUrl || 'https://sphere-api.featrix.com';
-                const response = await fetch(`${baseUrl}/compute/session/${sessionId}/model_card`);
+                const response = await fetch(`${baseUrl}/compute/session/${sessionId}/model_card`, authToken ? { headers: { 'Authorization': `Bearer ${authToken}` } } : undefined);
                 if (!response.ok) {
                     throw new Error(`Failed to fetch model card: ${response.status}`);
                 }
@@ -1098,7 +1101,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                 // THUMBNAIL MODE: Fast path - only load final projections
                 if (mode === 'thumbnail') {
                     setLoadingStep('Loading...');
-                    const thumbnailData = await fetch_thumbnail_data(sessionId, apiBaseUrl);
+                    const thumbnailData = await fetch_thumbnail_data(sessionId, apiBaseUrl, authToken);
                     if (thumbnailData && thumbnailData.coords && thumbnailData.coords.length > 0) {
                         // Create a single "epoch" from the final projections
                         const finalEpoch = {
@@ -1144,7 +1147,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
 
                 if (dataEndpoint) {
                     // Custom data endpoint (e.g., manifold_viz)
-                    apiTrainingData = await fetch_from_data_endpoint(dataEndpoint, undefined, progressCallback);
+                    apiTrainingData = await fetch_from_data_endpoint(dataEndpoint, undefined, progressCallback, authToken);
                 } else {
                     // Default: fetch from session epoch_projections with retry
                     let retryCount = 0;
@@ -1156,7 +1159,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                                 sessionId,
                                 apiBaseUrl,
                                 10000,
-                                progressCallback
+                                progressCallback,
+                                authToken
                             );
                             break; // Success
                         } catch (err: any) {
@@ -1208,7 +1212,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
 
                         // First try /projections endpoint (only available after training completes)
                         try {
-                            const projectionsResponse = await fetch(`${baseUrl}/compute/session/${sessionId}/projections?limit=10000`);
+                            const projectionsResponse = await fetch(`${baseUrl}/compute/session/${sessionId}/projections?limit=10000`, authToken ? { headers: { 'Authorization': `Bearer ${authToken}` } } : undefined);
                             if (projectionsResponse.ok) {
                                 const projectionsData = await projectionsResponse.json();
                                 if (projectionsData.projections?.entire_cluster_results) {
@@ -1232,7 +1236,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                             try {
                                 setLoadingStep('Fetching source data...');
                                 const sourceDataResponse = await fetch(
-                                    `${baseUrl}/compute/session/${sessionId}/epoch_projections?include_source_data=true&limit=1`
+                                    `${baseUrl}/compute/session/${sessionId}/epoch_projections?include_source_data=true&limit=1`,
+                                    authToken ? { headers: { 'Authorization': `Bearer ${authToken}` } } : undefined
                                 );
                                 if (sourceDataResponse.ok) {
                                     const sourceData = await sourceDataResponse.json();
@@ -1358,7 +1363,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
 
         const pollSession = async () => {
             try {
-                const status = await fetch_session_status(sessionId, apiBaseUrl);
+                const status = await fetch_session_status(sessionId, apiBaseUrl, authToken);
                 if (status) {
                     setWaitingSessionInfo(status);
 
@@ -1426,10 +1431,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                 if (dataEndpoint) {
                     // Custom endpoint: poll with start_epoch for efficiency
                     setNextCheckCountdown(30);
-                    latestData = await fetch_from_data_endpoint(dataEndpoint, currentMaxEpoch + 1);
+                    latestData = await fetch_from_data_endpoint(dataEndpoint, currentMaxEpoch + 1, undefined, authToken);
                 } else {
                     // Session-based: check status first, then fetch
-                    const sessionStatus = await fetch_session_status(sessionId, apiBaseUrl);
+                    const sessionStatus = await fetch_session_status(sessionId, apiBaseUrl, authToken);
                     if (!sessionStatus) return;
 
                     const isTraining = sessionStatus.session?.status === 'training' ||
@@ -1444,7 +1449,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                     setTrainingStatus('training');
                     setNextCheckCountdown(30);
 
-                    latestData = await fetch_training_metrics(sessionId, apiBaseUrl);
+                    latestData = await fetch_training_metrics(sessionId, apiBaseUrl, undefined, undefined, authToken);
                 }
 
                 if (latestData && latestData.epoch_projections) {
@@ -1569,6 +1574,19 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
         sphereRef.showDynamicHulls = showDynamicHulls;
         sphereRef.memoryTrailLength = trailLength;
         sphereRef.spotlightCluster = spotlightCluster;
+        sphereRef.rocketMode = sportMode;
+        sphereRef.sportMode = sportMode;
+
+        // Reset point scales when sport mode is turned off
+        if (!sportMode) {
+            sphereRef.pointObjectsByRecordID?.forEach((mesh: any) => {
+                mesh.scale.setScalar(1.0);
+                const mat = mesh.material;
+                if (mat && 'emissive' in mat) {
+                    mat.emissive.setRGB(0, 0, 0);
+                }
+            });
+        }
 
         // Trim existing trail history to match new setting immediately
         trim_trail_history(sphereRef);
@@ -1578,7 +1596,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
         update_cluster_spotlight(sphereRef, true); // updateOpacity=true when user changes setting
         render_sphere(sphereRef);
 
-    }, [showDynamicHulls, trailLength, spotlightCluster, sphereRef]);
+    }, [showDynamicHulls, trailLength, spotlightCluster, sportMode, sphereRef]);
 
     // Sync cluster color mode to sphere
     useEffect(() => {
@@ -2756,6 +2774,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
 
                 {/* Right: featrix branding + Play/Pause (mobile) + Rotate toggle */}
                 <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px' }}>
+                    {/* Sport mode badge moved to lower-right corner of sphere container */}
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', marginRight: '8px' }}>
                         <a
                             href="https://featrix.ai"
@@ -2795,24 +2814,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                             {isPlaying ? '\u23F8' : '\u25B6'}
                         </button>
                     )}
-                    <button
-                        onClick={() => setRotationEnabled(!rotationEnabled)}
-                        style={{
-                            background: 'transparent',
-                            border: 'none',
-                            color: rotationEnabled ? '#64b5f6' : '#b8b8b8',
-                            padding: '6px 10px',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: '14px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                        }}
-                        title={rotationEnabled ? "Pause Rotation" : "Resume Rotation"}
-                    >
-                        {rotationEnabled ? '\u21BB' : '\u21BA'}
-                    </button>
                 </div>
             </div>
             )}
@@ -3691,6 +3692,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                                         width: '100%',
                                     }}
                                 >
+                                    <option value={0}>Off</option>
+                                    <option value={1}>1 frame</option>
                                     <option value={2}>2 frames</option>
                                     <option value={5}>5 frames</option>
                                     <option value={8}>8 frames</option>
@@ -4322,13 +4325,14 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                 gridColumn: isMobile || isThumbnail ? '1' : '2',
                 gridRow: isThumbnail ? '1' : '2',
                 position: 'relative',
-                background: '#232323',
+                background: sportMode ? '#1a1a1a' : '#232323',
                 minHeight: 0,
                 minWidth: 0,
                 overflow: 'hidden',
                 width: '100%',
                 height: '100%',
                 boxSizing: 'border-box',
+                transition: 'background 600ms ease',
                 flex: isMobile || isThumbnail ? 1 : undefined,
             }}>
                 {/* Countdown Overlay - only temporary, positioned over sphere */}
@@ -4646,7 +4650,144 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
                             <option value={4} style={{ background: '#222' }}>4x</option>
                             <option value={8} style={{ background: '#222' }}>8x</option>
                         </select>
+
+                        {/* Rotation play/pause */}
+                        <button
+                            onClick={() => setRotationEnabled(!rotationEnabled)}
+                            style={{
+                                background: 'none',
+                                border: '1px solid #444',
+                                borderRadius: '4px',
+                                color: rotationEnabled ? '#fff' : '#888',
+                                cursor: 'pointer',
+                                padding: '2px 6px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                marginLeft: '4px',
+                                flexShrink: 0,
+                            }}
+                            title={rotationEnabled ? 'Pause Rotation' : 'Resume Rotation'}
+                        >
+                            {rotationEnabled ? (
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+                            ) : (
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>
+                            )}
+                        </button>
+
+                        {/* Show/hide training toggle */}
+                        <button
+                            onClick={handlePlayPause}
+                            style={{
+                                background: 'none',
+                                border: '1px solid #444',
+                                borderRadius: '4px',
+                                color: isPlaying ? '#aaa' : '#aaa',
+                                cursor: 'pointer',
+                                padding: '2px 6px',
+                                fontSize: '10px',
+                                fontFamily: 'system-ui, -apple-system, sans-serif',
+                                whiteSpace: 'nowrap',
+                                marginLeft: '4px',
+                                flexShrink: 0,
+                            }}
+                            title={isPlaying ? 'Hide training animation' : 'Show training animation'}
+                        >
+                            {isPlaying ? '[hide training]' : '[show training]'}
+                        </button>
                     </div>
+                )}
+
+                {/* Sport Mode wedge button - lower right corner */}
+                <div
+                    onClick={() => setSportMode(!sportMode)}
+                    style={{
+                        position: 'absolute',
+                        bottom: 24,
+                        right: 24,
+                        width: '120px',
+                        height: '70px',
+                        cursor: 'pointer',
+                        zIndex: 150,
+                        pointerEvents: 'auto',
+                        transition: 'transform 120ms ease',
+                        userSelect: 'none',
+                    }}
+                    onMouseDown={(e) => { (e.currentTarget as HTMLElement).style.transform = 'translateY(2px)'; }}
+                    onMouseUp={(e) => { (e.currentTarget as HTMLElement).style.transform = 'translateY(0)'; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = 'translateY(0)'; }}
+                >
+                    <svg width="120" height="70" viewBox="0 0 120 70" xmlns="http://www.w3.org/2000/svg">
+                        <defs>
+                            <linearGradient id="svBgGrad" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#1c1d20"/>
+                                <stop offset="100%" stopColor="#151619"/>
+                            </linearGradient>
+                            <linearGradient id="svEdgeGrad" x1="0" y1="0" x2="1" y2="1">
+                                <stop offset="0%" stopColor="#2a2c31"/>
+                                <stop offset="100%" stopColor="#0e0f12"/>
+                            </linearGradient>
+                            <pattern id="svCarbon" width="6" height="6" patternUnits="userSpaceOnUse">
+                                <rect width="6" height="6" fill="#18191c"/>
+                                <rect width="3" height="3" fill="#202226"/>
+                                <rect x="3" y="3" width="3" height="3" fill="#202226"/>
+                            </pattern>
+                            <filter id="svFireGlow" x="-50%" y="-50%" width="200%" height="200%">
+                                <feGaussianBlur stdDeviation="4" result="blur"/>
+                                <feMerge>
+                                    <feMergeNode in="blur"/>
+                                    <feMergeNode in="SourceGraphic"/>
+                                </feMerge>
+                            </filter>
+                        </defs>
+                        {/* Wedge body */}
+                        <path
+                            d="M0 70 L0 20 Q0 0 20 0 L120 0 L95 70 Z"
+                            fill="url(#svBgGrad)"
+                            stroke="url(#svEdgeGrad)"
+                            strokeWidth="1.5"
+                        />
+                        {/* Carbon fiber overlay */}
+                        <path
+                            d="M0 70 L0 20 Q0 0 20 0 L120 0 L95 70 Z"
+                            fill="url(#svCarbon)"
+                            opacity="0.08"
+                        />
+                        {/* S button background */}
+                        <rect
+                            x="65" y="18" width="38" height="32" rx="8"
+                            fill="#0f1013"
+                            stroke={sportMode ? '#f5b942' : '#2b2d33'}
+                            strokeWidth={sportMode ? 2 : 1.5}
+                            filter={sportMode ? 'url(#svFireGlow)' : 'none'}
+                            style={{ transition: 'stroke 300ms ease' }}
+                        />
+                        {/* S letter */}
+                        <text
+                            x="84" y="40"
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            fontFamily="Inter, Helvetica, Arial, sans-serif"
+                            fontSize="18"
+                            fontWeight={sportMode ? '700' : '600'}
+                            fill={sportMode ? '#f5b942' : '#e8e8e8'}
+                            style={{ transition: 'fill 300ms ease' }}
+                        >S</text>
+                    </svg>
+                </div>
+
+                {/* Sport Mode ambient glow when active */}
+                {sportMode && (
+                    <div style={{
+                        position: 'absolute',
+                        bottom: 0,
+                        right: 0,
+                        width: '250px',
+                        height: '150px',
+                        background: 'radial-gradient(ellipse at bottom right, rgba(245, 185, 66, 0.06) 0%, transparent 70%)',
+                        pointerEvents: 'none',
+                        zIndex: 90,
+                    }} />
                 )}
                 </div>
             </div>
@@ -5959,6 +6100,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, mo
 interface SphereEmbeddedProps {
     initial_data: any;
     apiBaseUrl?: string;
+    // JWT auth token - sent as Bearer token on all API requests
+    authToken?: string;
     isRotating?: boolean;
     rotationSpeed?: number;
     animateClusters?: boolean;
@@ -6131,7 +6274,7 @@ const FinalSphereView: React.FC<{
     );
 };
 
-export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity, onSphereReady, mode, dataEndpoint }: SphereEmbeddedProps) {
+export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, authToken, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity, onSphereReady, mode, dataEndpoint }: SphereEmbeddedProps) {
     // Check if we have final sphere data (coords + cluster_results) or just a session ID
     const hasFinalData = initial_data?.coords && initial_data?.coords.length > 0 && initial_data?.entire_cluster_results;
     const sessionId = initial_data?.session?.session_id;
@@ -6160,7 +6303,7 @@ export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, isRota
         return (
             <div className="sphere-embedded-container">
                 <div className="mx-auto">
-                    <TrainingMovie sessionId={sessionId} apiBaseUrl={apiBaseUrl} mode={mode} dataEndpoint={dataEndpoint} />
+                    <TrainingMovie sessionId={sessionId} apiBaseUrl={apiBaseUrl} authToken={authToken} mode={mode} dataEndpoint={dataEndpoint} />
                 </div>
             </div>
         );

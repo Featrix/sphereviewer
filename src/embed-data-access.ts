@@ -400,11 +400,11 @@ export async function fetch_session_status(session_id: string, apiBaseUrl?: stri
     return null;
 }
 
-export async function fetch_single_epoch(session_id: string, epochKey: string, apiBaseUrl?: string) {
+export async function fetch_single_epoch(session_id: string, epochKey: string, apiBaseUrl?: string, authToken?: string) {
     const baseUrl = getApiBaseUrl(apiBaseUrl);
     try {
         // Fetch all epoch projections and extract just the one we need
-        const response = await fetchWithRetry(`${baseUrl}/compute/session/${session_id}/epoch_projections`);
+        const response = await fetchWithRetry(`${baseUrl}/compute/session/${session_id}/epoch_projections`, { headers: getAuthHeaders(authToken) });
         if (response.ok) {
             const data = await response.json();
             if (data.epoch_projections && data.epoch_projections[epochKey]) {
@@ -418,13 +418,14 @@ export async function fetch_single_epoch(session_id: string, epochKey: string, a
 }
 
 // Fast fetch for thumbnail mode - only gets final epoch (~600KB instead of ~32MB)
-export async function fetch_thumbnail_data(session_id: string, apiBaseUrl?: string) {
+export async function fetch_thumbnail_data(session_id: string, apiBaseUrl?: string, authToken?: string) {
     const baseUrl = getApiBaseUrl(apiBaseUrl);
+    const headers = getAuthHeaders(authToken);
     console.time('🚀 THUMBNAIL_FETCH');
 
     try {
         // Use new ?epoch=last parameter to get only the final epoch
-        const response = await fetchWithRetry(`${baseUrl}/compute/session/${session_id}/epoch_projections?epoch=last`);
+        const response = await fetchWithRetry(`${baseUrl}/compute/session/${session_id}/epoch_projections?epoch=last`, { headers });
         if (response.ok) {
             const data = await response.json();
             console.timeEnd('🚀 THUMBNAIL_FETCH');
@@ -449,7 +450,7 @@ export async function fetch_thumbnail_data(session_id: string, apiBaseUrl?: stri
     // Fallback to /projections endpoint if epoch=last not supported
     try {
         console.log('📊 Falling back to /projections endpoint');
-        const response = await fetchWithRetry(`${baseUrl}/compute/session/${session_id}/projections?limit=10000`);
+        const response = await fetchWithRetry(`${baseUrl}/compute/session/${session_id}/projections?limit=10000`, { headers });
         if (response.ok) {
             const data = await response.json();
             console.timeEnd('🚀 THUMBNAIL_FETCH');
@@ -481,13 +482,13 @@ export interface ModelCard {
     [key: string]: any;
 }
 
-export async function fetch_model_card(session_id: string, apiBaseUrl?: string): Promise<ModelCard | null> {
+export async function fetch_model_card(session_id: string, apiBaseUrl?: string, authToken?: string): Promise<ModelCard | null> {
     const baseUrl = getApiBaseUrl(apiBaseUrl);
     console.time('🔗 API_MODEL_CARD');
     console.log('🔗 Fetching model card for session:', session_id);
 
     try {
-        const response = await fetchWithRetry(`${baseUrl}/compute/session/${session_id}/model_card`);
+        const response = await fetchWithRetry(`${baseUrl}/compute/session/${session_id}/model_card`, { headers: getAuthHeaders(authToken) });
         if (response.ok) {
             const data = await response.json();
             console.timeEnd('🔗 API_MODEL_CARD');
