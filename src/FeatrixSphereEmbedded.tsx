@@ -1600,11 +1600,11 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
         set_cluster_color_mode(sphereRef, clusterColorMode);
     }, [clusterColorMode, sphereRef]);
 
-    // Sync playback speed to sphere
+    // Sync playback speed to sphere (force 1x in thumbnail mode)
     useEffect(() => {
         if (!sphereRef) return;
-        set_playback_speed(sphereRef, playbackSpeed);
-    }, [playbackSpeed, sphereRef]);
+        set_playback_speed(sphereRef, isThumbnail ? 1 : playbackSpeed);
+    }, [playbackSpeed, sphereRef, isThumbnail]);
 
     // Frame control functions
     const handlePlayPause = () => {
@@ -4540,7 +4540,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
 
                 {/* Playback Overlay - YouTube/QuickTime style floating controls */}
                 {/* Hide on mobile when drawer is open */}
-                {frameInfo && frameInfo.total > 0 && !(isMobile && showMobilePanel) && (
+                {frameInfo && frameInfo.total > 0 && !isThumbnail && !(isMobile && showMobilePanel) && (
                     <div
                         onMouseEnter={!isMobile ? handleOverlayInteractionStart : undefined}
                         onMouseLeave={!isMobile ? handleOverlayInteractionEnd : undefined}
