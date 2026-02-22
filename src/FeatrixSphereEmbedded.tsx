@@ -4695,7 +4695,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                 )}
 
                 {/* Sport Mode wedge button - lower right corner */}
-                <div
+                {!isThumbnail && <div
                     onClick={() => setSportMode(!sportMode)}
                     style={{
                         position: 'absolute',
@@ -4770,10 +4770,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             style={{ transition: 'fill 300ms ease' }}
                         >S</text>
                     </svg>
-                </div>
+                </div>}
 
                 {/* Sport Mode ambient glow when active */}
-                {sportMode && (
+                {!isThumbnail && sportMode && (
                     <div style={{
                         position: 'absolute',
                         bottom: 0,
