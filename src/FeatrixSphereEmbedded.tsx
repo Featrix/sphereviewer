@@ -1210,11 +1210,15 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             ? window.location.origin + '/proxy/featrix'
                             : 'https://sphere-api.featrix.com');
 
-                        // First try /projections endpoint (only available after training completes)
-                        try {
-                            const projectionsResponse = await fetch(`${baseUrl}/compute/session/${sessionId}/projections?limit=10000`, authToken ? { headers: { 'Authorization': `Bearer ${authToken}` } } : undefined);
-                            if (projectionsResponse.ok) {
-                                const projectionsData = await projectionsResponse.json();
+                        // Fetch /projections AND source_data in parallel
+                        // /projections has cluster results + categorized columns (set/scalar/string)
+                        // source_data has ALL original columns from the dataset
+                        const fetchProjections = fetch(
+                            `${baseUrl}/compute/session/${sessionId}/projections?limit=10000`,
+                            authToken ? { headers: { 'Authorization': `Bearer ${authToken}` } } : undefined
+                        ).then(async (resp) => {
+                            if (resp.ok) {
+                                const projectionsData = await resp.json();
                                 if (projectionsData.projections?.entire_cluster_results) {
                                     clusterResults = projectionsData.projections.entire_cluster_results;
                                     console.log('Found cluster results in final projections:', Object.keys(clusterResults).length, 'cluster counts');
@@ -1224,41 +1228,35 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                     console.log('📊 Got full projections with', fullProjectionsCoords.length, 'coords');
                                 }
                             } else {
-                                console.log('⚠️ /projections returned', projectionsResponse.status, '- will try include_source_data fallback');
+                                console.log('⚠️ /projections returned', resp.status);
                             }
-                        } catch (err) {
-                            console.log('⚠️ /projections failed - will try include_source_data fallback:', err);
-                        }
+                        }).catch(err => {
+                            console.log('⚠️ /projections failed:', err);
+                        });
 
-                        // Fallback: If /projections didn't give us data, fetch source_data via epoch_projections
-                        // This works even during training since __featrix_row_id is stable across epochs
-                        if (fullProjectionsCoords.length === 0) {
-                            try {
-                                setLoadingStep('Fetching source data...');
-                                const sourceDataResponse = await fetch(
-                                    `${baseUrl}/compute/session/${sessionId}/epoch_projections?include_source_data=true&limit=1`,
-                                    authToken ? { headers: { 'Authorization': `Bearer ${authToken}` } } : undefined
-                                );
-                                if (sourceDataResponse.ok) {
-                                    const sourceData = await sourceDataResponse.json();
-                                    if (sourceData.source_data_enriched && sourceData.epoch_projections) {
-                                        // Get the single epoch that was returned
-                                        const epochKey = Object.keys(sourceData.epoch_projections)[0];
-                                        const epochCoords = sourceData.epoch_projections[epochKey]?.coords || [];
+                        const fetchSourceData = fetch(
+                            `${baseUrl}/compute/session/${sessionId}/epoch_projections?include_source_data=true&limit=1`,
+                            authToken ? { headers: { 'Authorization': `Bearer ${authToken}` } } : undefined
+                        ).then(async (resp) => {
+                            if (resp.ok) {
+                                const sourceData = await resp.json();
+                                if (sourceData.source_data_enriched && sourceData.epoch_projections) {
+                                    const epochKey = Object.keys(sourceData.epoch_projections)[0];
+                                    const epochCoords = sourceData.epoch_projections[epochKey]?.coords || [];
 
-                                        // Cache source_data by __featrix_row_id for joining with other epochs
-                                        epochCoords.forEach((coord: any) => {
-                                            if (coord.source_data && coord.__featrix_row_id !== undefined) {
-                                                sourceDataByRowId.set(coord.__featrix_row_id, coord.source_data);
-                                            }
-                                        });
-                                        console.log('📊 Cached source_data for', sourceDataByRowId.size, 'points via include_source_data');
-                                    }
+                                    epochCoords.forEach((coord: any) => {
+                                        if (coord.source_data && coord.__featrix_row_id !== undefined) {
+                                            sourceDataByRowId.set(coord.__featrix_row_id, coord.source_data);
+                                        }
+                                    });
+                                    console.log('📊 Cached source_data for', sourceDataByRowId.size, 'points via include_source_data');
                                 }
-                            } catch (err) {
-                                console.error('Error fetching source data fallback:', err);
                             }
-                        }
+                        }).catch(err => {
+                            console.log('⚠️ source_data fetch failed:', err);
+                        });
+
+                        await Promise.all([fetchProjections, fetchSourceData]);
                     }
 
                     setLoadingStep('Processing data...');
@@ -1269,29 +1267,27 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                     // Build final coords with source data
                     let finalCoords: any[];
                     if (fullProjectionsCoords.length > 0) {
-                        // Use full projections if available
                         finalCoords = fullProjectionsCoords;
                         console.log('📊 Using full projections coords');
                     } else {
-                        // Fall back to epoch coords, enriched with cached source_data
-                        const epochCoords = apiTrainingData.epoch_projections[Object.keys(apiTrainingData.epoch_projections)[0]]?.coords || [];
-                        if (sourceDataByRowId.size > 0) {
-                            // Merge source_data into epoch coords
-                            finalCoords = epochCoords.map((coord: any) => {
-                                const sourceData = sourceDataByRowId.get(coord.__featrix_row_id);
-                                if (sourceData) {
-                                    return {
-                                        ...coord,
-                                        source_data: sourceData  // Add source_data for Data Inspector
-                                    };
-                                }
-                                return coord;
-                            });
-                            console.log('📊 Enriched', finalCoords.filter((c: any) => c.source_data).length, 'coords with source_data');
-                        } else {
-                            finalCoords = epochCoords;
-                            console.log('📊 Using epoch coords (no source_data available)');
-                        }
+                        finalCoords = apiTrainingData.epoch_projections[Object.keys(apiTrainingData.epoch_projections)[0]]?.coords || [];
+                        console.log('📊 Using epoch coords');
+                    }
+
+                    // Enrich coords with full source_data (all original columns) if available
+                    if (sourceDataByRowId.size > 0) {
+                        finalCoords = finalCoords.map((coord: any) => {
+                            const sourceData = sourceDataByRowId.get(coord.__featrix_row_id);
+                            if (sourceData) {
+                                return {
+                                    ...coord,
+                                    source_data: sourceData
+                                };
+                            }
+                            return coord;
+                        });
+                        const enrichedCount = finalCoords.filter((c: any) => c.source_data).length;
+                        console.log('📊 Enriched', enrichedCount, 'of', finalCoords.length, 'coords with full source_data');
                     }
 
                     const sessionData = {
