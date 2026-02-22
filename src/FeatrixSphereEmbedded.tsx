@@ -1063,7 +1063,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
     const startCountdown = useCallback(() => {
         setShowCountdown(true);
         setCountdownText('Ready!');
-        
+
         setTimeout(() => {
             setCountdownText('3');
             setTimeout(() => {
@@ -1086,11 +1086,11 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             } else {
                                 // No sphere reference available after countdown
                             }
-                        }, 800);
-                    }, 1000);
-                }, 1000);
-            }, 1000);
-        }, 500);
+                        }, 400);
+                    }, 500);
+                }, 500);
+            }, 500);
+        }, 250);
     }, []); // Remove sphereRef dependency since we're using the ref now
 
     useEffect(() => {
