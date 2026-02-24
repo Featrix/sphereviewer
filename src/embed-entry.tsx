@@ -449,4 +449,6 @@ if (currentScript && (
   const viewer = new FeatrixSphereViewer();
 }
 
-export default FeatrixSphereViewer; 
+export default FeatrixSphereViewer;
+export { default as PlaybackController } from './PlaybackController';
+export type { PlaybackCallbacks, PlaybackControllerProps, PlaybackControllerHandle } from './PlaybackController';

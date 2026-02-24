@@ -1306,11 +1306,6 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any, 
     // Initialize memory trails system
     create_memory_trails(sphere);
 
-    // Store initial positions for any existing points
-    sphere.pointObjectsByRecordID.forEach((mesh: any, recordId: string) => {
-        store_point_position_in_history(sphere, recordId, mesh.position);
-    });
-
     // GET FINAL CLUSTER RESULTS from session data for convergence visualization
     sphere.finalClusterResults = null;
 
@@ -1468,7 +1463,13 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any, 
     
     // Add points to sphere
     add_points_to_sphere(sphere, recordList);
-    
+
+    // Seed trail history with initial positions so trails appear from the first animation
+    // (trails need 2+ history entries; this provides the first, animation completion adds the second)
+    sphere.pointObjectsByRecordID.forEach((mesh: any, recordId: string) => {
+        store_point_position_in_history(sphere, recordId, mesh.position);
+    });
+
     // CRITICAL: Update first frame immediately to set correct colors
     // This prevents red dots from appearing at the start
     update_training_movie_frame(sphere, firstEpochKey);
@@ -2134,6 +2135,9 @@ function animate_interpolation(sphere: SphereData) {
 
             // Use Hermite interpolation for smooth velocity-continuous motion
             const newPos = hermiteInterpolate(startPos, inVel, targetPos, outVel, easedProgress);
+            // Project onto sphere surface so the point matches the trail tip
+            // (trail renderer also projects each Hermite sample via normalize+scale)
+            newPos.normalize().multiplyScalar(startPos.length());
             mesh.position.copy(newPos);
 
             // Sport mode: vary point size based on movement speed

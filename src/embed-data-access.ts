@@ -14,6 +14,7 @@ const RETRY_CONFIG = {
     initialDelay: 1000, // 1 second
     maxDelay: 60 * 1000, // 60 seconds max between retries
     backoffMultiplier: 2,
+    fetchTimeout: 60 * 1000, // 60 seconds per individual fetch attempt
 };
 
 // Callback for retry status updates
@@ -32,15 +33,32 @@ export function setRetryStatusCallback(callback: RetryStatusCallback | null) {
     globalRetryStatusCallback = callback;
 }
 
-// Helper to check if an error is retryable (5xx errors or network errors)
+// Helper to check if an error is retryable (5xx errors, network errors, timeouts)
 function isRetryableError(response: Response | null, error: Error | null): boolean {
     if (response && response.status >= 500 && response.status < 600) {
         return true; // 5xx server errors
     }
-    if (error && (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('Failed to fetch'))) {
-        return true; // Network errors
+    if (error) {
+        const msg = error.message.toLowerCase();
+        if (msg.includes('fetch') || msg.includes('network') || msg.includes('failed to fetch') ||
+            msg.includes('timeout') || msg.includes('aborted') || msg.includes('abort') ||
+            msg.includes('non-json response')) {
+            return true;
+        }
     }
     return false;
+}
+
+// Safe JSON parse: handles proxies returning raw text, HTML, or "stream timeout" instead of JSON
+async function safeJsonParse(response: Response): Promise<any> {
+    const text = await response.text();
+    try {
+        return JSON.parse(text);
+    } catch {
+        // Non-JSON response — proxy error, HTML error page, "stream timeout", etc.
+        const preview = text.slice(0, 200).trim();
+        throw new Error(`Non-JSON response from server: "${preview}"`);
+    }
 }
 
 // Fetch with exponential backoff retry
@@ -58,7 +76,14 @@ async function fetchWithRetry(
         let error: Error | null = null;
 
         try {
-            response = await fetch(url, options);
+            // Add timeout via AbortController
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), RETRY_CONFIG.fetchTimeout);
+            try {
+                response = await fetch(url, { ...options, signal: controller.signal });
+            } finally {
+                clearTimeout(timeoutId);
+            }
 
             // If successful or non-retryable error, return immediately
             if (response.ok || !isRetryableError(response, null)) {
@@ -169,7 +194,7 @@ export async function fetch_session_data(session_id: string, apiBaseUrl?: string
     const baseUrl = getApiBaseUrl(apiBaseUrl);
     const data_raw = await fetchWithRetry(`${baseUrl}/compute/session/${session_id}`, { headers: getAuthHeaders(authToken) });
 
-    const data = await data_raw.json();
+    const data = await safeJsonParse(data_raw);
     return data;
 }
 
@@ -180,7 +205,7 @@ export async function fetch_session_projections(session_id: string, apiBaseUrl?:
         url += `?limit=${limit}`;
     }
     const data_raw = await fetchWithRetry(url, { headers: getAuthHeaders(authToken) });
-    const data = await data_raw.json();
+    const data = await safeJsonParse(data_raw);
     const projections = data.projections;
     if (projections && projections.coords) {
         console.log(`📊 Loaded ${projections.coords.length} points from projections API`);
@@ -242,9 +267,14 @@ export async function fetch_training_metrics(
             position += chunk.length;
         }
         const text = new TextDecoder().decode(allChunks);
-        projectionsData = JSON.parse(text);
+        try {
+            projectionsData = JSON.parse(text);
+        } catch {
+            const preview = text.slice(0, 200).trim();
+            throw new Error(`Non-JSON response from server: "${preview}"`);
+        }
     } else {
-        projectionsData = await projectionsResponse.json();
+        projectionsData = await safeJsonParse(projectionsResponse);
     }
     console.timeEnd('🔗 API_EPOCH_PROJECTIONS');
     console.log('🎯 DEBUG: API Response keys:', Object.keys(projectionsData));
@@ -277,7 +307,7 @@ export async function fetch_training_metrics(
         console.log('🔗 Fetching training metrics from:', metricsUrl);
         const metricsResponse = await fetchWithRetry(metricsUrl, { headers });
         if (metricsResponse.ok) {
-            trainingMetrics = await metricsResponse.json();
+            trainingMetrics = await safeJsonParse(metricsResponse);
             console.timeEnd('🔗 API_TRAINING_METRICS');
             console.log('🎯 Training metrics fetched:', trainingMetrics);
             console.log('🔗 API_METRICS_SIZE:', JSON.stringify(trainingMetrics).length, 'bytes');
@@ -370,9 +400,15 @@ export async function fetch_from_data_endpoint(
             allChunks.set(chunk, position);
             position += chunk.length;
         }
-        data = JSON.parse(new TextDecoder().decode(allChunks));
+        const text = new TextDecoder().decode(allChunks);
+        try {
+            data = JSON.parse(text);
+        } catch {
+            const preview = text.slice(0, 200).trim();
+            throw new Error(`Non-JSON response from server: "${preview}"`);
+        }
     } else {
-        data = await response.json();
+        data = await safeJsonParse(response);
     }
 
     console.log('🔗 Data endpoint response:', Object.keys(data));
@@ -391,7 +427,7 @@ export async function fetch_session_status(session_id: string, apiBaseUrl?: stri
     try {
         const response = await fetchWithRetry(`${baseUrl}/compute/session/${session_id}`, { headers: getAuthHeaders(authToken) });
         if (response.ok) {
-            const data = await response.json();
+            const data = await safeJsonParse(response);
             return data;
         }
     } catch (error) {
@@ -406,7 +442,7 @@ export async function fetch_single_epoch(session_id: string, epochKey: string, a
         // Fetch all epoch projections and extract just the one we need
         const response = await fetchWithRetry(`${baseUrl}/compute/session/${session_id}/epoch_projections`, { headers: getAuthHeaders(authToken) });
         if (response.ok) {
-            const data = await response.json();
+            const data = await safeJsonParse(response);
             if (data.epoch_projections && data.epoch_projections[epochKey]) {
                 return data.epoch_projections[epochKey];
             }
@@ -427,7 +463,7 @@ export async function fetch_thumbnail_data(session_id: string, apiBaseUrl?: stri
         // Use new ?epoch=last parameter to get only the final epoch
         const response = await fetchWithRetry(`${baseUrl}/compute/session/${session_id}/epoch_projections?epoch=last`, { headers });
         if (response.ok) {
-            const data = await response.json();
+            const data = await safeJsonParse(response);
             console.timeEnd('🚀 THUMBNAIL_FETCH');
 
             if (data.epoch_projections) {
@@ -452,7 +488,7 @@ export async function fetch_thumbnail_data(session_id: string, apiBaseUrl?: stri
         console.log('📊 Falling back to /projections endpoint');
         const response = await fetchWithRetry(`${baseUrl}/compute/session/${session_id}/projections?limit=10000`, { headers });
         if (response.ok) {
-            const data = await response.json();
+            const data = await safeJsonParse(response);
             console.timeEnd('🚀 THUMBNAIL_FETCH');
             if (data.projections) {
                 console.log('📊 Thumbnail fallback: loaded', data.projections.coords?.length || 0, 'points');
@@ -490,7 +526,7 @@ export async function fetch_model_card(session_id: string, apiBaseUrl?: string, 
     try {
         const response = await fetchWithRetry(`${baseUrl}/compute/session/${session_id}/model_card`, { headers: getAuthHeaders(authToken) });
         if (response.ok) {
-            const data = await response.json();
+            const data = await safeJsonParse(response);
             console.timeEnd('🔗 API_MODEL_CARD');
 
             if (data.column_statistics) {

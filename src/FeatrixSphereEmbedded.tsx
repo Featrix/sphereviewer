@@ -16,6 +16,7 @@ import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphe
 import { v4 as uuid4 } from 'uuid';
 import CollapsibleSection from './components/CollapsibleSection';
 import { LossPlotOverlay, MovementPlotOverlay, MovementHistogramByCluster } from './components/Charts';
+import PlaybackController, { PlaybackControllerHandle } from './PlaybackController';
 
 // ============================================================================
 // Safe localStorage utilities - NEVER crash on read/write failures
@@ -867,77 +868,23 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
         return compute_movement_histogram_data(sphereRef, trainingData, frameInfo.epoch);
     }, [sphereRef, frameInfo?.epoch, trainingData]);
 
-    // Playback overlay visibility state
-    const [overlayVisible, setOverlayVisible] = useState(false);
-    const overlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const overlayInteractingRef = useRef(false);
+    // Playback overlay ref (visibility managed inside PlaybackController)
+    const playbackRef = useRef<PlaybackControllerHandle>(null);
     const mobileLastTapRef = useRef<number>(0);
 
-    const showOverlay = useCallback(() => {
-        setOverlayVisible(true);
-        if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
-        if (!overlayInteractingRef.current) {
-            overlayTimerRef.current = setTimeout(() => {
-                if (!overlayInteractingRef.current) {
-                    setOverlayVisible(false);
-                }
-            }, 2000);
-        }
-    }, []);
-
-    // Mobile: Show overlay briefly (3s auto-hide)
-    const showOverlayMobile = useCallback(() => {
-        setOverlayVisible(true);
-        if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
-        overlayTimerRef.current = setTimeout(() => {
-            setOverlayVisible(false);
-        }, 3000);
-    }, []);
-
-    // Mobile: Tap to toggle overlay
     const handleCanvasTap = useCallback(() => {
         const now = Date.now();
-        // Debounce rapid taps
         if (now - mobileLastTapRef.current < 300) return;
         mobileLastTapRef.current = now;
-
-        if (overlayVisible) {
-            setOverlayVisible(false);
-            if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
-        } else {
-            showOverlayMobile();
-        }
-    }, [overlayVisible, showOverlayMobile]);
+        playbackRef.current?.toggle();
+    }, []);
 
     const handleCanvasMouseMove = useCallback(() => {
-        showOverlay();
-    }, [showOverlay]);
+        playbackRef.current?.show();
+    }, []);
 
     const handleCanvasMouseLeave = useCallback(() => {
-        if (!overlayInteractingRef.current) {
-            if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
-            overlayTimerRef.current = setTimeout(() => {
-                if (!overlayInteractingRef.current) {
-                    setOverlayVisible(false);
-                }
-            }, 500);
-        }
-    }, []);
-
-    const handleOverlayInteractionStart = useCallback(() => {
-        overlayInteractingRef.current = true;
-        if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
-        setOverlayVisible(true);
-    }, []);
-
-    const handleOverlayInteractionEnd = useCallback(() => {
-        overlayInteractingRef.current = false;
-        if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
-        overlayTimerRef.current = setTimeout(() => {
-            if (!overlayInteractingRef.current) {
-                setOverlayVisible(false);
-            }
-        }, 2000);
+        // PlaybackController handles its own hide-on-leave internally
     }, []);
 
     // Search state
@@ -1095,6 +1042,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
 
     useEffect(() => {
         const loadTrainingData = async () => {
+            let slowFetchTimer: ReturnType<typeof setTimeout> | undefined;
             try {
                 setLoading(true);
 
@@ -1122,6 +1070,11 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
 
                 setLoadingStep('Fetching training epochs...');
                 setLoadingDetail('');
+
+                // Show "Still loading..." message if fetch takes > 10s
+                slowFetchTimer = setTimeout(() => {
+                    setLoadingDetail('Still loading — large dataset, please wait...');
+                }, 10000);
 
                 // Helper to format bytes
                 const formatBytes = (bytes: number) => {
@@ -1345,6 +1298,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                     setError(errMsg);
                 }
             } finally {
+                clearTimeout(slowFetchTimer);
                 setLoading(false);
                 initialLoadCompleteTime.current = Date.now();
             }
@@ -1654,15 +1608,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
         play_training_movie(sphereRef, 10);
     };
     
-    const handleScrub = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!sphereRef) return;
-        const frameNumber = parseInt(e.target.value);
-        if (isNaN(frameNumber)) return;
-        goto_training_movie_frame(sphereRef, frameNumber);
-        setIsPlaying(false); // Scrubbing pauses
-        setFrameInput(frameNumber.toString());
-    };
-
     const toggleFullscreen = () => {
         if (!isFullscreen) {
             // Enter fullscreen mode
@@ -2581,6 +2526,21 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
     }
 
     if (error) {
+        // Determine user-friendly message based on error type
+        const isTimeout = error.includes('timeout') || error.includes('Timeout') || error.includes('abort');
+        const isServerError = error.includes('500') || error.includes('502') || error.includes('504') || error.includes('503');
+        const isNonJson = error.includes('Non-JSON response');
+        const isNetworkError = error.includes('fetch') || error.includes('network') || error.includes('Failed to fetch');
+
+        let friendlyMessage: string;
+        if (isTimeout || isServerError || isNonJson) {
+            friendlyMessage = 'Visualization data is still being processed. Try refreshing in a few minutes.';
+        } else if (isNetworkError) {
+            friendlyMessage = 'Unable to reach the server. Check your connection and try again.';
+        } else {
+            friendlyMessage = 'Something went wrong loading the visualization. Try refreshing the page.';
+        }
+
         return (
             <div className="training-progress-display" style={{
                 display: 'flex',
@@ -2589,28 +2549,25 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                 justifyContent: 'center',
                 height: '100vh',
                 background: '#2a2a2a',
-                color: '#ff4444',
+                color: '#ccc',
                 position: 'relative'
             }}>
                 <div style={{
                     position: 'absolute',
                     ...(isMobile ? { bottom: '10px', left: '10px' } : { top: '10px', right: '10px' }),
                     fontSize: isMobile ? '10px' : '12px',
-                    color: '#ff6b6b',
+                    color: '#666',
                     fontFamily: 'monospace',
-                    background: 'rgba(255, 107, 107, 0.1)',
+                    background: 'rgba(255, 255, 255, 0.05)',
                     padding: '4px 8px',
                     borderRadius: '4px'
                 }}>
                     Build: {BUILD_TIMESTAMP.slice(0, 16)}
                 </div>
-                <div style={{ fontSize: '18px', marginBottom: '10px' }}>Error loading training movie</div>
-                <div style={{ fontSize: '14px', marginTop: '10px', textAlign: 'center', maxWidth: '80vw', wordBreak: 'break-word' as const }}>{error}</div>
-                <div style={{ fontSize: '12px', color: '#888', marginTop: '10px' }}>
-                    Failed during: {loadingStep}
-                </div>
-                <div style={{ fontSize: '12px', color: '#888', marginTop: '5px', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
-                    Session: {isMobile && sessionId.length > 20 ? sessionId.slice(0, 8) + '...' + sessionId.slice(-4) : sessionId} | API: {apiBaseUrl || 'default'}
+                <div style={{ fontSize: '16px', marginBottom: '12px', color: '#eee' }}>{friendlyMessage}</div>
+                <div style={{ fontSize: '12px', color: '#666', marginTop: '10px', textAlign: 'center', maxWidth: '80vw', wordBreak: 'break-word' as const }}>{error}</div>
+                <div style={{ fontSize: '11px', color: '#555', marginTop: '8px', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
+                    Session: {isMobile && sessionId.length > 20 ? sessionId.slice(0, 8) + '...' + sessionId.slice(-4) : sessionId}
                 </div>
             </div>
         );
@@ -4538,160 +4495,71 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                     </div>
                 )}
 
-                {/* Playback Overlay - YouTube/QuickTime style floating controls */}
-                {/* Hide on mobile when drawer is open */}
+                {/* Playback Overlay - reusable PlaybackController component */}
                 {frameInfo && frameInfo.total > 0 && !isThumbnail && !(isMobile && showMobilePanel) && (
-                    <div
-                        onMouseEnter={!isMobile ? handleOverlayInteractionStart : undefined}
-                        onMouseLeave={!isMobile ? handleOverlayInteractionEnd : undefined}
-                        onTouchStart={isMobile ? handleOverlayInteractionStart : undefined}
-                        onTouchEnd={isMobile ? handleOverlayInteractionEnd : undefined}
-                        style={{
-                            position: 'absolute',
-                            bottom: isMobile ? 'calc(20px + env(safe-area-inset-bottom, 0px))' : '20px',
-                            left: '50%',
-                            transform: 'translateX(-50%)',
-                            zIndex: 100,
-                            opacity: overlayVisible ? 1 : 0,
-                            pointerEvents: overlayVisible ? 'auto' : 'none',
-                            transition: 'opacity 200ms ease',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '12px',
-                            width: isMobile ? 'calc(100% - 32px)' : 'auto',
-                            maxWidth: '500px',
-                            minWidth: '320px',
-                            background: 'rgba(0, 0, 0, 0.7)',
-                            backdropFilter: 'blur(12px)',
-                            borderRadius: '8px',
-                            padding: '8px 12px',
-                            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)',
+                    <PlaybackController
+                        ref={playbackRef}
+                        callbacks={{
+                            onPlay: () => { if (sphereRef) { if (sphereRef._canvas2dFallback) { sphereRef.resume(); } else { resume_training_movie(sphereRef); } setIsPlaying(true); } },
+                            onPause: () => { if (sphereRef) { if (sphereRef._canvas2dFallback) { sphereRef.pause(); } else { pause_training_movie(sphereRef); } setIsPlaying(false); } },
+                            onStepForward: () => { handleStepForward(); },
+                            onStepBackward: () => { handleStepBackward(); },
+                            onGotoFirst: () => { if (sphereRef) { goto_training_movie_frame(sphereRef, 1); setIsPlaying(false); setFrameInput('1'); } },
+                            onGotoLast: () => { if (sphereRef && frameInfo) { goto_training_movie_frame(sphereRef, frameInfo.total); setIsPlaying(false); setFrameInput(frameInfo.total.toString()); } },
+                            onGotoFrame: (frame: number) => { if (sphereRef) { goto_training_movie_frame(sphereRef, frame); setIsPlaying(false); setFrameInput(frame.toString()); } },
+                            onSpeedChange: (speed: number) => { setPlaybackSpeed(speed); },
                         }}
-                    >
-                        {/* Transport buttons */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flexShrink: 0 }}>
-                            <button onClick={() => { if (sphereRef) { goto_training_movie_frame(sphereRef, 1); setIsPlaying(false); setFrameInput('1'); } }} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', borderRadius: '4px', transition: 'color 150ms' }} onMouseEnter={e => e.currentTarget.style.color = '#fff'} onMouseLeave={e => e.currentTarget.style.color = '#999'} title="First Frame">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="5" width="3" height="14"/><polygon points="19,5 10,12 19,19"/></svg>
-                            </button>
-                            <button onClick={handleStepBackward} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', borderRadius: '4px', transition: 'color 150ms' }} onMouseEnter={e => e.currentTarget.style.color = '#fff'} onMouseLeave={e => e.currentTarget.style.color = '#999'} title="Previous Frame">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="18,5 9,12 18,19"/><polygon points="10,5 1,12 10,19"/></svg>
-                            </button>
-                            <button onClick={handlePlayPause} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: '6px 8px', display: 'flex', alignItems: 'center', borderRadius: '4px' }} title={isPlaying ? 'Pause' : 'Play'}>
-                                {isPlaying ? (
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+                        currentFrame={frameInfo.current}
+                        totalFrames={frameInfo.total}
+                        isPlaying={isPlaying}
+                        playbackSpeed={playbackSpeed}
+                        isMobile={isMobile}
+                        extraControls={<>
+                            {/* Rotation play/pause */}
+                            <button
+                                onClick={() => setRotationEnabled(!rotationEnabled)}
+                                style={{
+                                    background: 'none',
+                                    border: '1px solid #444',
+                                    borderRadius: '4px',
+                                    color: rotationEnabled ? '#fff' : '#888',
+                                    cursor: 'pointer',
+                                    padding: '2px 6px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    marginLeft: '4px',
+                                    flexShrink: 0,
+                                }}
+                                title={rotationEnabled ? 'Pause Rotation' : 'Resume Rotation'}
+                            >
+                                {rotationEnabled ? (
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
                                 ) : (
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>
                                 )}
                             </button>
-                            <button onClick={handleStepForward} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', borderRadius: '4px', transition: 'color 150ms' }} onMouseEnter={e => e.currentTarget.style.color = '#fff'} onMouseLeave={e => e.currentTarget.style.color = '#999'} title="Next Frame">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,5 15,12 6,19"/><polygon points="14,5 23,12 14,19"/></svg>
+                            {/* Show/hide training toggle */}
+                            <button
+                                onClick={handlePlayPause}
+                                style={{
+                                    background: 'none',
+                                    border: '1px solid #444',
+                                    borderRadius: '4px',
+                                    color: '#aaa',
+                                    cursor: 'pointer',
+                                    padding: '2px 6px',
+                                    fontSize: '10px',
+                                    fontFamily: 'system-ui, -apple-system, sans-serif',
+                                    whiteSpace: 'nowrap',
+                                    marginLeft: '4px',
+                                    flexShrink: 0,
+                                }}
+                                title={isPlaying ? 'Hide training animation' : 'Show training animation'}
+                            >
+                                {isPlaying ? '[hide training]' : '[show training]'}
                             </button>
-                            <button onClick={() => { if (sphereRef && frameInfo) { goto_training_movie_frame(sphereRef, frameInfo.total); setIsPlaying(false); setFrameInput(frameInfo.total.toString()); } }} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', borderRadius: '4px', transition: 'color 150ms' }} onMouseEnter={e => e.currentTarget.style.color = '#fff'} onMouseLeave={e => e.currentTarget.style.color = '#999'} title="Last Frame">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,5 14,12 5,19"/><rect x="17" y="5" width="3" height="14"/></svg>
-                            </button>
-                        </div>
-
-                        {/* Scrub slider */}
-                        <div
-                            style={{ flex: 1, display: 'flex', alignItems: 'center', minWidth: 0 }}
-                            onWheel={(e) => {
-                                if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-                                    e.preventDefault();
-                                    const delta = e.deltaX > 0 ? 1 : -1;
-                                    const newFrame = Math.max(1, Math.min(frameInfo.total, frameInfo.current + delta));
-                                    if (newFrame !== frameInfo.current && sphereRef) {
-                                        goto_training_movie_frame(sphereRef, newFrame);
-                                        setIsPlaying(false);
-                                        setFrameInput(newFrame.toString());
-                                    }
-                                }
-                            }}
-                        >
-                            <input
-                                type="range"
-                                min="1"
-                                max={frameInfo.total}
-                                value={frameInfo.current}
-                                onChange={handleScrub}
-                                style={{ width: '100%', cursor: 'pointer', accentColor: '#00bfff' }}
-                            />
-                        </div>
-
-                        {/* Frame counter */}
-                        <span style={{ color: '#888', fontSize: '11px', fontFamily: 'system-ui, -apple-system, sans-serif', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                            {frameInfo.current}<span style={{ color: '#555' }}>/</span>{frameInfo.total}
-                        </span>
-
-                        {/* Playback speed dropdown */}
-                        <select
-                            value={playbackSpeed}
-                            onChange={(e) => setPlaybackSpeed(parseFloat(e.target.value))}
-                            style={{
-                                background: 'transparent',
-                                border: '1px solid #444',
-                                borderRadius: '4px',
-                                color: '#aaa',
-                                fontSize: '11px',
-                                padding: '2px 4px',
-                                cursor: 'pointer',
-                                marginLeft: '8px',
-                                flexShrink: 0,
-                            }}
-                            title="Playback Speed"
-                        >
-                            <option value={0.25} style={{ background: '#222' }}>0.25x</option>
-                            <option value={0.5} style={{ background: '#222' }}>0.5x</option>
-                            <option value={1} style={{ background: '#222' }}>1x</option>
-                            <option value={2} style={{ background: '#222' }}>2x</option>
-                            <option value={4} style={{ background: '#222' }}>4x</option>
-                            <option value={8} style={{ background: '#222' }}>8x</option>
-                        </select>
-
-                        {/* Rotation play/pause */}
-                        <button
-                            onClick={() => setRotationEnabled(!rotationEnabled)}
-                            style={{
-                                background: 'none',
-                                border: '1px solid #444',
-                                borderRadius: '4px',
-                                color: rotationEnabled ? '#fff' : '#888',
-                                cursor: 'pointer',
-                                padding: '2px 6px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                marginLeft: '4px',
-                                flexShrink: 0,
-                            }}
-                            title={rotationEnabled ? 'Pause Rotation' : 'Resume Rotation'}
-                        >
-                            {rotationEnabled ? (
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
-                            ) : (
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>
-                            )}
-                        </button>
-
-                        {/* Show/hide training toggle */}
-                        <button
-                            onClick={handlePlayPause}
-                            style={{
-                                background: 'none',
-                                border: '1px solid #444',
-                                borderRadius: '4px',
-                                color: isPlaying ? '#aaa' : '#aaa',
-                                cursor: 'pointer',
-                                padding: '2px 6px',
-                                fontSize: '10px',
-                                fontFamily: 'system-ui, -apple-system, sans-serif',
-                                whiteSpace: 'nowrap',
-                                marginLeft: '4px',
-                                flexShrink: 0,
-                            }}
-                            title={isPlaying ? 'Hide training animation' : 'Show training animation'}
-                        >
-                            {isPlaying ? '[hide training]' : '[show training]'}
-                        </button>
-                    </div>
+                        </>}
+                    />
                 )}
 
                 {/* Sport Mode wedge button - lower right corner */}
