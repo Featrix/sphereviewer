@@ -117,7 +117,7 @@ The components expect data to be passed as props from a parent component or page
 - Real-time updates during training
 
 ### Authentication
-Original implementation assumes authentication context (PropelAuth) - this would need to be adapted for standalone use.
+JWT bearer token authentication is supported via the `data-auth-token` script attribute or the `authToken` config option. The token is sent as `Authorization: Bearer <token>` on all API requests to the sphere API.
 
 ### API Endpoints
 The components make calls to specific Featrix Sphere API endpoints for:
@@ -143,10 +143,22 @@ To use this code in a different context:
 4. **Customize Styling** - Adapt Tailwind classes or replace with custom CSS
 5. **Data Format** - Transform your data to match expected SphereRecord format
 
+## Rendering
+
+### WebGL (Default)
+Full Three.js WebGL rendering with trails, physics effects, convex hulls, and all interactive features.
+
+### Canvas2D Fallback
+Automatic software rendering fallback when WebGL is unavailable (GPU crash, disabled hardware acceleration, context limit). Shows cluster-colored points with perspective projection, drag/auto rotation, and frame playback.
+
+### Thumbnail Mode
+Always uses Canvas2D to avoid consuming WebGL contexts. Use when displaying grids of viewers on a single page (browsers limit to ~16 WebGL contexts).
+
 ## Performance Characteristics
 
 - Optimized for datasets with thousands of points
 - Uses WebGL for hardware acceleration
+- Canvas2D fallback for environments without GPU support
 - Efficient memory management with object pooling
 - Smooth interactions even with large datasets
-- Responsive design that works on mobile and desktop 
+- Responsive design that works on mobile and desktop

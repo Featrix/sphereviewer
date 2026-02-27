@@ -281,7 +281,41 @@ viewer.destroy();
 | `data-use-window-data` | Use data from window object | `data-use-window-data="myFeatrixData"` |
 | `data-featrix-data` | Load data from JSON file | `data-featrix-data="data/sphere.json"` |
 | `data-container-id` | Target container ID | `data-container-id="my-sphere"` |
-| `data-session-id` | Legacy API mode | `data-session-id="abc123"` (deprecated) |
+| `data-session-id` | API mode - fetch by session ID | `data-session-id="abc123"` |
+| `data-auth-token` | JWT bearer token for API auth | `data-auth-token="eyJhbG..."` |
+| `data-mode` | Display mode | `data-mode="thumbnail"` (Canvas2D, no UI) |
+
+## Rendering Modes
+
+### WebGL (Default for `mode="full"`)
+Full 3D rendering via Three.js with trails, convex hulls, physics effects, and all interactive features.
+
+### Canvas2D Fallback
+Activates automatically when WebGL is unavailable (GPU crash, driver blocklist, disabled hardware acceleration). Shows a red banner: "WebGL unavailable — using simplified 2D rendering". Supports point rendering with cluster colors, rotation, and frame playback.
+
+### Thumbnail Mode (`mode="thumbnail"`)
+Always uses Canvas2D — never creates a WebGL context. Use this when displaying multiple viewers on one page to avoid exhausting the browser's ~16 WebGL context limit. Hides all UI controls (sidebar, playback bar, etc.).
+
+## Authentication
+
+Pass a JWT bearer token to authenticate API requests:
+
+```html
+<!-- Via data attribute -->
+<script src="sphere-viewer.js"
+        data-session-id="abc123"
+        data-auth-token="eyJhbGciOiJIUzI1NiIs..."></script>
+```
+
+```javascript
+// Via JavaScript API
+viewer.init({
+  sessionId: 'abc123',
+  authToken: 'eyJhbGciOiJIUzI1NiIs...'
+});
+```
+
+The token is sent as `Authorization: Bearer <token>` on all requests to the sphere API.
 
 ## 🔍 Troubleshooting
 
@@ -300,6 +334,12 @@ viewer.destroy();
    - Check browser console for errors
    - Verify your data format matches the required structure
    - Ensure coordinates are valid numbers
+
+4. **"WebGL unavailable" banner**
+   - The viewer fell back to Canvas2D software rendering
+   - Check `chrome://gpu` for GPU status
+   - Common causes: too many WebGL contexts open, GPU driver crash, hardware acceleration disabled
+   - Try closing other GPU-intensive tabs or restarting the browser
 
 ### Debug Mode
 

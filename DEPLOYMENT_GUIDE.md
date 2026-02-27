@@ -6,23 +6,16 @@ The FeatrixSphereViewer can be easily deployed to your 'bits' host using the aut
 
 ## 🛠️ Deployment Commands
 
-### Quick Deploy
+### Build & Deploy
 ```bash
-# Deploy current build
-npm run deploy
-```
+# Build the embeddable component
+npm run build:embed
 
-### Full Build & Deploy
-```bash
-# Build latest version and deploy
-npm run deploy:full
-```
-
-### Manual Script
-```bash
-# Run deployment script directly
+# Deploy to bits
 ./deploy-to-bits.sh
 ```
+
+Always build first, then deploy. Do not use `npm run deploy` or `npm run deploy:full`.
 
 ## 📁 What Gets Deployed
 
@@ -120,12 +113,7 @@ To update the deployed version:
 
 1. **Make changes** to the FeatrixSphereViewer
 2. **Rebuild**: `npm run build:embed`
-3. **Deploy**: `npm run deploy`
-
-Or do it all in one step:
-```bash
-npm run deploy:full
-```
+3. **Deploy**: `./deploy-to-bits.sh`
 
 ## 📊 Deployment Features
 

@@ -13,6 +13,9 @@ An embeddable, high-performance 3D sphere visualization component for data explo
 - ⚡ **High Performance** - Optimized for large datasets (1000+ points)
 - 🔗 **Easy Embedding** - Drop-in script tag or React component
 - 🎨 **Customizable** - Configurable colors, animations, and interactions
+- 🔒 **JWT Authentication** - Pass bearer tokens for authenticated API access
+- 🖥️ **Canvas2D Fallback** - Automatic software rendering when WebGL is unavailable
+- 📸 **Thumbnail Mode** - Lightweight Canvas2D-only mode for grids of viewers
 
 ## 🚀 Quick Start
 
@@ -99,6 +102,8 @@ Your data should follow this structure:
 | `pointSize` | number | `0.05` | Size of data points |
 | `pointOpacity` | number | `0.5` | Transparency of points |
 | `animateClusters` | boolean | `false` | Enable cluster animations |
+| `authToken` | string | `undefined` | JWT bearer token for authenticated API requests |
+| `mode` | string | `'full'` | Display mode: `'full'` or `'thumbnail'` (Canvas2D only, no UI controls) |
 
 ## 🎬 Training Movies
 
@@ -171,9 +176,11 @@ viewer.destroy();
 ## 🌐 Browser Support
 
 - Chrome 60+
-- Firefox 55+ 
+- Firefox 55+
 - Safari 12+
 - Edge 79+
+
+Browsers without WebGL support (or with GPU crashes) automatically fall back to Canvas2D software rendering.
 
 ## 📈 Performance
 

@@ -289,7 +289,8 @@ const Canvas2DFallback: React.FC<{
     onFrameUpdate?: (frameInfo: { current: number; total: number; visible: number; epoch?: string }) => void;
     onReady?: (fakeSpherRef: any) => void;
     containerRef?: React.RefObject<HTMLDivElement>;
-}> = ({ trainingData, sessionProjections, onFrameUpdate, onReady, containerRef }) => {
+    showBanner?: boolean;
+}> = ({ trainingData, sessionProjections, onFrameUpdate, onReady, containerRef, showBanner = true }) => {
     const internalRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const actualRef = containerRef || internalRef;
@@ -367,12 +368,13 @@ const Canvas2DFallback: React.FC<{
             const cosX = Math.cos(state.rotX), sinX = Math.sin(state.rotX);
             let ry = y * cosX - rz * sinX;
             rz = y * sinX + rz * cosX;
-            // Perspective projection
+            // Perspective projection — use uniform scale so sphere isn't distorted
             const fov = 3.0;
             const scale = fov / (fov + rz + 2);
+            const uniform = Math.min(w, h) * 0.35;
             return {
-                sx: w / 2 + rx * scale * w * 0.35,
-                sy: h / 2 - ry * scale * h * 0.35,
+                sx: w / 2 + rx * scale * uniform,
+                sy: h / 2 - ry * scale * uniform,
                 depth: rz,
                 scale,
             };
@@ -393,9 +395,17 @@ const Canvas2DFallback: React.FC<{
 
             // Project all points
             const projected = epochData.coords.map((coord: any, i: number) => {
-                const px = coord.x ?? 0;
-                const py = coord.y ?? 0;
-                const pz = coord.z ?? 0;
+                // Extract coordinates - handle all formats (array, {x,y,z}, {0,1,2})
+                let px = 0, py = 0, pz = 0;
+                if (Array.isArray(coord)) {
+                    px = coord[0] ?? 0; py = coord[1] ?? 0; pz = coord[2] ?? 0;
+                } else if (coord && typeof coord === 'object') {
+                    if ('x' in coord && 'y' in coord && 'z' in coord) {
+                        px = coord.x; py = coord.y; pz = coord.z;
+                    } else if (0 in coord && 1 in coord && 2 in coord) {
+                        px = coord[0]; py = coord[1]; pz = coord[2];
+                    }
+                }
                 const p = project(px, py, pz, w, h);
                 const cluster = getClusterLabel(coord, epochKey);
                 return { ...p, cluster, index: i };
@@ -420,7 +430,7 @@ const Canvas2DFallback: React.FC<{
             // Epoch label
             ctx.fillStyle = 'rgba(255,255,255,0.6)';
             ctx.font = '11px monospace';
-            ctx.fillText(`${epochKey}  (Canvas2D fallback - WebGL unavailable)`, 10, h - 10);
+            ctx.fillText(epochKey, 10, h - 10);
 
             if (onFrameUpdate) {
                 onFrameUpdate({
@@ -508,13 +518,26 @@ const Canvas2DFallback: React.FC<{
         };
     }, [trainingData, sessionProjections]);
 
+    const banner = showBanner ? (
+        <div style={{
+            position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)',
+            background: 'rgba(180, 60, 60, 0.9)', color: '#fff',
+            padding: '6px 18px', borderRadius: '6px', fontSize: '13px', fontWeight: 600,
+            zIndex: 10, whiteSpace: 'nowrap', pointerEvents: 'none',
+        }}>
+            WebGL unavailable — using simplified 2D rendering
+        </div>
+    ) : null;
     if (containerRef) {
-        // Render into parent's container via portal-style: just the canvas
-        return <canvas ref={canvasRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} />;
+        return <>
+            <canvas ref={canvasRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} />
+            {banner}
+        </>;
     }
     return (
         <div ref={internalRef} style={{ width: '100%', height: '100%', position: 'relative' }}>
             <canvas ref={canvasRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} />
+            {banner}
         </div>
     );
 };
@@ -532,12 +555,13 @@ const TrainingMovieSphere: React.FC<{
     onLoadingProgress?: (loaded: number, total: number) => void,
     pointSize?: number,
     pointAlpha?: number,
-    trailLength?: number
-}> = ({ trainingData, sessionProjections, lossData, onReady, onFrameUpdate, onPointInspected, rotationEnabled = true, containerRef, onLoadingProgress, pointSize = 0.05, pointAlpha = 0.5, trailLength = 12 }) => {
+    trailLength?: number,
+    forceCanvas2D?: boolean
+}> = ({ trainingData, sessionProjections, lossData, onReady, onFrameUpdate, onPointInspected, rotationEnabled = true, containerRef, onLoadingProgress, pointSize = 0.05, pointAlpha = 0.5, trailLength = 12, forceCanvas2D = false }) => {
     const internalContainerRef = useRef<HTMLDivElement>(null);
     const actualContainerRef = containerRef || internalContainerRef;
     const sphereRef = useRef<any>(null);
-    const [webglFailed, setWebglFailed] = useState(false);
+    const [webglFailed, setWebglFailed] = useState(forceCanvas2D);
 
     useEffect(() => {
         if (!actualContainerRef.current || !trainingData || webglFailed) {
@@ -679,7 +703,7 @@ const TrainingMovieSphere: React.FC<{
         };
     }, []);
 
-    // WebGL failed - render Canvas2D fallback
+    // WebGL failed or forced Canvas2D - render Canvas2D fallback
     if (webglFailed) {
         return (
             <Canvas2DFallback
@@ -688,6 +712,7 @@ const TrainingMovieSphere: React.FC<{
                 onFrameUpdate={onFrameUpdate}
                 onReady={onReady}
                 containerRef={containerRef}
+                showBanner={!forceCanvas2D}
             />
         );
     }
@@ -721,7 +746,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
     const [waitingCountdown, setWaitingCountdown] = useState(30);
     const [waitingSessionInfo, setWaitingSessionInfo] = useState<any>(null);
     const [loadRetryTrigger, setLoadRetryTrigger] = useState(0);
-    const [webglUnavailable, setWebglUnavailable] = useState(false);
 
     // Performance timing
     const componentStartTime = useRef(performance.now());
@@ -809,6 +833,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
     // If mode='full' prop is passed, never use thumbnail mode
     // Otherwise, detect based on container size
     const [isThumbnail, setIsThumbnail] = useState(mode === 'thumbnail');
+    const [isSmallViewport, setIsSmallViewport] = useState(false);
 
     // Detect thumbnail mode from OUTER container size (only if mode not explicitly set)
     useEffect(() => {
@@ -830,6 +855,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
             const height = entry.contentRect.height;
             const isThumbnailMode = width < 800 || height < 600;
             setIsThumbnail(isThumbnailMode);
+            setIsSmallViewport(width < 1000 || height < 1000);
         });
         resizeObserver.observe(outerContainerRef.current);
         return () => resizeObserver.disconnect();
@@ -1056,13 +1082,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
 
     useEffect(() => {
         const loadTrainingData = async () => {
-            // Bail before downloading data if browser can't render WebGL
-            if (!isWebGLAvailable()) {
-                setWebglUnavailable(true);
-                setLoading(false);
-                return;
-            }
-
             let slowFetchTimer: ReturnType<typeof setTimeout> | undefined;
             try {
                 setLoading(true);
@@ -2286,53 +2305,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
             }
         }
     }, [hideUnknown]);
-
-    if (webglUnavailable) {
-        return (
-            <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: '100vh',
-                background: '#1a1a1a',
-                color: '#e0e0e0',
-                padding: '40px',
-                textAlign: 'center',
-            }}>
-                <div style={{ fontSize: '64px', marginBottom: '24px', lineHeight: 1 }}>&#x26A0;</div>
-                <div style={{ fontSize: '22px', fontWeight: 700, marginBottom: '12px', color: '#ff6b6b' }}>
-                    WebGL Unavailable
-                </div>
-                <div style={{ fontSize: '15px', color: '#bbb', maxWidth: '480px', lineHeight: 1.5, marginBottom: '24px' }}>
-                    This visualization requires WebGL to render 3D data.
-                    Your browser's GPU acceleration may have crashed or is
-                    disabled. Please try:
-                </div>
-                <ul style={{ textAlign: 'left', fontSize: '14px', color: '#aaa', lineHeight: 1.8, margin: '0 0 28px 0', padding: '0 0 0 20px', maxWidth: '420px' }}>
-                    <li>Restart your browser</li>
-                    <li>Close other GPU-intensive tabs</li>
-                    <li>Enable hardware acceleration in browser settings</li>
-                    <li>Update your graphics drivers</li>
-                </ul>
-                <button
-                    onClick={() => window.location.reload()}
-                    style={{
-                        padding: '10px 28px',
-                        fontSize: '14px',
-                        fontWeight: 600,
-                        background: '#64b5f6',
-                        color: '#111',
-                        border: 'none',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                    }}
-                >
-                    Reload Page
-                </button>
-            </div>
-        );
-    }
 
     if (loading) {
         // THUMBNAIL MODE: Simple spinner, no detailed steps or build info
@@ -4459,6 +4431,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                         trainingData={trainingData}
                         sessionProjections={sessionProjections}
                         lossData={lossData}
+                        forceCanvas2D={mode === 'thumbnail'}
                         onPointInspected={(pointInfo: any) => {
                             setSelectedPointInfo(pointInfo);
                             // Add to selected points list (or toggle if already selected)
@@ -4631,7 +4604,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                 )}
 
                 {/* Sport Mode wedge button - lower right corner */}
-                {!isThumbnail && <div
+                {!isThumbnail && !isSmallViewport && <div
                     onClick={() => setSportMode(!sportMode)}
                     style={{
                         position: 'absolute',
@@ -4709,7 +4682,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                 </div>}
 
                 {/* Sport Mode ambient glow when active */}
-                {!isThumbnail && sportMode && (
+                {!isThumbnail && !isSmallViewport && sportMode && (
                     <div style={{
                         position: 'absolute',
                         bottom: 0,

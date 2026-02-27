@@ -83,6 +83,8 @@ This creates `dist/sphere-viewer.js` - your embeddable component.
 | `data-session-id` | ✅ | The session ID to load |
 | `data-container-id` | ❌ | Target container ID (default: auto-created) |
 | `data-api-base-url` | ❌ | Custom API base URL (default: https://sphere-api.featrix.com) |
+| `data-auth-token` | ❌ | JWT bearer token for authenticated API requests |
+| `data-mode` | ❌ | Display mode: `thumbnail` (minimal UI, Canvas2D) or `full` (default) |
 
 ### JavaScript API
 
@@ -93,7 +95,9 @@ const viewer = new window.SphereViewer();
 viewer.init({
     sessionId: 'your-session-id',     // Required
     containerId: 'container-id',      // Optional (default: 'sphere-viewer-container')
-    apiBaseUrl: 'https://api.com'     // Optional (default: 'https://sphere-api.featrix.com')
+    apiBaseUrl: 'https://api.com',    // Optional (default: 'https://sphere-api.featrix.com')
+    authToken: 'your-jwt-token',      // Optional: JWT for authenticated API requests
+    mode: 'full'                      // Optional: 'full' (default) or 'thumbnail'
 });
 
 // Update to new session
@@ -198,6 +202,21 @@ cp dist/sphere-viewer.js dist/sphere-viewer-v1.0.0.js
 <script src="https://cdn.yoursite.com/sphere-viewer-v1.0.0.js"></script>
 ```
 
+## Rendering Modes
+
+### WebGL (Default)
+Full 3D rendering with Three.js. Requires WebGL support in the browser.
+
+### Canvas2D Fallback
+When WebGL is unavailable (GPU crash, headless browser, disabled hardware acceleration), the viewer automatically falls back to a Canvas2D software renderer. A red banner indicates fallback mode. The fallback supports:
+- Point rendering with cluster colors
+- Rotation (auto and drag)
+- Frame-by-frame playback
+- Play/pause controls
+
+### Thumbnail Mode
+When `mode="thumbnail"`, the viewer always uses Canvas2D rendering (no WebGL context consumed). This prevents exhausting the browser's ~16 WebGL context limit when displaying many viewers on one page. Thumbnail mode also hides all UI controls.
+
 ## 🔍 Troubleshooting
 
 ### Common Issues
@@ -206,6 +225,7 @@ cp dist/sphere-viewer.js dist/sphere-viewer-v1.0.0.js
 2. **CORS errors**: Check your API endpoints allow cross-origin requests
 3. **CSS conflicts**: The component uses scoped CSS classes to avoid conflicts
 4. **Mobile rendering**: The component is responsive but test on various devices
+5. **WebGL unavailable**: The viewer falls back to Canvas2D automatically. Check `chrome://gpu` for GPU status. Common causes: too many WebGL contexts, GPU driver crash, disabled hardware acceleration.
 
 ### Debug Mode
 

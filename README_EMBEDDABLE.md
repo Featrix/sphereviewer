@@ -34,6 +34,9 @@ Your React-based Sphere Viewer has been successfully converted into a self-conta
 
 ### ✅ Features Included
 - **Complete 3D Sphere Visualization** - Full Three.js WebGL rendering
+- **Canvas2D Fallback** - Automatic software rendering when WebGL is unavailable
+- **Thumbnail Mode** - Canvas2D-only mode for grids of viewers (no WebGL context consumed)
+- **JWT Authentication** - Bearer token auth via `data-auth-token` attribute
 - **Real-time Training Status** - Progress indicators and status updates
 - **Interactive Controls** - Click, zoom, pan, rotate
 - **Data Selection & Highlighting** - Point selection and similarity search
@@ -156,6 +159,8 @@ cp dist/sphere-viewer.js dist/sphere-viewer-v1.0.0.js
 | `data-session-id` | string | ✅ | Session ID to load |
 | `data-container-id` | string | ❌ | Target container (auto-created if not provided) |
 | `data-api-base-url` | string | ❌ | Custom API endpoint (default: https://sphere-api.featrix.com) |
+| `data-auth-token` | string | ❌ | JWT bearer token for authenticated API requests |
+| `data-mode` | string | ❌ | `thumbnail` (Canvas2D only, no UI) or `full` (default) |
 
 ## 📈 Performance & Compatibility
 
