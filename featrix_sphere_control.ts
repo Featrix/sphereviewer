@@ -1285,6 +1285,28 @@ export function update_all_point_visuals(sphere: SphereData) {
     });
 }
 
+// Orient camera to face the side of the sphere with the highest density of points.
+// Computes the centroid of all point positions - on a unit sphere, this naturally
+// points toward the densest region. Sets camera angles to face that direction.
+function orient_camera_to_point_density(sphere: SphereData) {
+    if (!sphere.pointObjectsByRecordID || sphere.pointObjectsByRecordID.size === 0) return;
+
+    let cx = 0, cy = 0, cz = 0;
+    sphere.pointObjectsByRecordID.forEach((mesh: any) => {
+        cx += mesh.position.x;
+        cy += mesh.position.y;
+        cz += mesh.position.z;
+    });
+    const n = sphere.pointObjectsByRecordID.size;
+    cx /= n; cy /= n; cz /= n;
+
+    const len = Math.sqrt(cx * cx + cy * cy + cz * cz);
+    if (len < 0.01) return; // Points uniformly distributed, no dominant side
+
+    sphere.angle = Math.atan2(-cx, -cz);
+    sphere.verticalAngle = Math.asin(Math.max(-1, Math.min(1, -cy / len)));
+}
+
 // Training Movie Functions
 export function load_training_movie(sphere: SphereData, trainingMovieData: any, lossData?: any, fullSessionData?: any) {
     // CRITICAL: Clear all existing points to prevent accumulation when restarting
@@ -1473,6 +1495,9 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any, 
     // CRITICAL: Update first frame immediately to set correct colors
     // This prevents red dots from appearing at the start
     update_training_movie_frame(sphere, firstEpochKey);
+
+    // Orient camera to face the side with the highest density of points
+    orient_camera_to_point_density(sphere);
 
     // Force initial render
     render_sphere(sphere);

@@ -57,6 +57,19 @@ function usePersistedState<T>(key: string, defaultValue: T): [T, React.Dispatch<
     return [state, setPersistedState];
 }
 
+// WebGL availability detection — cached at module load so we never re-test
+let _webglAvailable: boolean | null = null;
+function isWebGLAvailable(): boolean {
+    if (_webglAvailable !== null) return _webglAvailable;
+    try {
+        const c = document.createElement('canvas');
+        _webglAvailable = !!(c.getContext('webgl2') || c.getContext('webgl'));
+    } catch {
+        _webglAvailable = false;
+    }
+    return _webglAvailable;
+}
+
 // Build timestamp for cache busting verification - set at module load time
 const BUILD_TIMESTAMP = new Date().toISOString();
 
@@ -708,7 +721,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
     const [waitingCountdown, setWaitingCountdown] = useState(30);
     const [waitingSessionInfo, setWaitingSessionInfo] = useState<any>(null);
     const [loadRetryTrigger, setLoadRetryTrigger] = useState(0);
-    
+    const [webglUnavailable, setWebglUnavailable] = useState(false);
+
     // Performance timing
     const componentStartTime = useRef(performance.now());
     const hasLoggedInit = useRef(false);
@@ -1042,6 +1056,13 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
 
     useEffect(() => {
         const loadTrainingData = async () => {
+            // Bail before downloading data if browser can't render WebGL
+            if (!isWebGLAvailable()) {
+                setWebglUnavailable(true);
+                setLoading(false);
+                return;
+            }
+
             let slowFetchTimer: ReturnType<typeof setTimeout> | undefined;
             try {
                 setLoading(true);
@@ -2265,6 +2286,53 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
             }
         }
     }, [hideUnknown]);
+
+    if (webglUnavailable) {
+        return (
+            <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: '100vh',
+                background: '#1a1a1a',
+                color: '#e0e0e0',
+                padding: '40px',
+                textAlign: 'center',
+            }}>
+                <div style={{ fontSize: '64px', marginBottom: '24px', lineHeight: 1 }}>&#x26A0;</div>
+                <div style={{ fontSize: '22px', fontWeight: 700, marginBottom: '12px', color: '#ff6b6b' }}>
+                    WebGL Unavailable
+                </div>
+                <div style={{ fontSize: '15px', color: '#bbb', maxWidth: '480px', lineHeight: 1.5, marginBottom: '24px' }}>
+                    This visualization requires WebGL to render 3D data.
+                    Your browser's GPU acceleration may have crashed or is
+                    disabled. Please try:
+                </div>
+                <ul style={{ textAlign: 'left', fontSize: '14px', color: '#aaa', lineHeight: 1.8, margin: '0 0 28px 0', padding: '0 0 0 20px', maxWidth: '420px' }}>
+                    <li>Restart your browser</li>
+                    <li>Close other GPU-intensive tabs</li>
+                    <li>Enable hardware acceleration in browser settings</li>
+                    <li>Update your graphics drivers</li>
+                </ul>
+                <button
+                    onClick={() => window.location.reload()}
+                    style={{
+                        padding: '10px 28px',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        background: '#64b5f6',
+                        color: '#111',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                    }}
+                >
+                    Reload Page
+                </button>
+            </div>
+        );
+    }
 
     if (loading) {
         // THUMBNAIL MODE: Simple spinner, no detailed steps or build info
