@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { useTheme } from '../ThemeContext';
 
 // Safe localStorage utilities - NEVER crash on read/write failures
 const STORAGE_KEY_PREFIX = 'featrix_section_';
@@ -34,6 +35,8 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
     storageKey,
     children
 }) => {
+    const { theme } = useTheme();
+
     // If storageKey provided, use persisted state; otherwise use regular state
     const [isOpen, setIsOpenInternal] = useState(() => {
         if (storageKey) {
@@ -62,15 +65,15 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
                     alignItems: 'center',
                     gap: '8px',
                     padding: '0 12px',
-                    background: isHovered ? '#1f1f1f' : '#191919',
-                    borderBottom: '1px solid #2a2a2a',
+                    background: isHovered ? theme.bgSurfaceHover : theme.bgSecondary,
+                    borderBottom: `1px solid ${theme.borderPrimary}`,
                     cursor: 'pointer',
                     userSelect: 'none',
                     transition: 'background 100ms ease',
                 }}
             >
                 <span style={{
-                    color: '#8f8f8f',
+                    color: theme.textTertiary,
                     fontSize: '10px',
                     transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)',
                     transition: 'transform 150ms ease',
@@ -83,7 +86,7 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
                     fontSize: '11px',
                     fontWeight: 600,
                     letterSpacing: '0.08em',
-                    color: isOpen ? '#e6e6e6' : '#b8b8b8',
+                    color: isOpen ? theme.textPrimary : theme.textSecondary,
                     textTransform: 'uppercase',
                     transition: 'color 100ms ease',
                 }}>
@@ -97,10 +100,10 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
                     paddingRight: '12px',
                     paddingTop: '12px',
                     paddingBottom: '14px',
-                    background: '#101010',
+                    background: theme.bgInset,
                     borderRadius: '8px',
-                    border: '1px solid #2b2b2b',
-                    boxShadow: '0 1px 0 rgba(255,255,255,0.03), 0 6px 16px rgba(0,0,0,0.45)',
+                    border: `1px solid ${theme.borderPrimary}`,
+                    boxShadow: `${theme.shadowLight}, ${theme.shadowMedium}`,
                 }}>
                     {children}
                 </div>

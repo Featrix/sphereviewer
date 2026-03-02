@@ -2,6 +2,8 @@
  * Chart components using Plotly.js
  */
 import React, { useEffect, useRef } from 'react';
+import { useTheme } from '../ThemeContext';
+import type { SphereTheme } from '../theme';
 
 // Declare Plotly as a global (loaded from CDN)
 declare const Plotly: any;
@@ -21,25 +23,27 @@ const loadPlotly = (): Promise<void> => {
     });
 };
 
-// Common dark theme layout
-const darkLayout = {
-    paper_bgcolor: '#0b0b0b',
-    plot_bgcolor: '#0b0b0b',
-    font: { color: '#e6e6e6', size: 11 },
-    margin: { l: 50, r: 15, t: 10, b: 35 },
-    xaxis: {
-        gridcolor: 'rgba(255,255,255,0.08)',
-        linecolor: 'rgba(255,255,255,0.3)',
-        tickfont: { size: 10 },
-    },
-    yaxis: {
-        gridcolor: 'rgba(255,255,255,0.08)',
-        linecolor: 'rgba(255,255,255,0.3)',
-        tickfont: { size: 10 },
-    },
-    showlegend: false,
-    hovermode: 'x unified' as const,
-};
+// Theme-aware chart layout
+function getChartLayout(theme: SphereTheme) {
+    return {
+        paper_bgcolor: theme.chartBg,
+        plot_bgcolor: theme.chartBg,
+        font: { color: theme.chartText, size: 11 },
+        margin: { l: 50, r: 15, t: 10, b: 35 },
+        xaxis: {
+            gridcolor: theme.chartGrid,
+            linecolor: theme.chartLine,
+            tickfont: { size: 10 },
+        },
+        yaxis: {
+            gridcolor: theme.chartGrid,
+            linecolor: theme.chartLine,
+            tickfont: { size: 10 },
+        },
+        showlegend: false,
+        hovermode: 'x unified' as const,
+    };
+}
 
 const config = {
     displayModeBar: false,
@@ -56,6 +60,7 @@ export const LossPlotOverlay: React.FC<{
 }> = ({ lossData, learningRateData, currentEpoch, style }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const plotlyLoaded = useRef(false);
+    const { theme } = useTheme();
 
     useEffect(() => {
         if (!containerRef.current || !lossData || lossData.length === 0) return;
@@ -117,25 +122,26 @@ export const LossPlotOverlay: React.FC<{
                         y: [Math.min(...losses) * 0.9, Math.max(...losses) * 1.1],
                         type: 'scatter',
                         mode: 'lines',
-                        line: { color: 'rgba(255,255,255,0.5)', width: 1, dash: 'dash' },
+                        line: { color: theme.chartLine, width: 1, dash: 'dash' },
                         hoverinfo: 'skip',
                         showlegend: false,
                     });
                 }
             }
 
+            const baseLayout = getChartLayout(theme);
             const layout: any = {
-                ...darkLayout,
-                xaxis: { ...darkLayout.xaxis, title: { text: 'Epoch', font: { size: 10 } } },
+                ...baseLayout,
+                xaxis: { ...baseLayout.xaxis, title: { text: 'Epoch', font: { size: 10 } } },
                 yaxis: {
-                    ...darkLayout.yaxis,
+                    ...baseLayout.yaxis,
                     title: { text: 'Loss', font: { size: 10 } },
                 },
             };
 
             if (learningRateData && learningRateData.length > 0) {
                 layout.yaxis2 = {
-                    ...darkLayout.yaxis,
+                    ...baseLayout.yaxis,
                     overlaying: 'y',
                     side: 'right',
                     title: { text: 'LR', font: { size: 10 } },
@@ -148,7 +154,7 @@ export const LossPlotOverlay: React.FC<{
         };
 
         renderChart();
-    }, [lossData, learningRateData, currentEpoch]);
+    }, [lossData, learningRateData, currentEpoch, theme]);
 
     // Cleanup
     useEffect(() => {
@@ -170,6 +176,7 @@ export const MovementPlotOverlay: React.FC<{
 }> = ({ movementData, currentEpoch, style }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const plotlyLoaded = useRef(false);
+    const { theme } = useTheme();
 
     useEffect(() => {
         if (!containerRef.current || !movementData || movementData.length === 0) return;
@@ -225,24 +232,25 @@ export const MovementPlotOverlay: React.FC<{
                         y: [0, maxY],
                         type: 'scatter',
                         mode: 'lines',
-                        line: { color: 'rgba(255,255,255,0.5)', width: 1, dash: 'dash' },
+                        line: { color: theme.chartLine, width: 1, dash: 'dash' },
                         hoverinfo: 'skip',
                         showlegend: false,
                     });
                 }
             }
 
+            const baseLayout = getChartLayout(theme);
             const layout = {
-                ...darkLayout,
-                xaxis: { ...darkLayout.xaxis, title: { text: 'Epoch', font: { size: 10 } } },
-                yaxis: { ...darkLayout.yaxis, title: { text: 'Movement', font: { size: 10 } } },
+                ...baseLayout,
+                xaxis: { ...baseLayout.xaxis, title: { text: 'Epoch', font: { size: 10 } } },
+                yaxis: { ...baseLayout.yaxis, title: { text: 'Movement', font: { size: 10 } } },
             };
 
             Plotly.react(container, traces, layout, config);
         };
 
         renderChart();
-    }, [movementData, currentEpoch]);
+    }, [movementData, currentEpoch, theme]);
 
     useEffect(() => {
         return () => {
@@ -265,6 +273,7 @@ export const MovementHistogramByCluster: React.FC<{
 }> = ({ histogramData, style }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const plotlyLoaded = useRef(false);
+    const { theme } = useTheme();
 
     useEffect(() => {
         if (!containerRef.current || !histogramData || histogramData.buckets.length === 0) return;
@@ -300,11 +309,12 @@ export const MovementHistogramByCluster: React.FC<{
                 hovertemplate: `Cluster ${clusterId}<br>Range: %{x}<br>Count: %{y}<extra></extra>`,
             }));
 
+            const baseLayout = getChartLayout(theme);
             const layout = {
-                ...darkLayout,
+                ...baseLayout,
                 barmode: 'stack',
-                xaxis: { ...darkLayout.xaxis, title: { text: 'Movement Distance', font: { size: 10 } } },
-                yaxis: { ...darkLayout.yaxis, title: { text: 'Point Count', font: { size: 10 } } },
+                xaxis: { ...baseLayout.xaxis, title: { text: 'Movement Distance', font: { size: 10 } } },
+                yaxis: { ...baseLayout.yaxis, title: { text: 'Point Count', font: { size: 10 } } },
                 showlegend: true,
                 legend: {
                     orientation: 'h' as const,
@@ -314,14 +324,14 @@ export const MovementHistogramByCluster: React.FC<{
                     font: { size: 9 },
                     itemwidth: 30,
                 },
-                margin: { ...darkLayout.margin, b: 55 },
+                margin: { ...baseLayout.margin, b: 55 },
             };
 
             Plotly.react(container, traces, layout, config);
         };
 
         renderChart();
-    }, [histogramData]);
+    }, [histogramData, theme]);
 
     useEffect(() => {
         return () => {
@@ -332,7 +342,7 @@ export const MovementHistogramByCluster: React.FC<{
     }, []);
 
     if (!histogramData) {
-        return <div style={{ ...style, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666', fontSize: '11px' }}>No movement data</div>;
+        return <div style={{ ...style, display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textMuted, fontSize: '11px' }}>No movement data</div>;
     }
 
     return <div ref={containerRef} style={{ width: '100%', height: '100%', ...style }} />;

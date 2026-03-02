@@ -17,6 +17,8 @@ import { v4 as uuid4 } from 'uuid';
 import CollapsibleSection from './components/CollapsibleSection';
 import { LossPlotOverlay, MovementPlotOverlay, MovementHistogramByCluster } from './components/Charts';
 import PlaybackController, { PlaybackControllerHandle } from './PlaybackController';
+import { ThemeProvider, useTheme } from './ThemeContext';
+import type { ThemeMode } from './theme';
 
 // ============================================================================
 // Safe localStorage utilities - NEVER crash on read/write failures
@@ -83,77 +85,78 @@ const DistributionChart: React.FC<{
     max: number;
     searchValue: number | null;
 }> = ({ distribution, min, max, searchValue }) => {
+    const { theme } = useTheme();
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const height = 80;
     const width = 300;
-    
+
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
-        
+
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
-        
+
         ctx.clearRect(0, 0, width, height);
-        
+
         const maxCount = Math.max(...distribution.map(d => d.count));
         const padding = 5;
         const chartWidth = width - padding * 2;
         const chartHeight = height - padding * 2 - 15; // Extra space for labels
-        
+
         // Draw bars
         distribution.forEach((item, i) => {
             const barWidth = chartWidth / distribution.length;
             const barHeight = (item.count / maxCount) * chartHeight;
             const x = padding + i * barWidth;
             const y = padding + chartHeight - barHeight;
-            
-            ctx.fillStyle = '#64b5f6';
+
+            ctx.fillStyle = theme.accent;
             ctx.fillRect(x, y, barWidth - 1, barHeight);
         });
-        
+
         // Draw search value marker
         if (searchValue !== null && !isNaN(searchValue) && searchValue >= min && searchValue <= max) {
             const normalizedPos = (searchValue - min) / (max - min);
             const x = padding + normalizedPos * chartWidth;
-            
-            ctx.strokeStyle = '#ff4444';
+
+            ctx.strokeStyle = theme.error;
             ctx.lineWidth = 2;
             ctx.beginPath();
             ctx.moveTo(x, padding);
             ctx.lineTo(x, padding + chartHeight);
             ctx.stroke();
-            
+
             // Draw marker dot
-            ctx.fillStyle = '#ff4444';
+            ctx.fillStyle = theme.error;
             ctx.beginPath();
             ctx.arc(x, padding + chartHeight, 4, 0, 2 * Math.PI);
             ctx.fill();
         }
-        
+
         // Draw axis labels
-        ctx.fillStyle = '#aaa';
+        ctx.fillStyle = theme.textTertiary;
         ctx.font = '10px monospace';
         ctx.textAlign = 'left';
         ctx.fillText(min.toFixed(2), padding, height - 2);
         ctx.textAlign = 'right';
         ctx.fillText(max.toFixed(2), width - padding, height - 2);
-        
+
         if (searchValue !== null && !isNaN(searchValue) && searchValue >= min && searchValue <= max) {
             const normalizedPos = (searchValue - min) / (max - min);
             const x = padding + normalizedPos * chartWidth;
             ctx.textAlign = 'center';
-            ctx.fillStyle = '#ff4444';
+            ctx.fillStyle = theme.error;
             ctx.fillText(searchValue.toFixed(2), x, padding - 2);
         }
-    }, [distribution, min, max, searchValue]);
-    
+    }, [distribution, min, max, searchValue, theme]);
+
     return (
         <canvas
             ref={canvasRef}
             width={width}
             height={height}
-            style={{ width: '100%', height: `${height}px`, border: '1px solid #666', borderRadius: '3px' }}
+            style={{ width: '100%', height: `${height}px`, border: `1px solid ${theme.textMuted}`, borderRadius: '3px' }}
         />
     );
 };
@@ -273,6 +276,8 @@ interface TrainingMovieProps {
     mode?: 'thumbnail' | 'full';
     // Custom data endpoint URL - overrides the default epoch_projections URL
     dataEndpoint?: string;
+    // Default alpha/opacity for points (0-1)
+    pointAlpha?: number;
 }
 
 // ============================================================================
@@ -291,6 +296,7 @@ const Canvas2DFallback: React.FC<{
     containerRef?: React.RefObject<HTMLDivElement>;
     showBanner?: boolean;
 }> = ({ trainingData, sessionProjections, onFrameUpdate, onReady, containerRef, showBanner = true }) => {
+    const { theme } = useTheme();
     const internalRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const actualRef = containerRef || internalRef;
@@ -386,7 +392,7 @@ const Canvas2DFallback: React.FC<{
             ctx.clearRect(0, 0, w, h);
 
             // Background
-            ctx.fillStyle = '#0a0a0a';
+            ctx.fillStyle = theme.canvas2dBg;
             ctx.fillRect(0, 0, w, h);
 
             const epochKey = epochKeys[state.currentFrame];
@@ -428,7 +434,7 @@ const Canvas2DFallback: React.FC<{
             ctx.globalAlpha = 1;
 
             // Epoch label
-            ctx.fillStyle = 'rgba(255,255,255,0.6)';
+            ctx.fillStyle = theme.canvas2dText;
             ctx.font = '11px monospace';
             ctx.fillText(epochKey, 10, h - 10);
 
@@ -516,7 +522,7 @@ const Canvas2DFallback: React.FC<{
             window.removeEventListener('mouseup', onMouseUp);
             ro.disconnect();
         };
-    }, [trainingData, sessionProjections]);
+    }, [trainingData, sessionProjections, theme]);
 
     const banner = showBanner ? (
         <div style={{
@@ -735,7 +741,8 @@ const TrainingMovieSphere: React.FC<{
     );
 };
 
-const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, authToken, mode, dataEndpoint }) => {
+const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, authToken, mode, dataEndpoint, pointAlpha: defaultPointAlpha }) => {
+    const { theme, backgroundColor: bgOverride } = useTheme();
     // NOTE: Loading training movie from API (the working version)
     const [trainingData, setTrainingData] = useState<any>(null);
     const [lossData, setLossData] = useState<any>(null);
@@ -886,7 +893,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
     // Point visual controls - optimized for performance, persisted
     // Mobile gets 2x default point size for better visibility on small screens
     const [pointSize, setPointSize] = usePersistedState('pointSize', isMobile ? 0.02 : 0.01);
-    const [pointAlpha, setPointAlpha] = usePersistedState('pointAlpha', 0.50);
+    const [pointAlpha, setPointAlpha] = usePersistedState('pointAlpha', defaultPointAlpha ?? 0.50);
     const [wireframeOpacity, setWireframeOpacity] = usePersistedState('wireframeOpacity', 0.05);
     const [alphaByMovement, setAlphaByMovement] = usePersistedState('alphaByMovement', false);
     const [loadingProgress, setLoadingProgress] = useState<{ loaded: number, total: number } | null>(null);
@@ -2316,14 +2323,14 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                     alignItems: 'center',
                     justifyContent: 'center',
                     height: '100%',
-                    background: '#1a1a1a',
-                    color: '#888',
+                    background: theme.bgSecondary,
+                    color: theme.textTertiary,
                 }}>
                     <div style={{
                         width: '32px',
                         height: '32px',
-                        border: '2px solid #333',
-                        borderTop: '2px solid #888',
+                        border: `2px solid ${theme.borderSecondary}`,
+                        borderTop: `2px solid ${theme.textTertiary}`,
                         borderRadius: '50%',
                         animation: 'spin 1s linear infinite',
                     }}></div>
@@ -2338,8 +2345,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                 alignItems: 'center',
                 justifyContent: 'center',
                 height: '100vh',
-                background: '#2a2a2a',
-                color: '#d0d0d0',
+                background: theme.bgLoading,
+                color: theme.textSecondary,
                 position: 'relative',
                 fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
             }}>
@@ -2353,16 +2360,16 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                 <div style={{
                                     fontSize: '48px',
                                     fontWeight: 'bold',
-                                    color: '#ff6b6b',
+                                    color: theme.error,
                                     marginBottom: '10px',
                                     fontFamily: 'monospace'
                                 }}>
                                     {retryStatus.nextRetryIn}s
                                 </div>
-                                <div style={{ fontSize: '14px', color: '#ff6b6b', marginBottom: '8px' }}>
+                                <div style={{ fontSize: '14px', color: theme.error, marginBottom: '8px' }}>
                                     {retryStatus.error}
                                 </div>
-                                <div style={{ fontSize: '13px', color: '#aaa', marginBottom: '8px' }}>
+                                <div style={{ fontSize: '13px', color: theme.textTertiary, marginBottom: '8px' }}>
                                     Attempt {retryStatus.attempt} | Total wait: {Math.floor(retryStatus.totalElapsed / 60)}m {retryStatus.totalElapsed % 60}s
                                 </div>
                             </>
@@ -2371,50 +2378,50 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                 <div style={{
                                     width: '40px',
                                     height: '40px',
-                                    border: '3px solid #555',
-                                    borderTop: '3px solid #d0d0d0',
+                                    border: `3px solid ${theme.spinnerTrack}`,
+                                    borderTop: `3px solid ${theme.spinnerHead}`,
                                     borderRadius: '50%',
                                     animation: 'spin 1s linear infinite',
                                     marginBottom: '15px'
                                 }}></div>
-                                <div style={{ fontSize: '14px', color: '#00ccff', marginBottom: '8px' }}>
+                                <div style={{ fontSize: '14px', color: theme.info, marginBottom: '8px' }}>
                                     {loadingStep}
                                 </div>
                                 {loadingDetail && (
-                                    <div style={{ fontSize: '13px', color: '#aaa', marginBottom: '8px' }}>
+                                    <div style={{ fontSize: '13px', color: theme.textTertiary, marginBottom: '8px' }}>
                                         {loadingDetail}
                                     </div>
                                 )}
                             </>
                         )}
-                        <div style={{ fontSize: '14px', color: '#ccc', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>Session: {isMobile && sessionId.length > 20 ? sessionId.slice(0, 8) + '...' + sessionId.slice(-4) : sessionId}</div>
-                        <div style={{ fontSize: '12px', color: '#888', marginTop: '5px' }}>
+                        <div style={{ fontSize: '14px', color: theme.textSecondary, maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>Session: {isMobile && sessionId.length > 20 ? sessionId.slice(0, 8) + '...' + sessionId.slice(-4) : sessionId}</div>
+                        <div style={{ fontSize: '12px', color: theme.textTertiary, marginTop: '5px' }}>
                             Fetching from {apiBaseUrl || 'default API'}
                         </div>
                     </>
                 )}
                 {trainingStatus === 'training' && (
                     <>
-                        <div style={{ marginBottom: '20px', fontSize: '18px', color: '#64b5f6' }}>
+                        <div style={{ marginBottom: '20px', fontSize: '18px', color: theme.accent }}>
                             Training in progress
                         </div>
-                        <div style={{ fontSize: '14px', color: '#b8b8b8', marginBottom: '10px' }}>
+                        <div style={{ fontSize: '14px', color: theme.textSecondary, marginBottom: '10px' }}>
                             Will check for new frames in {nextCheckCountdown} seconds
                         </div>
-                        <div style={{ fontSize: '12px', color: '#888', marginTop: '5px', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
+                        <div style={{ fontSize: '12px', color: theme.textTertiary, marginTop: '5px', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
                             Session: {isMobile && sessionId.length > 20 ? sessionId.slice(0, 8) + '...' + sessionId.slice(-4) : sessionId}
                         </div>
                     </>
                 )}
                 {trainingStatus === 'completed' && (
                     <>
-                        <div style={{ marginBottom: '20px', fontSize: '18px', color: '#64b5f6' }}>
+                        <div style={{ marginBottom: '20px', fontSize: '18px', color: theme.accent }}>
                             Training Completed
                         </div>
-                        <div style={{ fontSize: '14px', color: '#ccc', marginBottom: '10px' }}>
+                        <div style={{ fontSize: '14px', color: theme.textSecondary, marginBottom: '10px' }}>
                             All epochs loaded
                         </div>
-                        <div style={{ fontSize: '12px', color: '#888', marginTop: '5px', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
+                        <div style={{ fontSize: '12px', color: theme.textTertiary, marginTop: '5px', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
                             Session: {isMobile && sessionId.length > 20 ? sessionId.slice(0, 8) + '...' + sessionId.slice(-4) : sessionId}
                         </div>
                     </>
@@ -2429,16 +2436,16 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                 <div style={{
                                     fontSize: '48px',
                                     fontWeight: 'bold',
-                                    color: '#ff6b6b',
+                                    color: theme.error,
                                     marginBottom: '10px',
                                     fontFamily: 'monospace'
                                 }}>
                                     {retryStatus.nextRetryIn}s
                                 </div>
-                                <div style={{ fontSize: '14px', color: '#ff6b6b', marginBottom: '8px' }}>
+                                <div style={{ fontSize: '14px', color: theme.error, marginBottom: '8px' }}>
                                     {retryStatus.error}
                                 </div>
-                                <div style={{ fontSize: '13px', color: '#aaa', marginBottom: '8px' }}>
+                                <div style={{ fontSize: '13px', color: theme.textTertiary, marginBottom: '8px' }}>
                                     Attempt {retryStatus.attempt} | Total wait: {Math.floor(retryStatus.totalElapsed / 60)}m {retryStatus.totalElapsed % 60}s
                                 </div>
                             </>
@@ -2447,24 +2454,24 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                 <div style={{
                                     width: '40px',
                                     height: '40px',
-                                    border: '3px solid #555',
-                                    borderTop: '3px solid #d0d0d0',
+                                    border: `3px solid ${theme.spinnerTrack}`,
+                                    borderTop: `3px solid ${theme.spinnerHead}`,
                                     borderRadius: '50%',
                                     animation: 'spin 1s linear infinite',
                                     marginBottom: '15px'
                                 }}></div>
-                                <div style={{ fontSize: '14px', color: '#00ccff', marginBottom: '8px' }}>
+                                <div style={{ fontSize: '14px', color: theme.info, marginBottom: '8px' }}>
                                     {loadingStep}
                                 </div>
                                 {loadingDetail && (
-                                    <div style={{ fontSize: '13px', color: '#aaa', marginBottom: '8px' }}>
+                                    <div style={{ fontSize: '13px', color: theme.textTertiary, marginBottom: '8px' }}>
                                         {loadingDetail}
                                     </div>
                                 )}
                             </>
                         )}
-                        <div style={{ fontSize: '14px', color: '#ccc', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>Session: {isMobile && sessionId.length > 20 ? sessionId.slice(0, 8) + '...' + sessionId.slice(-4) : sessionId}</div>
-                        <div style={{ fontSize: '12px', color: '#888', marginTop: '5px' }}>
+                        <div style={{ fontSize: '14px', color: theme.textSecondary, maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>Session: {isMobile && sessionId.length > 20 ? sessionId.slice(0, 8) + '...' + sessionId.slice(-4) : sessionId}</div>
+                        <div style={{ fontSize: '12px', color: theme.textTertiary, marginTop: '5px' }}>
                             Fetching from {apiBaseUrl || 'default API'}
                         </div>
                     </>
@@ -2489,23 +2496,23 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                 alignItems: 'center',
                 justifyContent: 'center',
                 height: '100vh',
-                background: '#2a2a2a',
-                color: '#d0d0d0',
+                background: theme.bgLoading,
+                color: theme.textSecondary,
             }}>
                 <style>{`@keyframes spin { to { transform: rotate(360deg) } } @keyframes pulse { 0%, 100% { opacity: 0.4 } 50% { opacity: 1 } }`}</style>
                 <div style={{
                     width: '40px',
                     height: '40px',
-                    border: '3px solid #555',
-                    borderTop: '3px solid #64b5f6',
+                    border: `3px solid ${theme.spinnerTrack}`,
+                    borderTop: `3px solid ${theme.accent}`,
                     borderRadius: '50%',
                     animation: 'spin 1s linear infinite',
                     marginBottom: '20px'
                 }}></div>
-                <div style={{ fontSize: '16px', color: '#64b5f6', marginBottom: '8px' }}>
+                <div style={{ fontSize: '16px', color: theme.accent, marginBottom: '8px' }}>
                     Waiting for training data...
                 </div>
-                <div style={{ fontSize: '13px', color: '#888', marginBottom: '16px' }}>
+                <div style={{ fontSize: '13px', color: theme.textTertiary, marginBottom: '16px' }}>
                     Training is in progress. The visualization will load once projections are available.
                 </div>
 
@@ -2516,32 +2523,32 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                         gap: '24px',
                         marginBottom: '20px',
                         padding: '12px 24px',
-                        background: '#222',
+                        background: theme.bgSurface,
                         borderRadius: '8px',
-                        border: '1px solid #333',
+                        border: `1px solid ${theme.borderSecondary}`,
                     }}>
                         <div style={{ textAlign: 'center' }}>
-                            <div style={{ fontSize: '10px', color: '#888', textTransform: 'uppercase', marginBottom: '4px' }}>Status</div>
-                            <div style={{ fontSize: '14px', color: sessionStatus === 'running' ? '#64b5f6' : '#e6e6e6', fontWeight: 600 }}>
+                            <div style={{ fontSize: '10px', color: theme.textTertiary, textTransform: 'uppercase', marginBottom: '4px' }}>Status</div>
+                            <div style={{ fontSize: '14px', color: sessionStatus === 'running' ? theme.accent : theme.textPrimary, fontWeight: 600 }}>
                                 {sessionStatus}
                             </div>
                         </div>
                         {currentEpoch != null && (
                             <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontSize: '10px', color: '#888', textTransform: 'uppercase', marginBottom: '4px' }}>Epoch</div>
-                                <div style={{ fontSize: '14px', color: '#e6e6e6', fontFamily: 'monospace' }}>{currentEpoch}</div>
+                                <div style={{ fontSize: '10px', color: theme.textTertiary, textTransform: 'uppercase', marginBottom: '4px' }}>Epoch</div>
+                                <div style={{ fontSize: '14px', color: theme.textPrimary, fontFamily: 'monospace' }}>{currentEpoch}</div>
                             </div>
                         )}
                         {currentLoss != null && (
                             <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontSize: '10px', color: '#888', textTransform: 'uppercase', marginBottom: '4px' }}>Loss</div>
-                                <div style={{ fontSize: '14px', color: '#e6e6e6', fontFamily: 'monospace' }}>{Number(currentLoss).toFixed(4)}</div>
+                                <div style={{ fontSize: '10px', color: theme.textTertiary, textTransform: 'uppercase', marginBottom: '4px' }}>Loss</div>
+                                <div style={{ fontSize: '14px', color: theme.textPrimary, fontFamily: 'monospace' }}>{Number(currentLoss).toFixed(4)}</div>
                             </div>
                         )}
                         {validationLoss != null && (
                             <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontSize: '10px', color: '#888', textTransform: 'uppercase', marginBottom: '4px' }}>Val Loss</div>
-                                <div style={{ fontSize: '14px', color: '#e6e6e6', fontFamily: 'monospace' }}>{Number(validationLoss).toFixed(4)}</div>
+                                <div style={{ fontSize: '10px', color: theme.textTertiary, textTransform: 'uppercase', marginBottom: '4px' }}>Val Loss</div>
+                                <div style={{ fontSize: '14px', color: theme.textPrimary, fontFamily: 'monospace' }}>{Number(validationLoss).toFixed(4)}</div>
                             </div>
                         )}
                     </div>
@@ -2550,15 +2557,15 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                 <div style={{
                     fontSize: '20px',
                     fontFamily: 'monospace',
-                    color: '#64b5f6',
+                    color: theme.accent,
                     animation: 'pulse 2s ease-in-out infinite',
                 }}>
                     {waitingCountdown}s
                 </div>
-                <div style={{ fontSize: '11px', color: '#555', marginTop: '4px' }}>
+                <div style={{ fontSize: '11px', color: theme.textDisabled, marginTop: '4px' }}>
                     next poll
                 </div>
-                <div style={{ fontSize: '11px', color: '#444', marginTop: '16px', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
+                <div style={{ fontSize: '11px', color: theme.textDisabled, marginTop: '16px', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
                     {sessionId}
                 </div>
             </div>
@@ -2588,15 +2595,15 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                 alignItems: 'center',
                 justifyContent: 'center',
                 height: '100vh',
-                background: '#2a2a2a',
-                color: '#ccc',
+                background: theme.bgLoading,
+                color: theme.textSecondary,
                 position: 'relative'
             }}>
                 <div style={{
                     position: 'absolute',
                     ...(isMobile ? { bottom: '10px', left: '10px' } : { top: '10px', right: '10px' }),
                     fontSize: isMobile ? '10px' : '12px',
-                    color: '#666',
+                    color: theme.textMuted,
                     fontFamily: 'monospace',
                     background: 'rgba(255, 255, 255, 0.05)',
                     padding: '4px 8px',
@@ -2604,9 +2611,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                 }}>
                     Build: {BUILD_TIMESTAMP.slice(0, 16)}
                 </div>
-                <div style={{ fontSize: '16px', marginBottom: '12px', color: '#eee' }}>{friendlyMessage}</div>
-                <div style={{ fontSize: '12px', color: '#666', marginTop: '10px', textAlign: 'center', maxWidth: '80vw', wordBreak: 'break-word' as const }}>{error}</div>
-                <div style={{ fontSize: '11px', color: '#555', marginTop: '8px', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
+                <div style={{ fontSize: '16px', marginBottom: '12px', color: theme.textPrimary }}>{friendlyMessage}</div>
+                <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '10px', textAlign: 'center', maxWidth: '80vw', wordBreak: 'break-word' as const }}>{error}</div>
+                <div style={{ fontSize: '11px', color: theme.textDisabled, marginTop: '8px', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
                     Session: {isMobile && sessionId.length > 20 ? sessionId.slice(0, 8) + '...' + sessionId.slice(-4) : sessionId}
                 </div>
             </div>
@@ -2620,8 +2627,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                 alignItems: 'center',
                 justifyContent: 'center',
                 height: '100vh',
-                background: '#2a2a2a',
-                color: '#d0d0d0'
+                background: theme.bgLoading,
+                color: theme.textSecondary
             }}>
                 No training movie data available
             </div>
@@ -2646,8 +2653,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
             padding: 0,
             boxSizing: 'border-box',
             overflow: 'hidden',
-            background: '#1e1e1e',
-            color: '#e6e6e6',
+            background: theme.bgPrimary,
+            color: theme.textPrimary,
             fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
         }}>
             {/* Top Control Strip - spans full width */}
@@ -2656,8 +2663,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                 gridColumn: '1 / -1',
                 height: '44px',
                 flexShrink: 0,
-                background: '#141414',
-                borderBottom: '1px solid #2a2a2a',
+                background: theme.bgTertiary,
+                borderBottom: `1px solid ${theme.borderPrimary}`,
                 display: 'flex',
                 alignItems: 'center',
                 padding: '0 16px',
@@ -2677,9 +2684,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                         <button
                             onClick={() => setShowMobilePanel(true)}
                             style={{
-                                background: '#222222',
-                                border: '1px solid #2a2a2a',
-                                color: '#b8b8b8',
+                                background: theme.bgSurface,
+                                border: `1px solid ${theme.borderPrimary}`,
+                                color: theme.textSecondary,
                                 padding: '6px 12px',
                                 borderRadius: '4px',
                                 cursor: 'pointer',
@@ -2697,7 +2704,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                     <span style={{
                         fontFamily: 'monospace',
                         fontSize: '12px',
-                        color: '#b8b8b8',
+                        color: theme.textSecondary,
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
@@ -2711,7 +2718,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                         style={{
                             background: 'transparent',
                             border: 'none',
-                            color: '#8f8f8f',
+                            color: theme.textTertiary,
                             padding: '4px 6px',
                             cursor: 'pointer',
                             fontSize: '12px',
@@ -2733,17 +2740,17 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                     gap: '12px',
                 }}>
                     {frameInfo && !isMobile && (
-                        <span style={{ fontSize: '12px', color: '#e6e6e6' }}>
+                        <span style={{ fontSize: '12px', color: theme.textPrimary }}>
                             Frame {frameInfo.current} / {frameInfo.total}
                             {frameInfo.epoch && (
-                                <span style={{ color: '#b8b8b8', marginLeft: '8px' }}>
+                                <span style={{ color: theme.textSecondary, marginLeft: '8px' }}>
                                     (Epoch {frameInfo.epoch.toString().replace('epoch_', '')})
                                 </span>
                             )}
                         </span>
                     )}
                     {frameInfo && isMobile && (
-                        <span style={{ fontSize: '11px', color: '#e6e6e6' }}>
+                        <span style={{ fontSize: '11px', color: theme.textPrimary }}>
                             {frameInfo.current}/{frameInfo.total}
                         </span>
                     )}
@@ -2751,17 +2758,17 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                     {currentEpochMovement && !isMobile && (
                         <span style={{
                             fontSize: '11px',
-                            color: currentEpochMovement.median < 0.01 ? '#4caf50' : currentEpochMovement.median < 0.05 ? '#ff9800' : '#f44336',
+                            color: currentEpochMovement.median < 0.01 ? theme.success : currentEpochMovement.median < 0.05 ? theme.warning : theme.error,
                             fontFamily: 'monospace',
                         }}>
                             Δ {currentEpochMovement.median.toFixed(4)}
                         </span>
                     )}
                     {trainingStatus === 'training' && (
-                        <span style={{ fontSize: '11px', color: '#64b5f6' }}>In Progress</span>
+                        <span style={{ fontSize: '11px', color: theme.accent }}>In Progress</span>
                     )}
                     {trainingStatus === 'completed' && !isMobile && (
-                        <span style={{ fontSize: '11px', color: '#b8b8b8' }}>Completed</span>
+                        <span style={{ fontSize: '11px', color: theme.textSecondary }}>Completed</span>
                     )}
                 </div>
 
@@ -2774,7 +2781,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             target="_blank"
                             rel="noopener noreferrer"
                             style={{
-                                color: '#6a6a6a',
+                                color: theme.textMuted,
                                 fontSize: '11px',
                                 textDecoration: 'none',
                                 fontFamily: 'monospace',
@@ -2782,7 +2789,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                         >
                             featrix.ai
                         </a>
-                        <span style={{ color: '#4a4a4a', fontSize: '9px', fontFamily: 'monospace' }}>
+                        <span style={{ color: theme.textDisabled, fontSize: '9px', fontFamily: 'monospace' }}>
                             v{SPHERE_VIEWER_VERSION}
                         </span>
                     </div>
@@ -2793,7 +2800,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             style={{
                                 background: 'transparent',
                                 border: 'none',
-                                color: isPlaying ? '#64b5f6' : '#b8b8b8',
+                                color: isPlaying ? theme.accent : theme.textSecondary,
                                 padding: '6px 10px',
                                 borderRadius: '4px',
                                 cursor: 'pointer',
@@ -2815,8 +2822,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
             {!isMobile && !isThumbnail && (
             <div style={{
                 width: isWideScreen ? '400px' : '360px',
-                background: '#171717',
-                borderRight: '1px solid #2a2a2a',
+                background: theme.bgSecondary,
+                borderRight: `1px solid ${theme.borderPrimary}`,
                 padding: 0,
                 overflowY: 'auto',
                 fontSize: '12px',
@@ -2824,8 +2831,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                 {/* Header Bar - Always visible with current epoch and movement metrics */}
                 <div style={{
                     padding: '12px 16px',
-                    background: '#1a1a1a',
-                    borderBottom: '1px solid #2a2a2a',
+                    background: theme.bgTertiary,
+                    borderBottom: `1px solid ${theme.borderPrimary}`,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
@@ -2835,13 +2842,13 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             <span style={{
                                 fontSize: '13px',
                                 fontWeight: 600,
-                                color: '#e6e6e6',
+                                color: theme.textPrimary,
                             }}>
                                 Epoch {frameInfo.epoch?.toString().replace('epoch_', '') ?? '—'}
                             </span>
                         )}
                         {!frameInfo && (
-                            <span style={{ fontSize: '12px', color: '#8f8f8f' }}>Loading...</span>
+                            <span style={{ fontSize: '12px', color: theme.textTertiary }}>Loading...</span>
                         )}
                         {/* Movement metrics display */}
                         {currentEpochMovement && (
@@ -2852,23 +2859,23 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                     alignItems: 'center',
                                     gap: '8px',
                                     padding: '4px 8px',
-                                    background: showMovementHistogram ? '#2a2a2a' : '#222',
+                                    background: showMovementHistogram ? theme.bgLoading : theme.bgSurface,
                                     borderRadius: '4px',
                                     cursor: 'pointer',
                                     transition: 'background 0.15s',
                                 }}
                                 title="Click to show movement histogram"
                             >
-                                <span style={{ fontSize: '10px', color: '#8f8f8f', textTransform: 'uppercase' }}>Move</span>
+                                <span style={{ fontSize: '10px', color: theme.textTertiary, textTransform: 'uppercase' }}>Move</span>
                                 <span style={{
                                     fontSize: '12px',
                                     fontWeight: 500,
-                                    color: currentEpochMovement.median < 0.01 ? '#4caf50' : currentEpochMovement.median < 0.05 ? '#ff9800' : '#f44336',
+                                    color: currentEpochMovement.median < 0.01 ? theme.success : currentEpochMovement.median < 0.05 ? theme.warning : theme.error,
                                     fontFamily: 'monospace',
                                 }}>
                                     {currentEpochMovement.median.toFixed(4)}
                                 </span>
-                                <span style={{ fontSize: '9px', color: '#666' }}>▼</span>
+                                <span style={{ fontSize: '9px', color: theme.textMuted }}>▼</span>
                             </div>
                         )}
                     </div>
@@ -2878,8 +2885,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                 {showMovementHistogram && currentEpochMovement && (
                     <div style={{
                         padding: '12px 16px',
-                        background: '#1a1a1a',
-                        borderBottom: '1px solid #2a2a2a',
+                        background: theme.bgTertiary,
+                        borderBottom: `1px solid ${theme.borderPrimary}`,
                     }}>
                         <div style={{
                             display: 'flex',
@@ -2887,7 +2894,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             alignItems: 'center',
                             marginBottom: '10px',
                         }}>
-                            <span style={{ fontSize: '11px', fontWeight: 600, color: '#e6e6e6', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 600, color: theme.textPrimary, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                                 Movement Stats
                             </span>
                             <button
@@ -2895,7 +2902,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                 style={{
                                     background: 'transparent',
                                     border: 'none',
-                                    color: '#8f8f8f',
+                                    color: theme.textTertiary,
                                     cursor: 'pointer',
                                     fontSize: '14px',
                                     padding: '2px 6px',
@@ -2910,21 +2917,21 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             gap: '8px',
                             marginBottom: '12px',
                         }}>
-                            <div style={{ textAlign: 'center', padding: '8px', background: '#222', borderRadius: '4px' }}>
-                                <div style={{ fontSize: '9px', color: '#8f8f8f', textTransform: 'uppercase', marginBottom: '4px' }}>Mean</div>
-                                <div style={{ fontSize: '12px', color: '#e6e6e6', fontFamily: 'monospace' }}>{currentEpochMovement.mean.toFixed(4)}</div>
+                            <div style={{ textAlign: 'center', padding: '8px', background: theme.bgSurface, borderRadius: '4px' }}>
+                                <div style={{ fontSize: '9px', color: theme.textTertiary, textTransform: 'uppercase', marginBottom: '4px' }}>Mean</div>
+                                <div style={{ fontSize: '12px', color: theme.textPrimary, fontFamily: 'monospace' }}>{currentEpochMovement.mean.toFixed(4)}</div>
                             </div>
-                            <div style={{ textAlign: 'center', padding: '8px', background: '#222', borderRadius: '4px' }}>
-                                <div style={{ fontSize: '9px', color: '#8f8f8f', textTransform: 'uppercase', marginBottom: '4px' }}>Median</div>
-                                <div style={{ fontSize: '12px', color: '#00e5ff', fontFamily: 'monospace' }}>{currentEpochMovement.median.toFixed(4)}</div>
+                            <div style={{ textAlign: 'center', padding: '8px', background: theme.bgSurface, borderRadius: '4px' }}>
+                                <div style={{ fontSize: '9px', color: theme.textTertiary, textTransform: 'uppercase', marginBottom: '4px' }}>Median</div>
+                                <div style={{ fontSize: '12px', color: theme.info, fontFamily: 'monospace' }}>{currentEpochMovement.median.toFixed(4)}</div>
                             </div>
-                            <div style={{ textAlign: 'center', padding: '8px', background: '#222', borderRadius: '4px' }}>
-                                <div style={{ fontSize: '9px', color: '#8f8f8f', textTransform: 'uppercase', marginBottom: '4px' }}>P90</div>
+                            <div style={{ textAlign: 'center', padding: '8px', background: theme.bgSurface, borderRadius: '4px' }}>
+                                <div style={{ fontSize: '9px', color: theme.textTertiary, textTransform: 'uppercase', marginBottom: '4px' }}>P90</div>
                                 <div style={{ fontSize: '12px', color: '#ff6666', fontFamily: 'monospace' }}>{currentEpochMovement.p90.toFixed(4)}</div>
                             </div>
-                            <div style={{ textAlign: 'center', padding: '8px', background: '#222', borderRadius: '4px' }}>
-                                <div style={{ fontSize: '9px', color: '#8f8f8f', textTransform: 'uppercase', marginBottom: '4px' }}>Max</div>
-                                <div style={{ fontSize: '12px', color: '#e6e6e6', fontFamily: 'monospace' }}>{currentEpochMovement.max.toFixed(4)}</div>
+                            <div style={{ textAlign: 'center', padding: '8px', background: theme.bgSurface, borderRadius: '4px' }}>
+                                <div style={{ fontSize: '9px', color: theme.textTertiary, textTransform: 'uppercase', marginBottom: '4px' }}>Max</div>
+                                <div style={{ fontSize: '12px', color: theme.textPrimary, fontFamily: 'monospace' }}>{currentEpochMovement.max.toFixed(4)}</div>
                             </div>
                         </div>
                         {/* Movement over time chart */}
@@ -2932,7 +2939,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             <MovementPlotOverlay
                                 movementData={movementData}
                                 currentEpoch={frameInfo?.epoch}
-                                style={{ width: '100%', height: '100px', borderRadius: '4px', border: '1px solid #2a2a2a' }}
+                                style={{ width: '100%', height: '100px', borderRadius: '4px', border: `1px solid ${theme.borderPrimary}` }}
                             />
                         )}
                     </div>
@@ -2946,7 +2953,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                             {/* Column selector */}
                             <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '10px', alignItems: 'center' }}>
-                                <span style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>Column</span>
+                                <span style={{ fontSize: '12px', fontWeight: 500, color: theme.textSecondary }}>Column</span>
                                 <select
                                     value={selectedSearchColumn}
                                     onChange={(e) => setSelectedSearchColumn(e.target.value)}
@@ -2955,9 +2962,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                         fontSize: '12px',
                                         fontWeight: 500,
                                         padding: '0 8px',
-                                        backgroundColor: '#202020',
-                                        color: '#e6e6e6',
-                                        border: '1px solid #2a2a2a',
+                                        backgroundColor: theme.bgSurface,
+                                        color: theme.textPrimary,
+                                        border: `1px solid ${theme.borderPrimary}`,
                                         borderRadius: '6px',
                                         cursor: 'pointer',
                                         width: '100%',
@@ -2980,9 +2987,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                     style={{
                                         flex: 1,
                                         height: '30px',
-                                        background: '#202020',
-                                        border: '1px solid #2a2a2a',
-                                        color: '#e6e6e6',
+                                        background: theme.bgSurface,
+                                        border: `1px solid ${theme.borderPrimary}`,
+                                        color: theme.textPrimary,
                                         padding: '0 10px',
                                         borderRadius: '6px',
                                         fontSize: '12px',
@@ -2994,9 +3001,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                     style={{
                                         width: '48px',
                                         height: '30px',
-                                        background: searchQuery.trim() ? '#64b5f6' : '#202020',
-                                        border: '1px solid #2a2a2a',
-                                        color: searchQuery.trim() ? '#141414' : '#8f8f8f',
+                                        background: searchQuery.trim() ? theme.accent : theme.bgSurface,
+                                        border: `1px solid ${theme.borderPrimary}`,
+                                        color: searchQuery.trim() ? theme.accentText : theme.textTertiary,
                                         padding: '0',
                                         borderRadius: '6px',
                                         cursor: searchQuery.trim() ? 'pointer' : 'not-allowed',
@@ -3017,9 +3024,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                         style={{
                                             width: '30px',
                                             height: '30px',
-                                            background: '#202020',
-                                            border: '1px solid #2a2a2a',
-                                            color: '#8f8f8f',
+                                            background: theme.bgSurface,
+                                            border: `1px solid ${theme.borderPrimary}`,
+                                            color: theme.textTertiary,
                                             padding: '0',
                                             borderRadius: '6px',
                                             cursor: 'pointer',
@@ -3036,20 +3043,20 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                 <div style={{
                                     marginTop: '6px',
                                     padding: '6px 10px',
-                                    background: searchResultStats.yes > 0 ? '#1b3a1b' : '#3a1b1b',
+                                    background: searchResultStats.yes > 0 ? theme.successBg : theme.errorBg,
                                     borderRadius: '4px',
                                     fontSize: '11px',
-                                    color: searchResultStats.yes > 0 ? '#4caf50' : '#f44336',
+                                    color: searchResultStats.yes > 0 ? theme.success : theme.error,
                                     display: 'flex',
                                     alignItems: 'center',
                                     gap: '6px',
                                 }}>
                                     <span style={{ fontWeight: 600 }}>{searchResultStats.yes}</span>
-                                    <span style={{ color: '#888' }}>matches</span>
+                                    <span style={{ color: theme.textTertiary }}>matches</span>
                                     {searchResultStats.no > 0 && (
                                         <>
-                                            <span style={{ color: '#555' }}>|</span>
-                                            <span style={{ color: '#666' }}>{searchResultStats.no} no match</span>
+                                            <span style={{ color: theme.textDisabled }}>|</span>
+                                            <span style={{ color: theme.textMuted }}>{searchResultStats.no} no match</span>
                                         </>
                                     )}
                                 </div>
@@ -3058,14 +3065,14 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             {/* Color Rules */}
                             {colorRules.length > 0 && (
                                 <div style={{ marginTop: '8px' }}>
-                                    <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginBottom: '6px' }}>
+                                    <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: theme.textTertiary, marginBottom: '6px' }}>
                                         Color Rules ({colorRules.length})
                                     </div>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '150px', overflowY: 'auto' }}>
                                         {colorRules.map((rule) => (
-                                            <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px', background: '#181818', borderRadius: '3px' }}>
+                                            <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px', background: theme.bgInset, borderRadius: '3px' }}>
                                                 <div style={{ width: '14px', height: '14px', background: rule.color, borderRadius: '2px', flexShrink: 0 }} />
-                                                <div style={{ flex: 1, fontSize: '11px', color: '#b8b8b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                <div style={{ flex: 1, fontSize: '11px', color: theme.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                     {rule.column}: {rule.query} ({rule.recordIds.length})
                                                 </div>
                                                 <button
@@ -3073,7 +3080,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                     style={{
                                                         background: 'transparent',
                                                         border: 'none',
-                                                        color: '#b8b8b8',
+                                                        color: theme.textSecondary,
                                                         padding: '2px 4px',
                                                         cursor: 'pointer',
                                                         fontSize: '10px',
@@ -3089,9 +3096,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                         style={{
                                             marginTop: '6px',
                                             width: '100%',
-                                            background: '#2a2a2a',
+                                            background: theme.bgLoading,
                                             border: 'none',
-                                            color: '#b8b8b8',
+                                            color: theme.textSecondary,
                                             padding: '6px',
                                             borderRadius: '3px',
                                             cursor: 'pointer',
@@ -3106,7 +3113,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             {/* Column vocabulary histogram for set/string columns */}
                             {columnVocabulary && columnVocabulary.type !== 'scalar' && columnVocabulary.vocabularyWithCounts && (
                                 <div style={{ marginTop: '8px' }}>
-                                    <div style={{ fontSize: '11px', color: '#b8b8b8', marginBottom: '6px' }}>
+                                    <div style={{ fontSize: '11px', color: theme.textSecondary, marginBottom: '6px' }}>
                                         Values ({columnVocabulary.uniqueCount} unique):
                                     </div>
                                     <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
@@ -3130,14 +3137,14 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                         marginBottom: '2px',
                                                         borderRadius: '3px',
                                                         cursor: 'pointer',
-                                                        background: isSelected ? '#1a3a5c' : 'transparent',
-                                                        border: isSelected ? '1px solid #64b5f6' : '1px solid transparent',
+                                                        background: isSelected ? theme.bgSurfaceActive : 'transparent',
+                                                        border: isSelected ? `1px solid ${theme.accent}` : '1px solid transparent',
                                                     }}
                                                 >
                                                     {/* Value label */}
                                                     <span style={{
                                                         fontSize: '10px',
-                                                        color: isSelected ? '#64b5f6' : '#d8d8d8',
+                                                        color: isSelected ? theme.accent : theme.textSecondary,
                                                         width: '80px',
                                                         overflow: 'hidden',
                                                         textOverflow: 'ellipsis',
@@ -3150,21 +3157,21 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                     <div style={{
                                                         flex: 1,
                                                         height: '12px',
-                                                        background: '#2a2a2a',
+                                                        background: theme.bgLoading,
                                                         borderRadius: '2px',
                                                         overflow: 'hidden',
                                                     }}>
                                                         <div style={{
                                                             width: `${barWidth}%`,
                                                             height: '100%',
-                                                            background: isSelected ? '#64b5f6' : '#4a7c59',
+                                                            background: isSelected ? theme.accent : '#4a7c59',
                                                             borderRadius: '2px',
                                                         }} />
                                                     </div>
                                                     {/* Count */}
                                                     <span style={{
                                                         fontSize: '9px',
-                                                        color: '#888',
+                                                        color: theme.textTertiary,
                                                         width: '45px',
                                                         textAlign: 'right',
                                                         flexShrink: 0,
@@ -3175,7 +3182,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                             );
                                         })}
                                         {columnVocabulary.vocabularyWithCounts.length > 15 && (
-                                            <div style={{ fontSize: '9px', color: '#666', textAlign: 'center', marginTop: '4px' }}>
+                                            <div style={{ fontSize: '9px', color: theme.textMuted, textAlign: 'center', marginTop: '4px' }}>
                                                 +{columnVocabulary.vocabularyWithCounts.length - 15} more values
                                             </div>
                                         )}
@@ -3198,37 +3205,37 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                         justifyContent: 'space-between',
                                         marginTop: '6px',
                                         padding: '6px 8px',
-                                        background: '#1a1a1a',
+                                        background: theme.bgTertiary,
                                         borderRadius: '4px',
                                         fontSize: '10px',
                                     }}>
                                         <div style={{ textAlign: 'center' }}>
-                                            <div style={{ color: '#666', marginBottom: '2px' }}>Min</div>
-                                            <div style={{ color: '#d8d8d8', fontWeight: 500 }}>
+                                            <div style={{ color: theme.textMuted, marginBottom: '2px' }}>Min</div>
+                                            <div style={{ color: theme.textSecondary, fontWeight: 500 }}>
                                                 {columnVocabulary.min?.toFixed(columnVocabulary.min % 1 === 0 ? 0 : 2)}
                                             </div>
                                         </div>
                                         <div style={{ textAlign: 'center' }}>
-                                            <div style={{ color: '#666', marginBottom: '2px' }}>Q1</div>
-                                            <div style={{ color: '#d8d8d8', fontWeight: 500 }}>
+                                            <div style={{ color: theme.textMuted, marginBottom: '2px' }}>Q1</div>
+                                            <div style={{ color: theme.textSecondary, fontWeight: 500 }}>
                                                 {columnVocabulary.q1?.toFixed(columnVocabulary.q1 % 1 === 0 ? 0 : 2)}
                                             </div>
                                         </div>
                                         <div style={{ textAlign: 'center' }}>
-                                            <div style={{ color: '#666', marginBottom: '2px' }}>Median</div>
-                                            <div style={{ color: '#64b5f6', fontWeight: 500 }}>
+                                            <div style={{ color: theme.textMuted, marginBottom: '2px' }}>Median</div>
+                                            <div style={{ color: theme.accent, fontWeight: 500 }}>
                                                 {columnVocabulary.median?.toFixed(columnVocabulary.median % 1 === 0 ? 0 : 2)}
                                             </div>
                                         </div>
                                         <div style={{ textAlign: 'center' }}>
-                                            <div style={{ color: '#666', marginBottom: '2px' }}>Q3</div>
-                                            <div style={{ color: '#d8d8d8', fontWeight: 500 }}>
+                                            <div style={{ color: theme.textMuted, marginBottom: '2px' }}>Q3</div>
+                                            <div style={{ color: theme.textSecondary, fontWeight: 500 }}>
                                                 {columnVocabulary.q3?.toFixed(columnVocabulary.q3 % 1 === 0 ? 0 : 2)}
                                             </div>
                                         </div>
                                         <div style={{ textAlign: 'center' }}>
-                                            <div style={{ color: '#666', marginBottom: '2px' }}>Max</div>
-                                            <div style={{ color: '#d8d8d8', fontWeight: 500 }}>
+                                            <div style={{ color: theme.textMuted, marginBottom: '2px' }}>Max</div>
+                                            <div style={{ color: theme.textSecondary, fontWeight: 500 }}>
                                                 {columnVocabulary.max?.toFixed(columnVocabulary.max % 1 === 0 ? 0 : 2)}
                                             </div>
                                         </div>
@@ -3237,7 +3244,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             )}
                         </div>
                     ) : (
-                        <div style={{ fontSize: '12px', color: '#b8b8b8' }}>No searchable columns</div>
+                        <div style={{ fontSize: '12px', color: theme.textSecondary }}>No searchable columns</div>
                     )}
                 </CollapsibleSection>
 
@@ -3245,18 +3252,18 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                 <CollapsibleSection title={isManifoldViz ? "PREDICTION COLORS" : "CLUSTER CONTROLS"} defaultOpen={isManifoldViz} storageKey="clusterControls">
                     {isManifoldViz ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            <div style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>prob_positive</div>
+                            <div style={{ fontSize: '12px', fontWeight: 500, color: theme.textSecondary }}>prob_positive</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <span style={{ fontSize: '11px', color: '#b8b8b8' }}>0.0</span>
+                                <span style={{ fontSize: '11px', color: theme.textSecondary }}>0.0</span>
                                 <div style={{
                                     flex: 1,
                                     height: '16px',
                                     borderRadius: '4px',
                                     background: 'linear-gradient(to right, #ef4444, #d1d5db, #22c55e)',
                                 }} />
-                                <span style={{ fontSize: '11px', color: '#b8b8b8' }}>1.0</span>
+                                <span style={{ fontSize: '11px', color: theme.textSecondary }}>1.0</span>
                             </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#8f8f8f' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: theme.textTertiary }}>
                                 <span>Negative</span>
                                 <span>Uncertain</span>
                                 <span>Positive</span>
@@ -3266,7 +3273,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         {/* Cluster Coloring dropdown */}
                         <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '10px', alignItems: 'center' }}>
-                            <span style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>Cluster Coloring</span>
+                            <span style={{ fontSize: '12px', fontWeight: 500, color: theme.textSecondary }}>Cluster Coloring</span>
                             <select
                                 value={clusterColorMode}
                                 onChange={(e) => setClusterColorMode(e.target.value as 'final' | 'per-epoch')}
@@ -3275,9 +3282,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                     fontSize: '12px',
                                     fontWeight: 500,
                                     padding: '0 8px',
-                                    backgroundColor: '#202020',
-                                    color: '#e6e6e6',
-                                    border: '1px solid #2a2a2a',
+                                    backgroundColor: theme.bgSurface,
+                                    color: theme.textPrimary,
+                                    border: `1px solid ${theme.borderPrimary}`,
                                     borderRadius: '6px',
                                     cursor: 'pointer',
                                     width: '100%',
@@ -3291,7 +3298,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                         {/* Focus Cluster dropdown */}
                         {frameInfo && (
                             <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '10px', alignItems: 'center' }}>
-                                <span style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>Focus Cluster</span>
+                                <span style={{ fontSize: '12px', fontWeight: 500, color: theme.textSecondary }}>Focus Cluster</span>
                                 <select
                                     value={spotlightCluster}
                                     onChange={(e) => {
@@ -3308,9 +3315,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                         fontSize: '12px',
                                         fontWeight: 500,
                                         padding: '0 8px',
-                                        backgroundColor: '#202020',
-                                        color: '#e6e6e6',
-                                        border: '1px solid #2a2a2a',
+                                        backgroundColor: theme.bgSurface,
+                                        color: theme.textPrimary,
+                                        border: `1px solid ${theme.borderPrimary}`,
                                         borderRadius: '6px',
                                         cursor: 'pointer',
                                         width: '100%',
@@ -3331,10 +3338,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                 style={{
                                     width: '100%',
                                     padding: '10px 16px',
-                                    backgroundColor: '#2d4a6f',
+                                    backgroundColor: theme.bgSurfaceActive,
                                     border: 'none',
                                     borderRadius: '6px',
-                                    color: '#e6e6e6',
+                                    color: theme.textPrimary,
                                     fontSize: '12px',
                                     fontWeight: 600,
                                     cursor: 'pointer',
@@ -3357,16 +3364,16 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                     checked={showDynamicHulls}
                                     onChange={(e) => setShowDynamicHulls(e.target.checked)}
                                     disabled={frameInfo.visible < 4}
-                                    style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#64b5f6' }}
+                                    style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: theme.accent }}
                                 />
-                                <span style={{ fontSize: '12px', fontWeight: 500, color: frameInfo.visible >= 4 ? '#d8d8d8' : '#555' }}>Show Cluster Spheres</span>
+                                <span style={{ fontSize: '12px', fontWeight: 500, color: frameInfo.visible >= 4 ? theme.textSecondary : theme.textDisabled }}>Show Cluster Spheres</span>
                             </label>
                         )}
 
                         {/* Cluster color swatches (if showColorLegend) */}
                         {showColorLegend && frameInfo && frameInfo.visible > 0 && (
                             <div style={{ marginTop: '8px' }}>
-                                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginBottom: '6px' }}>Cluster Colors</div>
+                                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: theme.textTertiary, marginBottom: '6px' }}>Cluster Colors</div>
                                 <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                                     {Array.from({length: frameInfo.visible}, (_, i) => {
                                         const kColorTable = [0x4C78A8, 0x72B7B2, 0xF58518, 0xE45756, 0x54A24B, 0xB279A2, 0xFF9DA6, 0x9D755D, 0xBAB0AC, 0x79706E, 0xD37295, 0x8F6D31];
@@ -3376,7 +3383,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                         const color = '#' + colorHex.toString(16).padStart(6, '0');
                                         return (
                                             <div key={`cluster-${i}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-                                                <span style={{ fontSize: '10px', color: '#b8b8b8' }}>C{i}</span>
+                                                <span style={{ fontSize: '10px', color: theme.textSecondary }}>C{i}</span>
                                                 <input
                                                     type="color"
                                                     value={color}
@@ -3390,7 +3397,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                     style={{
                                                         width: '24px',
                                                         height: '24px',
-                                                        border: '1px solid #2a2a2a',
+                                                        border: `1px solid ${theme.borderPrimary}`,
                                                         borderRadius: '3px',
                                                         cursor: 'pointer',
                                                         padding: 0
@@ -3411,9 +3418,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                     style={{
                                         marginTop: '8px',
                                         width: '100%',
-                                        background: '#2a2a2a',
+                                        background: theme.bgLoading,
                                         border: 'none',
-                                        color: '#b8b8b8',
+                                        color: theme.textSecondary,
                                         padding: '6px',
                                         borderRadius: '4px',
                                         cursor: 'pointer',
@@ -3427,8 +3434,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
 
                         {/* Cluster inspector (if showClusterDebug) */}
                         {showClusterDebug && (
-                            <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #2a2a2a' }}>
-                                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginTop: '14px', marginBottom: '6px' }}>Cluster Inspector</div>
+                            <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: `1px solid ${theme.borderPrimary}` }}>
+                                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: theme.textTertiary, marginTop: '14px', marginBottom: '6px' }}>Cluster Inspector</div>
                                 {sphereRef && (() => {
                                     const clusterCounts = new Map<number, number>();
                                     let pointsWithoutCluster = 0;
@@ -3455,27 +3462,27 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                     }
 
                                     if (clusterCounts.size === 0) {
-                                        return <div style={{ fontSize: '12px', color: '#b8b8b8' }}>No cluster data ({totalPoints} points)</div>;
+                                        return <div style={{ fontSize: '12px', color: theme.textSecondary }}>No cluster data ({totalPoints} points)</div>;
                                     }
 
                                     return (
                                         <div style={{ fontSize: '11px', fontFamily: 'monospace', maxHeight: '120px', overflowY: 'auto' }}>
                                             {Array.from(clusterCounts.entries()).sort((a, b) => a[0] - b[0]).map(([cluster, count]) => (
-                                                <div key={cluster} style={{ marginBottom: '2px', color: '#b8b8b8' }}>
+                                                <div key={cluster} style={{ marginBottom: '2px', color: theme.textSecondary }}>
                                                     C{cluster}: {count} points
                                                 </div>
                                             ))}
                                             {pointsWithoutCluster > 0 && (
-                                                <div style={{ marginTop: '4px', color: '#b8b8b8' }}>{pointsWithoutCluster} unassigned</div>
+                                                <div style={{ marginTop: '4px', color: theme.textSecondary }}>{pointsWithoutCluster} unassigned</div>
                                             )}
                                         </div>
                                     );
                                 })()}
                                 {selectedPointInfo && (
-                                    <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #2a2a2a', fontSize: '11px' }}>
-                                        <div style={{ color: '#e6e6e6', fontWeight: 'bold', marginBottom: '4px' }}>Selected Point</div>
-                                        <div style={{ color: '#b8b8b8' }}>Row: {selectedPointInfo.rowOffset}</div>
-                                        <div style={{ color: '#b8b8b8' }}>Cluster: {selectedPointInfo.clusterId}</div>
+                                    <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: `1px solid ${theme.borderPrimary}`, fontSize: '11px' }}>
+                                        <div style={{ color: theme.textPrimary, fontWeight: 'bold', marginBottom: '4px' }}>Selected Point</div>
+                                        <div style={{ color: theme.textSecondary }}>Row: {selectedPointInfo.rowOffset}</div>
+                                        <div style={{ color: theme.textSecondary }}>Cluster: {selectedPointInfo.clusterId}</div>
                                     </div>
                                 )}
                             </div>
@@ -3490,13 +3497,13 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
                         {/* Training status and frame info - flat text line */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-                            <span style={{ fontSize: '12px', color: '#b8b8b8' }}>
-                                {trainingStatus === 'training' && <span style={{ color: '#64b5f6' }}>Training in progress</span>}
+                            <span style={{ fontSize: '12px', color: theme.textSecondary }}>
+                                {trainingStatus === 'training' && <span style={{ color: theme.accent }}>Training in progress</span>}
                                 {trainingStatus === 'completed' && <span>Training completed</span>}
                                 {!trainingStatus && <span>Status unknown</span>}
                             </span>
                             {frameInfo && (
-                                <span style={{ fontSize: '12px', color: '#8f8f8f' }}>
+                                <span style={{ fontSize: '12px', color: theme.textTertiary }}>
                                     Frame {frameInfo.current} / {frameInfo.total}
                                 </span>
                             )}
@@ -3528,13 +3535,13 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
 
                             return (
                                 <div>
-                                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#e6e6e6', marginBottom: '6px' }}>Validation Loss</div>
+                                    <div style={{ fontSize: '12px', fontWeight: 600, color: theme.textPrimary, marginBottom: '6px' }}>Validation Loss</div>
                                     <LossPlotOverlay
                                         lossData={validationLossData}
                                         learningRateData={learningRateData && learningRateData.length > 0 ? learningRateData : undefined}
                                         currentEpoch={frameInfo?.epoch}
                                         title=""
-                                        style={{ width: '100%', height: '120px', pointerEvents: 'none', borderRadius: '4px', border: '1px solid #1a1a1a' }}
+                                        style={{ width: '100%', height: '120px', pointerEvents: 'none', borderRadius: '4px', border: `1px solid ${theme.inspectorHeaderBg}` }}
                                     />
                                 </div>
                             );
@@ -3542,33 +3549,33 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
 
                         {/* Divider between charts */}
                         {lossData && movementData.length > 0 && (
-                            <div style={{ height: '1px', background: '#2a2a2a', margin: '14px 0' }} />
+                            <div style={{ height: '1px', background: theme.borderPrimary, margin: '14px 0' }} />
                         )}
 
                         {/* Point Movement chart - flat, no box */}
                         {movementData.length > 0 && (
                             <div>
-                                <div style={{ fontSize: '12px', fontWeight: 600, color: '#e6e6e6', marginBottom: '6px' }}>Point Movement</div>
+                                <div style={{ fontSize: '12px', fontWeight: 600, color: theme.textPrimary, marginBottom: '6px' }}>Point Movement</div>
                                 <MovementPlotOverlay
                                     movementData={movementData}
                                     currentEpoch={frameInfo?.epoch}
-                                    style={{ width: '100%', height: '120px', pointerEvents: 'none', borderRadius: '4px', border: '1px solid #1a1a1a' }}
+                                    style={{ width: '100%', height: '120px', pointerEvents: 'none', borderRadius: '4px', border: `1px solid ${theme.inspectorHeaderBg}` }}
                                 />
                             </div>
                         )}
 
                         {/* Divider before histogram */}
                         {currentHistogramData && (
-                            <div style={{ height: '1px', background: '#2a2a2a', margin: '14px 0' }} />
+                            <div style={{ height: '1px', background: theme.borderPrimary, margin: '14px 0' }} />
                         )}
 
                         {/* Movement Histogram by Cluster */}
                         {currentHistogramData && (
                             <div>
-                                <div style={{ fontSize: '12px', fontWeight: 600, color: '#e6e6e6', marginBottom: '6px' }}>Movement Distribution by Cluster</div>
+                                <div style={{ fontSize: '12px', fontWeight: 600, color: theme.textPrimary, marginBottom: '6px' }}>Movement Distribution by Cluster</div>
                                 <MovementHistogramByCluster
                                     histogramData={currentHistogramData}
-                                    style={{ width: '100%', height: '150px', borderRadius: '4px', border: '1px solid #1a1a1a' }}
+                                    style={{ width: '100%', height: '150px', borderRadius: '4px', border: `1px solid ${theme.inspectorHeaderBg}` }}
                                 />
                             </div>
                         )}
@@ -3580,7 +3587,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                 style={{
                                     background: 'transparent',
                                     border: 'none',
-                                    color: '#64b5f6',
+                                    color: theme.accent,
                                     padding: '0',
                                     cursor: 'pointer',
                                     fontSize: '12px',
@@ -3600,10 +3607,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                 <CollapsibleSection title="SETTINGS" defaultOpen={false} storageKey="settings">
                     {/* Rendering group */}
                     <div style={{ marginBottom: '18px' }}>
-                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginBottom: '8px' }}>Rendering</div>
+                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: theme.textTertiary, marginBottom: '8px' }}>Rendering</div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '10px', alignItems: 'center' }}>
-                                <span style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>Point Size</span>
+                                <span style={{ fontSize: '12px', fontWeight: 500, color: theme.textSecondary }}>Point Size</span>
                                 <select
                                     value={pointSize}
                                     onChange={(e) => {
@@ -3619,9 +3626,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                         fontSize: '12px',
                                         fontWeight: 500,
                                         padding: '0 8px',
-                                        backgroundColor: '#202020',
-                                        color: '#e6e6e6',
-                                        border: '1px solid #2a2a2a',
+                                        backgroundColor: theme.bgSurface,
+                                        color: theme.textPrimary,
+                                        border: `1px solid ${theme.borderPrimary}`,
                                         borderRadius: '6px',
                                         cursor: 'pointer',
                                         width: '100%',
@@ -3637,7 +3644,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                 </select>
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '10px', alignItems: 'center' }}>
-                                <span style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>Alpha</span>
+                                <span style={{ fontSize: '12px', fontWeight: 500, color: theme.textSecondary }}>Alpha</span>
                                 <select
                                     value={pointAlpha}
                                     onChange={(e) => {
@@ -3653,9 +3660,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                         fontSize: '12px',
                                         fontWeight: 500,
                                         padding: '0 8px',
-                                        backgroundColor: '#202020',
-                                        color: '#e6e6e6',
-                                        border: '1px solid #2a2a2a',
+                                        backgroundColor: theme.bgSurface,
+                                        color: theme.textPrimary,
+                                        border: `1px solid ${theme.borderPrimary}`,
                                         borderRadius: '6px',
                                         cursor: 'pointer',
                                         width: '100%',
@@ -3668,7 +3675,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                 </select>
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '10px', alignItems: 'center' }}>
-                                <span style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>Trail Length</span>
+                                <span style={{ fontSize: '12px', fontWeight: 500, color: theme.textSecondary }}>Trail Length</span>
                                 <select
                                     value={trailLength}
                                     onChange={(e) => setTrailLength(parseInt(e.target.value))}
@@ -3677,9 +3684,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                         fontSize: '12px',
                                         fontWeight: 500,
                                         padding: '0 8px',
-                                        backgroundColor: '#202020',
-                                        color: '#e6e6e6',
-                                        border: '1px solid #2a2a2a',
+                                        backgroundColor: theme.bgSurface,
+                                        color: theme.textPrimary,
+                                        border: `1px solid ${theme.borderPrimary}`,
                                         borderRadius: '6px',
                                         cursor: 'pointer',
                                         width: '100%',
@@ -3695,7 +3702,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                 </select>
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '10px', alignItems: 'center' }}>
-                                <span style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>Wireframe</span>
+                                <span style={{ fontSize: '12px', fontWeight: 500, color: theme.textSecondary }}>Wireframe</span>
                                 <select
                                     value={wireframeOpacity}
                                     onChange={(e) => {
@@ -3711,9 +3718,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                         fontSize: '12px',
                                         fontWeight: 500,
                                         padding: '0 8px',
-                                        backgroundColor: '#202020',
-                                        color: '#e6e6e6',
-                                        border: '1px solid #2a2a2a',
+                                        backgroundColor: theme.bgSurface,
+                                        color: theme.textPrimary,
+                                        border: `1px solid ${theme.borderPrimary}`,
                                         borderRadius: '6px',
                                         cursor: 'pointer',
                                         width: '100%',
@@ -3739,17 +3746,17 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                             sphereRef.alphaByMovement = enabled;
                                         }
                                     }}
-                                    style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#64b5f6' }}
+                                    style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: theme.accent }}
                                 />
-                                <span style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>Alpha by Movement</span>
-                                <span style={{ fontSize: '10px', color: '#888', marginLeft: '4px' }}>(converging = brighter)</span>
+                                <span style={{ fontSize: '12px', fontWeight: 500, color: theme.textSecondary }}>Alpha by Movement</span>
+                                <span style={{ fontSize: '10px', color: theme.textTertiary, marginLeft: '4px' }}>(converging = brighter)</span>
                             </label>
                         </div>
                     </div>
 
                     {/* Geometry Overlays group */}
                     <div>
-                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginTop: '14px', marginBottom: '8px' }}>Geometry Overlays</div>
+                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: theme.textTertiary, marginTop: '14px', marginBottom: '8px' }}>Geometry Overlays</div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             {/* Show Bounds Boxes */}
                             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
@@ -3764,9 +3771,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                             render_sphere(sphereRef);
                                         }
                                     }}
-                                    style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#64b5f6' }}
+                                    style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: theme.accent }}
                                 />
-                                <span style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>Show Bounds Box</span>
+                                <span style={{ fontSize: '12px', fontWeight: 500, color: theme.textSecondary }}>Show Bounds Box</span>
                             </label>
 
                             {/* Show Great Circles */}
@@ -3781,9 +3788,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                             toggle_great_circles(sphereRef, enabled);
                                         }
                                     }}
-                                    style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#64b5f6' }}
+                                    style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: theme.accent }}
                                 />
-                                <span style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>Show Great Circles</span>
+                                <span style={{ fontSize: '12px', fontWeight: 500, color: theme.textSecondary }}>Show Great Circles</span>
                             </label>
 
                             {/* Show Convex Hulls */}
@@ -3797,9 +3804,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                             render_sphere(sphereRef);
                                         }
                                     }}
-                                    style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#64b5f6' }}
+                                    style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: theme.accent }}
                                 />
-                                <span style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>Show Convex Hulls</span>
+                                <span style={{ fontSize: '12px', fontWeight: 500, color: theme.textSecondary }}>Show Convex Hulls</span>
                             </label>
 
                             {/* Expand Hulls - only visible when hulls are shown */}
@@ -3816,17 +3823,17 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                 render_sphere(sphereRef);
                                             }
                                         }}
-                                        style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#64b5f6' }}
+                                        style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: theme.accent }}
                                     />
-                                    <span style={{ fontSize: '11px', fontWeight: 400, color: '#a0a0a0' }}>Expand for overlap visibility</span>
+                                    <span style={{ fontSize: '11px', fontWeight: 400, color: theme.textTertiary }}>Expand for overlap visibility</span>
                                 </label>
                             )}
                         </div>
 
                         {/* Sphere Coverage display - updates every epoch */}
                         {frameInfo?.sphereCoverage !== undefined && (
-                            <div style={{ fontSize: '11px', color: '#8f8f8f', marginTop: '10px' }}>
-                                Sphere Coverage: <span style={{ color: '#e6e6e6', fontFamily: 'monospace' }}>{frameInfo.sphereCoverage.toFixed(1)}%</span>
+                            <div style={{ fontSize: '11px', color: theme.textTertiary, marginTop: '10px' }}>
+                                Sphere Coverage: <span style={{ color: theme.textPrimary, fontFamily: 'monospace' }}>{frameInfo.sphereCoverage.toFixed(1)}%</span>
                             </div>
                         )}
                     </div>
@@ -3835,10 +3842,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                 {/* Sidebar Footer - Build info and load time */}
                 <div style={{
                     padding: '12px 16px',
-                    borderTop: '1px solid #2a2a2a',
+                    borderTop: `1px solid ${theme.borderPrimary}`,
                     marginTop: 'auto',
                     fontSize: '10px',
-                    color: '#4a4a4a',
+                    color: theme.textDisabled,
                     fontFamily: 'monospace',
                     display: 'flex',
                     justifyContent: 'space-between',
@@ -3862,7 +3869,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             left: 0,
                             right: 0,
                             bottom: 0,
-                            background: 'rgba(0, 0, 0, 0.6)',
+                            background: theme.bgOverlay,
                             zIndex: 9998,
                         }}
                     />
@@ -3875,8 +3882,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                     width: '320px',
                     maxWidth: '85vw',
                     height: '100%',
-                    background: '#171717',
-                    borderRight: '1px solid #2a2a2a',
+                    background: theme.bgSecondary,
+                    borderRight: `1px solid ${theme.borderPrimary}`,
                     zIndex: 9999,
                     transform: showMobilePanel ? 'translateX(0)' : 'translateX(-100%)',
                     transition: 'transform 250ms ease-out',
@@ -3892,22 +3899,22 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         padding: '8px 12px',
-                        background: '#141414',
-                        borderBottom: '1px solid #2a2a2a',
+                        background: theme.bgTertiary,
+                        borderBottom: `1px solid ${theme.borderPrimary}`,
                         flexShrink: 0,
                     }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                             {frameInfo ? (
                                 <>
-                                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#e6e6e6' }}>
+                                    <span style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
                                         Epoch {frameInfo.epoch?.toString().replace('epoch_', '') ?? '—'}
                                     </span>
-                                    <span style={{ fontSize: '10px', color: '#8f8f8f' }}>
+                                    <span style={{ fontSize: '10px', color: theme.textTertiary }}>
                                         Frame {frameInfo.current} / {frameInfo.total}
                                     </span>
                                 </>
                             ) : (
-                                <span style={{ fontSize: '12px', fontWeight: 600, color: '#e6e6e6' }}>Controls</span>
+                                <span style={{ fontSize: '12px', fontWeight: 600, color: theme.textPrimary }}>Controls</span>
                             )}
                         </div>
                         <button
@@ -3915,7 +3922,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             style={{
                                 background: 'transparent',
                                 border: 'none',
-                                color: '#b8b8b8',
+                                color: theme.textSecondary,
                                 fontSize: '20px',
                                 cursor: 'pointer',
                                 padding: '4px 8px',
@@ -3939,9 +3946,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                             }
                                         }}
                                         style={{
-                                            background: '#252525',
-                                            border: '1px solid #3a3a3a',
-                                            color: '#b8b8b8',
+                                            background: theme.bgSurface,
+                                            border: `1px solid ${theme.borderSecondary}`,
+                                            color: theme.textSecondary,
                                             padding: '10px 16px',
                                             borderRadius: '4px',
                                             cursor: 'pointer',
@@ -3956,9 +3963,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                     <button
                                         onClick={handlePlayPause}
                                         style={{
-                                            background: isPlaying ? '#64b5f6' : '#252525',
-                                            border: '1px solid #3a3a3a',
-                                            color: isPlaying ? '#000' : '#e6e6e6',
+                                            background: isPlaying ? theme.accent : theme.bgSurface,
+                                            border: `1px solid ${theme.borderSecondary}`,
+                                            color: isPlaying ? theme.accentText : theme.textPrimary,
                                             padding: '10px 24px',
                                             borderRadius: '4px',
                                             cursor: 'pointer',
@@ -3983,9 +3990,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                             }
                                         }}
                                         style={{
-                                            background: '#252525',
-                                            border: '1px solid #3a3a3a',
-                                            color: '#b8b8b8',
+                                            background: theme.bgSurface,
+                                            border: `1px solid ${theme.borderSecondary}`,
+                                            color: theme.textSecondary,
                                             padding: '10px 16px',
                                             borderRadius: '4px',
                                             cursor: 'pointer',
@@ -4001,7 +4008,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                 {/* Frame scrubber */}
                                 {frameInfo && frameInfo.total > 1 && (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <span style={{ color: '#8f8f8f', fontSize: '11px', width: '30px' }}>1</span>
+                                        <span style={{ color: theme.textTertiary, fontSize: '11px', width: '30px' }}>1</span>
                                         <input
                                             type="range"
                                             min={1}
@@ -4014,7 +4021,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                             }}
                                             style={{ flex: 1, cursor: 'pointer' }}
                                         />
-                                        <span style={{ color: '#8f8f8f', fontSize: '11px', width: '30px', textAlign: 'right' }}>{frameInfo.total}</span>
+                                        <span style={{ color: theme.textTertiary, fontSize: '11px', width: '30px', textAlign: 'right' }}>{frameInfo.total}</span>
                                     </div>
                                 )}
                             </div>
@@ -4024,18 +4031,18 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                         <CollapsibleSection title={isManifoldViz ? "PREDICTION COLORS" : "CLUSTER CONTROLS"} defaultOpen={isManifoldViz} storageKey="clusterControls">
                             {isManifoldViz ? (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                    <div style={{ fontSize: '12px', fontWeight: 500, color: '#d8d8d8' }}>prob_positive</div>
+                                    <div style={{ fontSize: '12px', fontWeight: 500, color: theme.textSecondary }}>prob_positive</div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        <span style={{ fontSize: '11px', color: '#b8b8b8' }}>0.0</span>
+                                        <span style={{ fontSize: '11px', color: theme.textSecondary }}>0.0</span>
                                         <div style={{
                                             flex: 1,
                                             height: '16px',
                                             borderRadius: '4px',
                                             background: 'linear-gradient(to right, #ef4444, #d1d5db, #22c55e)',
                                         }} />
-                                        <span style={{ fontSize: '11px', color: '#b8b8b8' }}>1.0</span>
+                                        <span style={{ fontSize: '11px', color: theme.textSecondary }}>1.0</span>
                                     </div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#8f8f8f' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: theme.textTertiary }}>
                                         <span>Negative</span>
                                         <span>Uncertain</span>
                                         <span>Positive</span>
@@ -4043,19 +4050,19 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                 </div>
                             ) : (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                <label style={{ color: '#b8b8b8', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <label style={{ color: theme.textSecondary, fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                     <span>Cluster Coloring</span>
                                     <select
                                         value={clusterColorMode}
                                         onChange={(e) => setClusterColorMode(e.target.value as 'final' | 'per-epoch')}
-                                        style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: '#202020', color: '#e6e6e6', border: '1px solid #2a2a2a', borderRadius: '3px', cursor: 'pointer', width: '120px' }}
+                                        style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: theme.bgSurface, color: theme.textPrimary, border: `1px solid ${theme.borderPrimary}`, borderRadius: '3px', cursor: 'pointer', width: '120px' }}
                                     >
                                         <option value="final">Final Frame</option>
                                         <option value="per-epoch">Per-Epoch</option>
                                     </select>
                                 </label>
                                 {frameInfo && (
-                                    <label style={{ color: '#b8b8b8', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <label style={{ color: theme.textSecondary, fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                         <span>Focus Cluster</span>
                                         <select
                                             value={spotlightCluster}
@@ -4068,7 +4075,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                     render_sphere(sphereRef);
                                                 }
                                             }}
-                                            style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: '#202020', color: '#e6e6e6', border: '1px solid #2a2a2a', borderRadius: '3px', cursor: 'pointer', width: '120px' }}
+                                            style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: theme.bgSurface, color: theme.textPrimary, border: `1px solid ${theme.borderPrimary}`, borderRadius: '3px', cursor: 'pointer', width: '120px' }}
                                         >
                                             <option value={-1}>None</option>
                                             {frameInfo.visible > 0 && Array.from({length: frameInfo.visible}, (_, i) => (
@@ -4084,9 +4091,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                         {/* Panel 2: SETTINGS */}
                         <CollapsibleSection title="SETTINGS" defaultOpen={false} storageKey="settings">
                             <div style={{ marginBottom: '16px' }}>
-                                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginTop: '0', marginBottom: '6px' }}>Rendering</div>
+                                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: theme.textTertiary, marginTop: '0', marginBottom: '6px' }}>Rendering</div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                    <label style={{ color: '#b8b8b8', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <label style={{ color: theme.textSecondary, fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                         <span>Point Size</span>
                                         <select
                                             value={pointSize}
@@ -4098,7 +4105,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                     render_sphere(sphereRef);
                                                 }
                                             }}
-                                            style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: '#202020', color: '#e6e6e6', border: '1px solid #2a2a2a', borderRadius: '3px', cursor: 'pointer', width: '80px' }}
+                                            style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: theme.bgSurface, color: theme.textPrimary, border: `1px solid ${theme.borderPrimary}`, borderRadius: '3px', cursor: 'pointer', width: '80px' }}
                                         >
                                             <option value={0.01}>0.01</option>
                                             <option value={0.02}>0.02</option>
@@ -4106,7 +4113,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                             <option value={0.06}>0.06</option>
                                         </select>
                                     </label>
-                                    <label style={{ color: '#b8b8b8', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <label style={{ color: theme.textSecondary, fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                         <span>Alpha</span>
                                         <select
                                             value={pointAlpha}
@@ -4118,7 +4125,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                     render_sphere(sphereRef);
                                                 }
                                             }}
-                                            style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: '#202020', color: '#e6e6e6', border: '1px solid #2a2a2a', borderRadius: '3px', cursor: 'pointer', width: '80px' }}
+                                            style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: theme.bgSurface, color: theme.textPrimary, border: `1px solid ${theme.borderPrimary}`, borderRadius: '3px', cursor: 'pointer', width: '80px' }}
                                         >
                                             <option value={0.25}>25%</option>
                                             <option value={0.50}>50%</option>
@@ -4138,9 +4145,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                     sphereRef.alphaByMovement = enabled;
                                                 }
                                             }}
-                                            style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: '#64b5f6' }}
+                                            style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: theme.accent }}
                                         />
-                                        <span style={{ fontSize: '12px', color: '#b8b8b8' }}>Alpha by Movement</span>
+                                        <span style={{ fontSize: '12px', color: theme.textSecondary }}>Alpha by Movement</span>
                                     </label>
                                 </div>
                             </div>
@@ -4151,12 +4158,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             {columnTypes && Object.keys(columnTypes).length > 0 ? (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                     {/* Column selector */}
-                                    <label style={{ color: '#b8b8b8', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <label style={{ color: theme.textSecondary, fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                         <span>Column</span>
                                         <select
                                             value={selectedSearchColumn}
                                             onChange={(e) => setSelectedSearchColumn(e.target.value)}
-                                            style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: '#202020', color: '#e6e6e6', border: '1px solid #2a2a2a', borderRadius: '3px', cursor: 'pointer', width: '160px' }}
+                                            style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: theme.bgSurface, color: theme.textPrimary, border: `1px solid ${theme.borderPrimary}`, borderRadius: '3px', cursor: 'pointer', width: '160px' }}
                                         >
                                             {Object.keys(columnTypes).map((col) => (
                                                 <option key={col} value={col}>{col}</option>
@@ -4175,9 +4182,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                             style={{
                                                 flex: 1,
                                                 height: '32px',
-                                                background: '#202020',
-                                                border: '1px solid #2a2a2a',
-                                                color: '#e6e6e6',
+                                                background: theme.bgSurface,
+                                                border: `1px solid ${theme.borderPrimary}`,
+                                                color: theme.textPrimary,
                                                 padding: '0 10px',
                                                 borderRadius: '4px',
                                                 fontSize: '12px',
@@ -4189,9 +4196,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                             style={{
                                                 width: '48px',
                                                 height: '32px',
-                                                background: searchQuery.trim() ? '#64b5f6' : '#202020',
-                                                border: '1px solid #2a2a2a',
-                                                color: searchQuery.trim() ? '#141414' : '#8f8f8f',
+                                                background: searchQuery.trim() ? theme.accent : theme.bgSurface,
+                                                border: `1px solid ${theme.borderPrimary}`,
+                                                color: searchQuery.trim() ? theme.accentText : theme.textTertiary,
                                                 padding: '0',
                                                 borderRadius: '4px',
                                                 cursor: searchQuery.trim() ? 'pointer' : 'not-allowed',
@@ -4211,9 +4218,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                 style={{
                                                     width: '32px',
                                                     height: '32px',
-                                                    background: '#202020',
-                                                    border: '1px solid #2a2a2a',
-                                                    color: '#8f8f8f',
+                                                    background: theme.bgSurface,
+                                                    border: `1px solid ${theme.borderPrimary}`,
+                                                    color: theme.textTertiary,
                                                     padding: '0',
                                                     borderRadius: '4px',
                                                     cursor: 'pointer',
@@ -4230,35 +4237,35 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                         <div style={{
                                             marginTop: '4px',
                                             padding: '4px 8px',
-                                            background: searchResultStats.yes > 0 ? '#1b3a1b' : '#3a1b1b',
+                                            background: searchResultStats.yes > 0 ? theme.successBg : theme.errorBg,
                                             borderRadius: '4px',
                                             fontSize: '10px',
-                                            color: searchResultStats.yes > 0 ? '#4caf50' : '#f44336',
+                                            color: searchResultStats.yes > 0 ? theme.success : theme.error,
                                             display: 'flex',
                                             alignItems: 'center',
                                             gap: '4px',
                                         }}>
                                             <span style={{ fontWeight: 600 }}>{searchResultStats.yes}</span>
-                                            <span style={{ color: '#888' }}>matches</span>
+                                            <span style={{ color: theme.textTertiary }}>matches</span>
                                         </div>
                                     )}
 
                                     {/* Color Rules (compact for mobile) */}
                                     {colorRules.length > 0 && (
                                         <div style={{ marginTop: '4px' }}>
-                                            <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginBottom: '4px' }}>
+                                            <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: theme.textTertiary, marginBottom: '4px' }}>
                                                 Color Rules ({colorRules.length})
                                             </div>
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '100px', overflowY: 'auto' }}>
                                                 {colorRules.map((rule) => (
-                                                    <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px', background: '#181818', borderRadius: '3px' }}>
+                                                    <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px', background: theme.bgInset, borderRadius: '3px' }}>
                                                         <div style={{ width: '12px', height: '12px', background: rule.color, borderRadius: '2px', flexShrink: 0 }} />
-                                                        <div style={{ flex: 1, fontSize: '10px', color: '#b8b8b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                        <div style={{ flex: 1, fontSize: '10px', color: theme.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                             {rule.column}: {rule.query} ({rule.recordIds.length})
                                                         </div>
                                                         <button
                                                             onClick={() => setColorRules(prev => prev.filter(r => r.id !== rule.id))}
-                                                            style={{ background: 'transparent', border: 'none', color: '#b8b8b8', padding: '2px 4px', cursor: 'pointer', fontSize: '10px' }}
+                                                            style={{ background: 'transparent', border: 'none', color: theme.textSecondary, padding: '2px 4px', cursor: 'pointer', fontSize: '10px' }}
                                                         >
                                                             X
                                                         </button>
@@ -4267,7 +4274,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                             </div>
                                             <button
                                                 onClick={() => setColorRules([])}
-                                                style={{ marginTop: '4px', width: '100%', background: '#2a2a2a', border: 'none', color: '#b8b8b8', padding: '6px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px' }}
+                                                style={{ marginTop: '4px', width: '100%', background: theme.borderPrimary, border: 'none', color: theme.textSecondary, padding: '6px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px' }}
                                             >
                                                 Clear All
                                             </button>
@@ -4277,7 +4284,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                     {/* Quick value selection for categorical columns */}
                                     {columnVocabulary && columnVocabulary.type !== 'scalar' && columnVocabulary.vocabulary && (
                                         <div style={{ marginTop: '4px' }}>
-                                            <div style={{ fontSize: '11px', color: '#b8b8b8', marginBottom: '4px' }}>Values:</div>
+                                            <div style={{ fontSize: '11px', color: theme.textSecondary, marginBottom: '4px' }}>Values:</div>
                                             <div style={{ maxHeight: '80px', overflowY: 'auto', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                                                 {columnVocabulary.vocabulary.slice(0, 15).map((val, idx) => (
                                                     <button
@@ -4288,9 +4295,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                             handleSearchInput(fakeEvent);
                                                         }}
                                                         style={{
-                                                            background: '#222222',
-                                                            border: searchQuery === val ? '1px solid #64b5f6' : '1px solid #2a2a2a',
-                                                            color: searchQuery === val ? '#64b5f6' : '#b8b8b8',
+                                                            background: theme.bgSurface,
+                                                            border: searchQuery === val ? `1px solid ${theme.accent}` : `1px solid ${theme.borderPrimary}`,
+                                                            color: searchQuery === val ? theme.accent : theme.textSecondary,
                                                             padding: '2px 6px',
                                                             borderRadius: '3px',
                                                             cursor: 'pointer',
@@ -4305,7 +4312,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                     )}
                                 </div>
                             ) : (
-                                <div style={{ fontSize: '12px', color: '#b8b8b8' }}>No searchable columns</div>
+                                <div style={{ fontSize: '12px', color: theme.textSecondary }}>No searchable columns</div>
                             )}
                         </CollapsibleSection>
                     </div>
@@ -4318,7 +4325,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                 gridColumn: isMobile || isThumbnail ? '1' : '2',
                 gridRow: isThumbnail ? '1' : '2',
                 position: 'relative',
-                background: sportMode ? '#1a1a1a' : '#232323',
+                background: bgOverride || (sportMode ? theme.bgCanvasSport : theme.bgCanvas),
                 minHeight: 0,
                 minWidth: 0,
                 overflow: 'hidden',
@@ -4335,14 +4342,14 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                         top: '50%',
                         left: '50%',
                         transform: 'translate(-50%, -50%)',
-                        background: 'rgba(20, 20, 20, 0.95)',
-                        color: '#e6e6e6',
+                        background: theme.inspectorBg,
+                        color: theme.textPrimary,
                         padding: '30px 50px',
                         borderRadius: '12px',
                         fontSize: '32px',
                         fontWeight: 'bold',
                         fontFamily: 'monospace',
-                        border: '2px solid #64b5f6',
+                        border: `2px solid ${theme.accent}`,
                         textAlign: 'center',
                         boxShadow: '0 0 30px rgba(100, 181, 246, 0.3)',
                         zIndex: 2000,
@@ -4362,31 +4369,31 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             left: 0,
                             right: 0,
                             bottom: 0,
-                            background: 'rgba(0, 0, 0, 0.6)',
+                            background: theme.bgOverlay,
                             display: 'flex',
                             flexDirection: 'column',
                             alignItems: 'center',
                             justifyContent: 'center',
                             gap: '28px',
                             zIndex: 1500,
-                            color: '#fff',
+                            color: theme.textPrimary,
                             fontFamily: 'system-ui, sans-serif',
                             fontSize: '16px',
                         }}
                     >
                         <div style={{ textAlign: 'center' }}>
                             <div style={{ fontSize: '28px', marginBottom: '4px' }}>&#9757; Drag</div>
-                            <div style={{ color: '#aaa' }}>Rotate sphere</div>
+                            <div style={{ color: theme.textTertiary }}>Rotate sphere</div>
                         </div>
                         <div style={{ textAlign: 'center' }}>
                             <div style={{ fontSize: '28px', marginBottom: '4px' }}>&#128076; Pinch</div>
-                            <div style={{ color: '#aaa' }}>Zoom in / out</div>
+                            <div style={{ color: theme.textTertiary }}>Zoom in / out</div>
                         </div>
                         <div style={{ textAlign: 'center' }}>
                             <div style={{ fontSize: '28px', marginBottom: '4px' }}>&#128073; Tap</div>
-                            <div style={{ color: '#aaa' }}>Select point</div>
+                            <div style={{ color: theme.textTertiary }}>Select point</div>
                         </div>
-                        <div style={{ fontSize: '12px', color: '#888', marginTop: '8px' }}>
+                        <div style={{ fontSize: '12px', color: theme.textTertiary, marginTop: '8px' }}>
                             Tap to dismiss
                         </div>
                     </div>
@@ -4529,8 +4536,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                         alignItems: 'center',
                         justifyContent: 'center',
                         fontSize: '16px',
-                        color: '#666',
-                        background: '#2a2a2a'
+                        color: theme.textMuted,
+                        background: theme.bgLoading
                     }}>
                         Initializing 3D sphere...
                     </div>
@@ -4561,9 +4568,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                 onClick={() => setRotationEnabled(!rotationEnabled)}
                                 style={{
                                     background: 'none',
-                                    border: '1px solid #444',
+                                    border: `1px solid ${theme.borderSecondary}`,
                                     borderRadius: '4px',
-                                    color: rotationEnabled ? '#fff' : '#888',
+                                    color: rotationEnabled ? theme.textPrimary : theme.textTertiary,
                                     cursor: 'pointer',
                                     padding: '2px 6px',
                                     display: 'flex',
@@ -4584,9 +4591,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                 onClick={handlePlayPause}
                                 style={{
                                     background: 'none',
-                                    border: '1px solid #444',
+                                    border: `1px solid ${theme.borderSecondary}`,
                                     borderRadius: '4px',
-                                    color: '#aaa',
+                                    color: theme.textTertiary,
                                     cursor: 'pointer',
                                     padding: '2px 6px',
                                     fontSize: '10px',
@@ -4710,7 +4717,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             left: 0,
                             right: 0,
                             bottom: 0,
-                            background: 'rgba(0, 0, 0, 0.3)',
+                            background: theme.bgOverlay,
                             zIndex: 19999,
                         }}
                     />
@@ -4730,12 +4737,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             maxWidth: '800px',
                             maxHeight: '80vh',
                         }),
-                        background: 'rgba(20, 20, 20, 0.95)',
+                        background: theme.inspectorBg,
                         border: '2px solid #4c4',
                         borderRadius: '8px',
                         padding: '12px',
                         zIndex: 20000,
-                        boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+                        boxShadow: theme.shadowMedium,
                         display: 'flex',
                         flexDirection: 'column',
                         cursor: isDraggingInspector ? 'grabbing' : 'default'
@@ -4749,7 +4756,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             justifyContent: 'space-between',
                             marginBottom: '8px',
                             paddingBottom: '8px',
-                            borderBottom: '1px solid #444',
+                            borderBottom: `1px solid ${theme.borderSecondary}`,
                             cursor: 'grab',
                             userSelect: 'none'
                         }}
@@ -4765,7 +4772,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             Data Inspector ({selectedPoints.length} point{selectedPoints.length !== 1 ? 's' : ''})
                         </div>
                         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                            <label style={{ fontSize: '11px', color: '#888', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                            <label style={{ fontSize: '11px', color: theme.textTertiary, display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
                                 <input
                                     type="checkbox"
                                     checked={hideNulls}
@@ -4774,7 +4781,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                 Hide nulls
                             </label>
                             {selectedPoints.length > 1 && (
-                                <label style={{ fontSize: '11px', color: '#888', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                                <label style={{ fontSize: '11px', color: theme.textTertiary, display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
                                     <input
                                         type="checkbox"
                                         checked={showOnlyDifferences}
@@ -4801,7 +4808,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             <button
                                 onClick={() => setShowDataInspector(false)}
                                 style={{
-                                    background: '#555',
+                                    background: theme.textDisabled,
                                     border: 'none',
                                     color: 'white',
                                     padding: '4px 8px',
@@ -4834,15 +4841,15 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                     style={{
                                         flex: 1,
                                         padding: '6px 10px',
-                                        background: '#2a2a2a',
-                                        border: '1px solid #444',
+                                        background: theme.bgLoading,
+                                        border: `1px solid ${theme.borderSecondary}`,
                                         borderRadius: '4px',
-                                        color: '#ddd',
+                                        color: theme.textSecondary,
                                         fontSize: '12px',
                                         outline: 'none'
                                     }}
                                     onFocus={(e) => e.target.style.borderColor = '#4c4'}
-                                    onBlur={(e) => e.target.style.borderColor = '#444'}
+                                    onBlur={(e) => e.target.style.borderColor = theme.borderSecondary}
                                 />
                                 {inspectorFieldSearch && (
                                     <button
@@ -4850,7 +4857,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                         style={{
                                             background: 'transparent',
                                             border: 'none',
-                                            color: '#888',
+                                            color: theme.textTertiary,
                                             cursor: 'pointer',
                                             fontSize: '14px',
                                             padding: '4px'
@@ -4871,12 +4878,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             fontSize: '12px',
                             fontFamily: 'monospace'
                         }}>
-                            <thead style={{ position: 'sticky', top: 0, background: '#1a1a1a', zIndex: 1 }}>
+                            <thead style={{ position: 'sticky', top: 0, background: theme.bgTertiary, zIndex: 1 }}>
                                 <tr>
                                     <th style={{
                                         padding: '6px 8px',
                                         textAlign: 'left',
-                                        borderBottom: '2px solid #444',
+                                        borderBottom: `2px solid ${theme.borderSecondary}`,
                                         color: '#4cf',
                                         fontWeight: 'bold'
                                     }}>Field</th>
@@ -4885,7 +4892,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                             padding: '6px 8px',
                                             textAlign: 'left',
                                             borderBottom: `3px solid ${point.color || '#ff4'}`,
-                                            borderLeft: '1px solid #333',
+                                            borderLeft: `1px solid ${theme.borderSecondary}`,
                                             fontWeight: 'bold',
                                             minWidth: '120px',
                                             position: 'relative'
@@ -4898,7 +4905,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                     background: point.color || '#ff4',
                                                     flexShrink: 0
                                                 }} />
-                                                <span style={{ color: '#ddd' }}>Point {idx + 1}</span>
+                                                <span style={{ color: theme.textSecondary }}>Point {idx + 1}</span>
                                                 <button
                                                     onClick={(e) => {
                                                         e.stopPropagation();
@@ -4907,7 +4914,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                     style={{
                                                         background: 'transparent',
                                                         border: 'none',
-                                                        color: '#888',
+                                                        color: theme.textTertiary,
                                                         cursor: 'pointer',
                                                         fontSize: '14px',
                                                         padding: '0 2px',
@@ -4919,7 +4926,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                     ×
                                                 </button>
                                             </div>
-                                            <div style={{ fontSize: '10px', color: '#888', marginTop: '2px' }}>Row {point.rowOffset} · Cluster {point.clusterId}</div>
+                                            <div style={{ fontSize: '10px', color: theme.textTertiary, marginTop: '2px' }}>Row {point.rowOffset} · Cluster {point.clusterId}</div>
                                         </th>
                                     ))}
                                 </tr>
@@ -5010,12 +5017,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
 
                                         return (
                                             <tr key={field} style={{
-                                                borderBottom: '1px solid #333',
+                                                borderBottom: `1px solid ${theme.borderSecondary}`,
                                                 background: hasDifferences ? 'rgba(255, 200, 50, 0.05)' : fieldIsInternal ? 'rgba(100, 100, 100, 0.1)' : 'transparent'
                                             }}>
                                                 <td style={{
                                                     padding: '6px 8px',
-                                                    color: fieldIsInternal ? '#666' : hasDifferences ? '#fc8' : '#888',
+                                                    color: fieldIsInternal ? theme.textMuted : hasDifferences ? '#fc8' : theme.textTertiary,
                                                     fontWeight: 'bold',
                                                     verticalAlign: 'top'
                                                 }}>
@@ -5023,8 +5030,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                         {fieldIsInternal && (
                                                             <span style={{
                                                                 fontSize: '8px',
-                                                                background: '#444',
-                                                                color: '#888',
+                                                                background: theme.borderSecondary,
+                                                                color: theme.textTertiary,
                                                                 padding: '1px 3px',
                                                                 borderRadius: '2px',
                                                                 fontWeight: 'normal'
@@ -5060,8 +5067,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                     return (
                                                         <td key={point.recordId} style={{
                                                             padding: '6px 8px',
-                                                            color: isNull ? '#666' : (isDifferent ? '#fff' : '#ddd'),
-                                                            borderLeft: '1px solid #333',
+                                                            color: isNull ? theme.textMuted : (isDifferent ? '#fff' : theme.textSecondary),
+                                                            borderLeft: `1px solid ${theme.borderSecondary}`,
                                                             verticalAlign: 'top',
                                                             wordBreak: 'break-word',
                                                             background: isDifferent ? `${point.color || '#ff4'}22` : 'transparent'
@@ -5093,7 +5100,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             left: 0,
                             right: 0,
                             bottom: 0,
-                            background: 'rgba(0, 0, 0, 0.8)',
+                            background: theme.bgOverlay,
                             zIndex: 25000,
                         }}
                     />
@@ -5104,7 +5111,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                         left: '5%',
                         right: '5%',
                         bottom: '5%',
-                        background: '#1a1a1a',
+                        background: theme.bgTertiary,
                         border: '2px solid #4c78a8',
                         borderRadius: '12px',
                         zIndex: 25001,
@@ -5118,8 +5125,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             alignItems: 'center',
                             justifyContent: 'space-between',
                             padding: '16px 20px',
-                            borderBottom: '1px solid #333',
-                            background: '#222',
+                            borderBottom: `1px solid ${theme.borderSecondary}`,
+                            background: theme.bgSurface,
                         }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                 <span style={{ fontSize: '20px' }}>📊</span>
@@ -5129,7 +5136,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <span style={{ color: '#888', fontSize: '12px' }}>Clusters:</span>
+                                    <span style={{ color: theme.textTertiary, fontSize: '12px' }}>Clusters:</span>
                                     <select
                                         value={analysisClusterCount || ''}
                                         onChange={(e) => {
@@ -5145,10 +5152,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                         }}
                                         style={{
                                             padding: '6px 12px',
-                                            background: '#333',
-                                            border: '1px solid #444',
+                                            background: theme.borderSecondary,
+                                            border: `1px solid ${theme.borderSecondary}`,
                                             borderRadius: '4px',
-                                            color: '#fff',
+                                            color: theme.textPrimary,
                                             fontSize: '12px',
                                             cursor: 'pointer',
                                         }}
@@ -5165,7 +5172,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                 <button
                                     onClick={() => setShowClusterAnalysis(false)}
                                 style={{
-                                    background: '#555',
+                                    background: theme.textDisabled,
                                     border: 'none',
                                     color: 'white',
                                         padding: '8px 16px',
@@ -5183,8 +5190,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                         <div style={{
                             display: 'flex',
                             gap: '0',
-                            borderBottom: '1px solid #333',
-                            background: '#1e1e1e',
+                            borderBottom: `1px solid ${theme.borderSecondary}`,
+                            background: theme.bgPrimary,
                             padding: '0 20px',
                         }}>
                             {[
@@ -5197,10 +5204,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                     onClick={() => setClusterAnalysisView(tab.id as any)}
                                     style={{
                                         padding: '12px 20px',
-                                        background: clusterAnalysisView === tab.id ? '#2a2a2a' : 'transparent',
+                                        background: clusterAnalysisView === tab.id ? theme.bgLoading : 'transparent',
                                         border: 'none',
                                         borderBottom: clusterAnalysisView === tab.id ? '2px solid #4c78a8' : '2px solid transparent',
-                                        color: clusterAnalysisView === tab.id ? '#fff' : '#888',
+                                        color: clusterAnalysisView === tab.id ? theme.textPrimary : theme.textTertiary,
                                         fontSize: '13px',
                                         fontWeight: clusterAnalysisView === tab.id ? 600 : 400,
                                         cursor: 'pointer',
@@ -5265,7 +5272,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                 const kColorTable = ['#4C78A8', '#72B7B2', '#F58518', '#E45756', '#54A24B', '#B279A2', '#FF9DA6', '#9D755D', '#BAB0AC', '#79706E', '#D37295', '#8F6D31'];
 
                                 if (numClusters === 0) {
-                                    return <div style={{ color: '#888', textAlign: 'center', padding: '40px' }}>No cluster data available</div>;
+                                    return <div style={{ color: theme.textTertiary, textAlign: 'center', padding: '40px' }}>No cluster data available</div>;
                                 }
 
                                 // Compute value distributions for each field in each cluster
@@ -5525,14 +5532,14 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                             const color = kColorTable[cluster] || '#888';
                                             return (
                                                 <div key={cluster} style={{
-                                                    background: '#252525',
+                                                    background: theme.bgSurface,
                                                     padding: '8px 14px',
                                                     borderRadius: '6px',
                                                     borderLeft: `3px solid ${color}`,
                                                     fontSize: '12px',
                                                 }}>
                                                     <span style={{ color, fontWeight: 'bold' }}>C{cluster}</span>
-                                                    <span style={{ color: '#888', marginLeft: '8px' }}>{data.points.length} pts</span>
+                                                    <span style={{ color: theme.textTertiary, marginLeft: '8px' }}>{data.points.length} pts</span>
                                                 </div>
                                             );
                                         })}
@@ -5547,7 +5554,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                     return (
                                         <div>
                                             <ClusterSummary />
-                                            <div style={{ fontSize: '13px', color: '#888', marginBottom: '16px' }}>
+                                            <div style={{ fontSize: '13px', color: theme.textTertiary, marginBottom: '16px' }}>
                                                 Values that are <strong style={{ color: '#4f4' }}>over-represented</strong> in each cluster compared to the overall dataset.
                                             </div>
                                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '16px' }}>
@@ -5556,7 +5563,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                     const color = kColorTable[cluster] || '#888';
                                                     return (
                                                         <div key={cluster} style={{
-                                                            background: '#222',
+                                                            background: theme.bgSurface,
                                                             borderRadius: '8px',
                                                             border: `1px solid ${color}44`,
                                                             overflow: 'hidden',
@@ -5567,13 +5574,13 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                                 borderBottom: `1px solid ${color}44`,
                                                             }}>
                                                                 <span style={{ color, fontWeight: 'bold', fontSize: '16px' }}>Cluster {cluster}</span>
-                                                                <span style={{ color: '#888', marginLeft: '12px', fontSize: '12px' }}>
+                                                                <span style={{ color: theme.textTertiary, marginLeft: '12px', fontSize: '12px' }}>
                                                                     {clusterData.get(cluster)!.points.length} points
                                                                 </span>
                                                             </div>
                                                             <div style={{ padding: '12px 16px' }}>
                                                                 {sigs.length === 0 ? (
-                                                                    <div style={{ color: '#666', fontStyle: 'italic', fontSize: '12px' }}>
+                                                                    <div style={{ color: theme.textMuted, fontStyle: 'italic', fontSize: '12px' }}>
                                                                         No strong distinguishing values found
                                                                     </div>
                                                                 ) : (
@@ -5590,7 +5597,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                                                         padding: '1px 4px',
                                                                                         borderRadius: '3px',
                                                                                         background: '#4448',
-                                                                                        color: '#aaa',
+                                                                                        color: theme.textTertiary,
                                                                                         marginLeft: '4px',
                                                                                         fontFamily: 'monospace',
                                                                                     }}
@@ -5599,10 +5606,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                                                         MI:{sigMI.toFixed(2)}
                                                                                     </span>
                                                                                 )}
-                                                                                <span style={{ color: '#666' }}>{sig.isArrayField ? ' contains ' : ' = '}</span>
+                                                                                <span style={{ color: theme.textMuted }}>{sig.isArrayField ? ' contains ' : ' = '}</span>
                                                                                 <span style={{ color: '#fff' }}>"{sig.value.length > 25 ? sig.value.slice(0, 25) + '...' : sig.value}"</span>
-                                                                                {sig.isArrayField && <span style={{ color: '#666', fontSize: '10px', marginLeft: '4px' }}>(list)</span>}
-                                                                                <div style={{ marginLeft: '12px', fontSize: '11px', color: '#888' }}>
+                                                                                {sig.isArrayField && <span style={{ color: theme.textMuted, fontSize: '10px', marginLeft: '4px' }}>(list)</span>}
+                                                                                <div style={{ marginLeft: '12px', fontSize: '11px', color: theme.textTertiary }}>
                                                                                     <span style={{ color: '#4f4' }}>{(sig.clusterPct * 100).toFixed(0)}%</span> have this vs{' '}
                                                                                     <span>{(sig.overallPct * 100).toFixed(0)}%</span> overall{' '}
                                                                                     <span style={{ color: '#f84' }}>({sig.lift.toFixed(1)}x)</span>
@@ -5625,11 +5632,11 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                     return (
                                         <div>
                                             <ClusterSummary />
-                                            <div style={{ fontSize: '13px', color: '#888', marginBottom: '16px' }}>
+                                            <div style={{ fontSize: '13px', color: theme.textTertiary, marginBottom: '16px' }}>
                                                 For each field, which <strong style={{ color: '#4cf' }}>values belong to which clusters</strong>.
                                                 Fields sorted by distinctiveness (most distinguishing first).
                                                 {Object.keys(columnStats).length > 0 && (
-                                                    <span style={{ marginLeft: '8px', color: '#666' }}>
+                                                    <span style={{ marginLeft: '8px', color: theme.textMuted }}>
                                                         MI = Mutual Information (how predictable from other columns)
                                                     </span>
                                                 )}
@@ -5642,7 +5649,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                     const predictability = fieldStats?.predictability_pct;
                                                     return (
                                                         <div key={field} style={{
-                                                            background: '#222',
+                                                            background: theme.bgSurface,
                                                             borderRadius: '6px',
                                                             padding: '12px 16px',
                                                         }}>
@@ -5654,7 +5661,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                                         padding: '2px 6px',
                                                                         borderRadius: '4px',
                                                                         background: mi > 0.5 ? '#9c27b022' : '#4448',
-                                                                        color: mi > 0.5 ? '#ce93d8' : '#aaa',
+                                                                        color: mi > 0.5 ? '#ce93d8' : theme.textTertiary,
                                                                         fontFamily: 'monospace',
                                                                     }}
                                                                     title={`Mutual Information: ${mi.toFixed(3)} bits${predictability !== undefined ? ` (${predictability.toFixed(1)}% predictable)` : ''}`}
@@ -5668,7 +5675,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                                         padding: '2px 5px',
                                                                         borderRadius: '4px',
                                                                         background: '#4448',
-                                                                        color: '#aaa',
+                                                                        color: theme.textTertiary,
                                                                     }}>
                                                                         list membership
                                                                     </span>
@@ -5688,18 +5695,18 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                                     const ownerColor = kColorTable[vo.ownerCluster] || '#888';
                                                                     return (
                                                                         <div key={i} style={{
-                                                                            background: '#2a2a2a',
+                                                                            background: theme.bgLoading,
                                                                             padding: '6px 10px',
                                                                             borderRadius: '4px',
                                                                             fontSize: '11px',
                                                                             borderLeft: `3px solid ${ownerColor}`,
                                                                         }}>
-                                                                            <span style={{ color: '#ddd' }}>"{vo.value.length > 20 ? vo.value.slice(0, 20) + '...' : vo.value}"</span>
+                                                                            <span style={{ color: theme.textSecondary }}>"{vo.value.length > 20 ? vo.value.slice(0, 20) + '...' : vo.value}"</span>
                                                                             <span style={{ color: ownerColor, marginLeft: '8px', fontWeight: 'bold' }}>
                                                                                 C{vo.ownerCluster} ({(vo.pct * 100).toFixed(0)}%)
                                                                             </span>
                                                                             {vo.otherClusters.slice(0, 2).map(oc => (
-                                                                                <span key={oc.cluster} style={{ color: '#666', marginLeft: '4px' }}>
+                                                                                <span key={oc.cluster} style={{ color: theme.textMuted, marginLeft: '4px' }}>
                                                                                     C{oc.cluster}:{(oc.pct * 100).toFixed(0)}%
                                                                                 </span>
                                                                             ))}
@@ -5725,13 +5732,13 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                 const color = kColorTable[cluster] || '#888';
                                                 return (
                                                     <div key={cluster} style={{
-                                                        background: '#252525',
+                                                        background: theme.bgSurface,
                                                         padding: '12px 16px',
                                                         borderRadius: '8px',
                                                         borderLeft: `4px solid ${color}`,
                                                     }}>
                                                         <div style={{ color, fontWeight: 'bold', fontSize: '14px' }}>Cluster {cluster}</div>
-                                                        <div style={{ color: '#aaa', fontSize: '12px' }}>{data.points.length} points</div>
+                                                        <div style={{ color: theme.textTertiary, fontSize: '12px' }}>{data.points.length} points</div>
                                                     </div>
                                                 );
                                             })}
@@ -5745,12 +5752,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                 fontSize: '12px',
                                                 fontFamily: 'monospace'
                                             }}>
-                                                <thead style={{ position: 'sticky', top: 0, background: '#1a1a1a', zIndex: 1 }}>
+                                                <thead style={{ position: 'sticky', top: 0, background: theme.bgTertiary, zIndex: 1 }}>
                                                     <tr>
                                                         <th style={{
                                                             padding: '10px',
                                                             textAlign: 'left',
-                                                            borderBottom: '2px solid #444',
+                                                            borderBottom: `2px solid ${theme.borderSecondary}`,
                                                             color: '#4cf',
                                                             fontWeight: 'bold',
                                                             minWidth: '150px'
@@ -5760,7 +5767,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                         <th style={{
                                                             padding: '10px',
                                                             textAlign: 'center',
-                                                            borderBottom: '2px solid #444',
+                                                            borderBottom: `2px solid ${theme.borderSecondary}`,
                                                             color: '#f84',
                                                             fontWeight: 'bold',
                                                             width: '80px'
@@ -5774,7 +5781,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                                     padding: '10px',
                                                                     textAlign: 'left',
                                                                     borderBottom: `3px solid ${color}`,
-                                                                    color: '#ddd',
+                                                                    color: theme.textSecondary,
                                                                     fontWeight: 'bold',
                                                                     minWidth: '200px'
                                                                 }}>
@@ -5790,10 +5797,10 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                         const overlapLabel = avgOverlap < 0.2 ? 'LOW' : avgOverlap < 0.5 ? 'MED' : 'HIGH';
 
                                                         return (
-                                                            <tr key={field} style={{ borderBottom: '1px solid #333' }}>
+                                                            <tr key={field} style={{ borderBottom: `1px solid ${theme.borderSecondary}` }}>
                                                                 <td style={{
                                                                     padding: '8px 10px',
-                                                                    color: avgOverlap < 0.3 ? '#4cf' : '#888',
+                                                                    color: avgOverlap < 0.3 ? '#4cf' : theme.textTertiary,
                                                                     fontWeight: avgOverlap < 0.3 ? 'bold' : 'normal',
                                                                     verticalAlign: 'top'
                                                                 }}>
@@ -5815,7 +5822,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                                     }}>
                                                                         {overlapLabel}
                                                                     </div>
-                                                                    <div style={{ fontSize: '10px', color: '#666', marginTop: '2px' }}>
+                                                                    <div style={{ fontSize: '10px', color: theme.textMuted, marginTop: '2px' }}>
                                                                         {(avgOverlap * 100).toFixed(0)}%
                                                                     </div>
                                                                 </td>
@@ -5829,9 +5836,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                                     return (
                                                                         <td key={cluster} style={{
                                                                             padding: '8px 10px',
-                                                                            color: '#ccc',
+                                                                            color: theme.textSecondary,
                                                                             verticalAlign: 'top',
-                                                                            borderLeft: '1px solid #333',
+                                                                            borderLeft: `1px solid ${theme.borderSecondary}`,
                                                                             fontSize: '11px'
                                                                         }}>
                                                                             {topValues.length > 0 ? (
@@ -5839,17 +5846,17 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                                                     {topValues.map(([val, count], i) => (
                                                                                         <div key={i} style={{ marginBottom: '2px' }}>
                                                                                             <span style={{ color: '#fff' }}>{val.length > 30 ? val.substring(0, 30) + '...' : val}</span>
-                                                                                            <span style={{ color: '#666', marginLeft: '6px' }}>({count}/{dist.total})</span>
+                                                                                            <span style={{ color: theme.textMuted, marginLeft: '6px' }}>({count}/{dist.total})</span>
                                                                                         </div>
                                                                                     ))}
                                                                                     {uniqueCount > 3 && (
-                                                                                        <div style={{ color: '#666', fontStyle: 'italic' }}>
+                                                                                        <div style={{ color: theme.textMuted, fontStyle: 'italic' }}>
                                                                                             +{uniqueCount - 3} more unique values
                                                                                         </div>
                                                                                     )}
                                                                                 </>
                                                                             ) : (
-                                                                                <span style={{ color: '#555' }}>all null</span>
+                                                                                <span style={{ color: theme.textDisabled }}>all null</span>
                                                                             )}
                                                                         </td>
                                                                     );
@@ -5880,7 +5887,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             left: 0,
                             right: 0,
                             bottom: 0,
-                            background: 'rgba(0, 0, 0, 0.7)',
+                            background: theme.bgOverlay,
                             zIndex: 10000,
                         }}
                     />
@@ -5890,8 +5897,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                         top: '50%',
                         left: '50%',
                         transform: 'translate(-50%, -50%)',
-                        background: '#1e1e1e',
-                        border: '1px solid #2a2a2a',
+                        background: theme.bgPrimary,
+                        border: `1px solid ${theme.borderPrimary}`,
                         borderRadius: '8px',
                         zIndex: 10001,
                         width: 'min(90vw, 800px)',
@@ -5906,16 +5913,16 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             alignItems: 'center',
                             justifyContent: 'space-between',
                             padding: '16px 20px',
-                            borderBottom: '1px solid #2a2a2a',
-                            background: '#181818',
+                            borderBottom: `1px solid ${theme.borderPrimary}`,
+                            background: theme.bgInset,
                         }}>
-                            <span style={{ fontSize: '14px', fontWeight: 600, color: '#e6e6e6' }}>Model Card</span>
+                            <span style={{ fontSize: '14px', fontWeight: 600, color: theme.textPrimary }}>Model Card</span>
                             <button
                                 onClick={() => setShowModelCard(false)}
                                 style={{
                                     background: 'transparent',
                                     border: 'none',
-                                    color: '#b8b8b8',
+                                    color: theme.textSecondary,
                                     fontSize: '24px',
                                     cursor: 'pointer',
                                     padding: '0 4px',
@@ -5932,12 +5939,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             padding: '20px',
                         }}>
                             {modelCardLoading && (
-                                <div style={{ color: '#b8b8b8', textAlign: 'center', padding: '40px' }}>
+                                <div style={{ color: theme.textSecondary, textAlign: 'center', padding: '40px' }}>
                                     <div style={{
                                         width: '30px',
                                         height: '30px',
-                                        border: '3px solid #555',
-                                        borderTop: '3px solid #d0d0d0',
+                                        border: `3px solid ${theme.spinnerTrack}`,
+                                        borderTop: `3px solid ${theme.spinnerHead}`,
                                         borderRadius: '50%',
                                         animation: 'spin 1s linear infinite',
                                         margin: '0 auto 16px'
@@ -5946,50 +5953,50 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                 </div>
                             )}
                             {modelCardError && (
-                                <div style={{ color: '#ff6b6b', textAlign: 'center', padding: '40px' }}>
+                                <div style={{ color: theme.error, textAlign: 'center', padding: '40px' }}>
                                     <div style={{ marginBottom: '12px' }}>Failed to load model card</div>
-                                    <div style={{ fontSize: '12px', color: '#8f8f8f' }}>{modelCardError}</div>
+                                    <div style={{ fontSize: '12px', color: theme.textTertiary }}>{modelCardError}</div>
                                 </div>
                             )}
                             {!modelCardLoading && !modelCardError && modelCardData && (
                                 <div ref={modelCardContainerRef} />
                             )}
                             {!modelCardLoading && !modelCardError && !modelCardData && (
-                                <div style={{ color: '#b8b8b8', fontSize: '14px' }}>
+                                <div style={{ color: theme.textSecondary, fontSize: '14px' }}>
                                     <div style={{ marginBottom: '16px' }}>
-                                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginBottom: '6px' }}>Session ID</div>
-                                        <div style={{ fontFamily: 'monospace', color: '#e6e6e6' }}>{sessionId}</div>
+                                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: theme.textTertiary, marginBottom: '6px' }}>Session ID</div>
+                                        <div style={{ fontFamily: 'monospace', color: theme.textPrimary }}>{sessionId}</div>
                                     </div>
                                     {frameInfo && (
                                         <div style={{ marginBottom: '16px' }}>
-                                            <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginBottom: '6px' }}>Training Progress</div>
-                                            <div style={{ color: '#e6e6e6' }}>{frameInfo.total} epochs completed</div>
+                                            <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: theme.textTertiary, marginBottom: '6px' }}>Training Progress</div>
+                                            <div style={{ color: theme.textPrimary }}>{frameInfo.total} epochs completed</div>
                                         </div>
                                     )}
                                     {trainingStatus && (
                                         <div style={{ marginBottom: '16px' }}>
-                                            <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginBottom: '6px' }}>Status</div>
-                                            <div style={{ color: trainingStatus === 'completed' ? '#64b5f6' : '#e6e6e6' }}>
+                                            <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: theme.textTertiary, marginBottom: '6px' }}>Status</div>
+                                            <div style={{ color: trainingStatus === 'completed' ? theme.accent : theme.textPrimary }}>
                                                 {trainingStatus === 'completed' ? 'Training Complete' : 'Training In Progress'}
                                             </div>
                                         </div>
                                     )}
                                     {sphereRef?.recordList && (
                                         <div style={{ marginBottom: '16px' }}>
-                                            <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginBottom: '6px' }}>Data Points</div>
-                                            <div style={{ color: '#e6e6e6' }}>{sphereRef.recordList.length} points</div>
+                                            <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: theme.textTertiary, marginBottom: '6px' }}>Data Points</div>
+                                            <div style={{ color: theme.textPrimary }}>{sphereRef.recordList.length} points</div>
                                         </div>
                                     )}
                                     {frameInfo && frameInfo.visible > 0 && (
                                         <div style={{ marginBottom: '16px' }}>
-                                            <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginBottom: '6px' }}>Clusters</div>
-                                            <div style={{ color: '#e6e6e6' }}>{frameInfo.visible} clusters identified</div>
+                                            <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: theme.textTertiary, marginBottom: '6px' }}>Clusters</div>
+                                            <div style={{ color: theme.textPrimary }}>{frameInfo.visible} clusters identified</div>
                                         </div>
                                     )}
                                     {lossData?.training_info?.model_parameters !== undefined && (
                                         <div style={{ marginBottom: '16px' }}>
-                                            <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8f8f8f', marginBottom: '6px' }}>Model Parameters</div>
-                                            <div style={{ color: '#e6e6e6' }}>{lossData.training_info.model_parameters.toLocaleString()}</div>
+                                            <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: theme.textTertiary, marginBottom: '6px' }}>Model Parameters</div>
+                                            <div style={{ color: theme.textPrimary }}>{lossData.training_info.model_parameters.toLocaleString()}</div>
                                         </div>
                                     )}
                                 </div>
@@ -6017,6 +6024,12 @@ interface SphereEmbeddedProps {
     mode?: 'thumbnail' | 'full';
     // Custom data endpoint URL - overrides the default epoch_projections URL
     dataEndpoint?: string;
+    // Theme: 'dark' (default) or 'light'
+    theme?: 'dark' | 'light';
+    // Custom background color for the sphere container area
+    backgroundColor?: string;
+    // Default alpha/opacity for points (0-1, default 0.5)
+    pointAlpha?: number;
 }
 
 // Final Sphere View Component - shows the completed sphere with all points
@@ -6157,7 +6170,7 @@ const FinalSphereView: React.FC<{
     
     if (!recordList.length || !jsonData) {
         return (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#666' }}>
+            <div style={{ padding: '40px', textAlign: 'center', color: theme.textMuted }}>
                 <p>Processing sphere data...</p>
             </div>
         );
@@ -6179,48 +6192,54 @@ const FinalSphereView: React.FC<{
     );
 };
 
-export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, authToken, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity, onSphereReady, mode, dataEndpoint }: SphereEmbeddedProps) {
+export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, authToken, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity, onSphereReady, mode, dataEndpoint, theme = 'dark', backgroundColor, pointAlpha }: SphereEmbeddedProps) {
     // Check if we have final sphere data (coords + cluster_results) or just a session ID
     const hasFinalData = initial_data?.coords && initial_data?.coords.length > 0 && initial_data?.entire_cluster_results;
     const sessionId = initial_data?.session?.session_id;
-    
+
     // If we have final sphere data, show the final sphere
     // Otherwise, show training movie (if sessionId provided)
     if (hasFinalData) {
         // Show final sphere with provided data
         return (
+            <ThemeProvider mode={theme} backgroundColor={backgroundColor}>
             <div className="sphere-embedded-container">
                 <div className="mx-auto">
-                    <FinalSphereView 
+                    <FinalSphereView
                         data={initial_data}
                         isRotating={isRotating}
                         rotationSpeed={rotationSpeed}
                         animateClusters={animateClusters}
                         pointSize={pointSize}
-                        pointOpacity={pointOpacity}
+                        pointOpacity={pointOpacity ?? pointAlpha}
                         onSphereReady={onSphereReady}
                     />
                 </div>
             </div>
+            </ThemeProvider>
         );
     } else if (sessionId) {
         // Show training movie for the provided session ID
         return (
+            <ThemeProvider mode={theme} backgroundColor={backgroundColor}>
             <div className="sphere-embedded-container">
                 <div className="mx-auto">
-                    <TrainingMovie sessionId={sessionId} apiBaseUrl={apiBaseUrl} authToken={authToken} mode={mode} dataEndpoint={dataEndpoint} />
+                    <TrainingMovie sessionId={sessionId} apiBaseUrl={apiBaseUrl} authToken={authToken} mode={mode} dataEndpoint={dataEndpoint} pointAlpha={pointAlpha} />
                 </div>
             </div>
+            </ThemeProvider>
         );
     } else {
         // No data and no session ID - show error
         return (
+            <ThemeProvider mode={theme} backgroundColor={backgroundColor}>
             <div className="sphere-embedded-container">
                 <div style={{ padding: '40px', textAlign: 'center', color: '#666' }}>
                     <p>No data or session ID provided</p>
                     <p style={{ fontSize: '12px', marginTop: '10px' }}>Please provide sphere data or a session ID</p>
                 </div>
             </div>
+            </ThemeProvider>
         );
     }
 } 

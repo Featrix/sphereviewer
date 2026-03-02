@@ -46,6 +46,12 @@ interface FeatrixSphereViewerConfig {
   authToken?: string;
   // Callback when sphere is ready
   onSphereReady?: (sphereRef: any) => void;
+  // Theme: 'dark' (default) or 'light'
+  theme?: 'dark' | 'light';
+  // Custom background color for the sphere container area
+  backgroundColor?: string;
+  // Default alpha/opacity for points (0-1, default 0.5)
+  pointAlpha?: number;
 }
 
 class FeatrixSphereViewer {
@@ -89,6 +95,12 @@ class FeatrixSphereViewer {
       const width = script.getAttribute('data-width') || undefined;
       const height = script.getAttribute('data-height') || undefined;
 
+      // Theme attributes
+      const themeAttr = script.getAttribute('data-theme');
+      const theme = (themeAttr === 'dark' || themeAttr === 'light') ? themeAttr : undefined;
+      const backgroundColor = script.getAttribute('data-background-color') || undefined;
+      const pointAlpha = script.hasAttribute('data-point-alpha') ? parseFloat(script.getAttribute('data-point-alpha')!) : undefined;
+
       // Display mode: 'thumbnail' or 'full' (from data attribute or URL param)
       const modeAttr = script.getAttribute('data-mode');
       const urlParams = new URLSearchParams(window.location.search);
@@ -110,6 +122,9 @@ class FeatrixSphereViewer {
         mode,
         dataEndpoint,
         authToken,
+        theme,
+        backgroundColor,
+        pointAlpha,
         onSphereReady: (window as any).onSphereReady || undefined
       };
 
@@ -311,6 +326,9 @@ class FeatrixSphereViewer {
         pointOpacity={config.pointOpacity}
         mode={config.mode}
         dataEndpoint={config.dataEndpoint}
+        theme={config.theme}
+        backgroundColor={config.backgroundColor}
+        pointAlpha={config.pointAlpha}
         onSphereReady={(sphereRef: any) => {
           this.sphereRef = sphereRef;
           if (config.onSphereReady) {
@@ -348,6 +366,9 @@ class FeatrixSphereViewer {
           pointSize={config.pointSize}
           pointOpacity={config.pointOpacity}
           dataEndpoint={config.dataEndpoint}
+          theme={config.theme}
+          backgroundColor={config.backgroundColor}
+          pointAlpha={config.pointAlpha}
         />
       );
     }
@@ -401,6 +422,9 @@ class FeatrixSphereViewer {
           animateClusters={this.currentConfig.animateClusters}
           pointSize={this.currentConfig.pointSize}
           pointOpacity={this.currentConfig.pointOpacity}
+          theme={this.currentConfig.theme}
+          backgroundColor={this.currentConfig.backgroundColor}
+          pointAlpha={this.currentConfig.pointAlpha}
           onSphereReady={(sphereRef: any) => this.sphereRef = sphereRef}
         />
       );

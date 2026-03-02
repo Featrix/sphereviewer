@@ -18,6 +18,7 @@
  *   // Call ref.current.show() on canvas mouse-move to reveal the bar.
  */
 import React, { useState, useRef, useCallback, useImperativeHandle, forwardRef } from 'react';
+import { useTheme } from './ThemeContext';
 
 export interface PlaybackCallbacks {
     onPlay: () => void;
@@ -72,24 +73,25 @@ const IconLast = () => (
 
 const DEFAULT_SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
 
-const transportBtnStyle: React.CSSProperties = {
-    background: 'none',
-    border: 'none',
-    color: '#999',
-    cursor: 'pointer',
-    padding: '4px',
-    display: 'flex',
-    alignItems: 'center',
-    borderRadius: '4px',
-    transition: 'color 150ms',
-};
-
 const PlaybackController = forwardRef<PlaybackControllerHandle, PlaybackControllerProps>(
     ({ callbacks, currentFrame, totalFrames, isPlaying, playbackSpeed, isMobile, extraControls, speedOptions }, ref) => {
+        const { theme } = useTheme();
         const [visible, setVisible] = useState(false);
         const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
         const interactingRef = useRef(false);
         const speeds = speedOptions || DEFAULT_SPEEDS;
+
+        const transportBtnStyle: React.CSSProperties = {
+            background: 'none',
+            border: 'none',
+            color: theme.glassText,
+            cursor: 'pointer',
+            padding: '4px',
+            display: 'flex',
+            alignItems: 'center',
+            borderRadius: '4px',
+            transition: 'color 150ms',
+        };
 
         const clearTimer = useCallback(() => {
             if (timerRef.current) {
@@ -162,8 +164,8 @@ const PlaybackController = forwardRef<PlaybackControllerHandle, PlaybackControll
             }
         }, [callbacks, currentFrame, totalFrames]);
 
-        const hoverOn = (e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.color = '#fff'; };
-        const hoverOff = (e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.color = '#999'; };
+        const hoverOn = (e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.color = theme.textPrimary; };
+        const hoverOff = (e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.color = theme.glassText; };
 
         return (
             <div
@@ -186,7 +188,7 @@ const PlaybackController = forwardRef<PlaybackControllerHandle, PlaybackControll
                     width: isMobile ? 'calc(100% - 32px)' : 'auto',
                     maxWidth: '500px',
                     minWidth: '320px',
-                    background: 'rgba(0, 0, 0, 0.7)',
+                    background: theme.glassBg,
                     backdropFilter: 'blur(12px)',
                     borderRadius: '8px',
                     padding: '8px 12px',
@@ -201,7 +203,7 @@ const PlaybackController = forwardRef<PlaybackControllerHandle, PlaybackControll
                     <button onClick={callbacks.onStepBackward} style={transportBtnStyle} onMouseEnter={hoverOn} onMouseLeave={hoverOff} title="Previous Frame">
                         <IconStepBack />
                     </button>
-                    <button onClick={handlePlayPause} style={{ ...transportBtnStyle, color: '#fff', padding: '6px 8px' }} title={isPlaying ? 'Pause' : 'Play'}>
+                    <button onClick={handlePlayPause} style={{ ...transportBtnStyle, color: theme.textPrimary, padding: '6px 8px' }} title={isPlaying ? 'Pause' : 'Play'}>
                         {isPlaying ? <IconPause /> : <IconPlay />}
                     </button>
                     <button onClick={callbacks.onStepForward} style={transportBtnStyle} onMouseEnter={hoverOn} onMouseLeave={hoverOff} title="Next Frame">
@@ -220,13 +222,13 @@ const PlaybackController = forwardRef<PlaybackControllerHandle, PlaybackControll
                         max={totalFrames}
                         value={currentFrame}
                         onChange={handleScrub}
-                        style={{ width: '100%', cursor: 'pointer', accentColor: '#00bfff' }}
+                        style={{ width: '100%', cursor: 'pointer', accentColor: theme.glassAccent }}
                     />
                 </div>
 
                 {/* Frame counter */}
-                <span style={{ color: '#888', fontSize: '11px', fontFamily: 'system-ui, -apple-system, sans-serif', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                    {currentFrame}<span style={{ color: '#555' }}>/</span>{totalFrames}
+                <span style={{ color: theme.glassTextDim, fontSize: '11px', fontFamily: 'system-ui, -apple-system, sans-serif', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    {currentFrame}<span style={{ color: theme.glassTextMuted }}>/</span>{totalFrames}
                 </span>
 
                 {/* Speed dropdown */}
@@ -235,9 +237,9 @@ const PlaybackController = forwardRef<PlaybackControllerHandle, PlaybackControll
                     onChange={(e) => callbacks.onSpeedChange(parseFloat(e.target.value))}
                     style={{
                         background: 'transparent',
-                        border: '1px solid #444',
+                        border: `1px solid ${theme.glassBorder}`,
                         borderRadius: '4px',
-                        color: '#aaa',
+                        color: theme.glassTextDim,
                         fontSize: '11px',
                         padding: '2px 4px',
                         cursor: 'pointer',
@@ -247,7 +249,7 @@ const PlaybackController = forwardRef<PlaybackControllerHandle, PlaybackControll
                     title="Playback Speed"
                 >
                     {speeds.map(s => (
-                        <option key={s} value={s} style={{ background: '#222' }}>{s}x</option>
+                        <option key={s} value={s} style={{ background: theme.glassOptionBg }}>{s}x</option>
                     ))}
                 </select>
 
