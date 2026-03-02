@@ -339,20 +339,66 @@ function MyDashboard({ analysisData }) {
 
 ## 🎨 Customization Options
 
+### Appearance Props
+
+| Prop / Data Attribute | JS Config Key | Type | Default | Description |
+|---|---|---|---|---|
+| `data-theme` | `theme` | `'dark' \| 'light'` | `'dark'` | UI color scheme. Dark = dark panels/light text, Light = white panels/dark text |
+| `data-background-color` | `backgroundColor` | CSS color string | auto | Custom background color for the sphere container area |
+| `data-point-alpha` | `pointAlpha` | `0`-`1` | `0.5` | Default opacity/alpha for data points |
+| `data-point-opacity` | `pointOpacity` | `0`-`1` | `0.5` | Alias for pointAlpha (legacy) |
+| `data-colormap` | `colormap` | string | — | Matplotlib colormap name for cluster colors |
+
+#### Theme Examples
+
+**CDN / Script Tag:**
+```html
+<!-- Light theme with white background -->
+<script src="sphere-viewer.js"
+        data-session-id="my-session"
+        data-theme="light"
+        data-background-color="#ffffff"
+        data-point-alpha="0.7"
+        data-colormap="viridis">
+</script>
+```
+
+**JavaScript API:**
+```javascript
+const viewer = new FeatrixSphereViewer();
+viewer.init({
+  data: myData,
+  theme: 'light',
+  backgroundColor: '#f5f5f5',
+  pointAlpha: 0.6,
+  colormap: 'tab10',
+});
+```
+
+#### Available Colormaps
+
+Cluster colors can use any of these standard matplotlib colormaps:
+
+**Sequential** (good for ordered data): `viridis`, `plasma`, `inferno`, `magma`, `cividis`
+
+**Diverging** (good for data with a midpoint): `coolwarm`, `RdYlGn`, `RdYlBu`, `spectral`
+
+**Qualitative** (good for distinct clusters): `tab10`, `tab20`, `Set1`, `Set2`, `Paired`, `Dark2`
+
 ### Styling
 The sphere viewer automatically adapts to:
 - ✅ **Any number of data points** (tested with 100K+ points)
 - ✅ **Any data types** (numeric, categorical, text)
 - ✅ **Any coordinate ranges** (auto-scaling)
 - ✅ **Any cluster counts** (2 to 50+ clusters)
-- ✅ **Custom color schemes** (based on data)
+- ✅ **Custom color schemes** (via colormap prop or manual per-cluster colors)
 
 ### Features Included
 - 🔍 **Interactive Exploration** - Click, drag, zoom
 - 📊 **Data Panels** - Show original values
 - 🎯 **Clustering Controls** - Switch between cluster counts
 - 📱 **Mobile Responsive** - Works on all devices
-- 🎨 **Professional Design** - Beautiful default styling
+- 🎨 **Professional Design** - Dark and light themes
 
 ## 📋 Data Requirements
 

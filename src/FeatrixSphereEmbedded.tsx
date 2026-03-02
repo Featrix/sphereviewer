@@ -19,6 +19,7 @@ import { LossPlotOverlay, MovementPlotOverlay, MovementHistogramByCluster } from
 import PlaybackController, { PlaybackControllerHandle } from './PlaybackController';
 import { ThemeProvider, useTheme } from './ThemeContext';
 import type { ThemeMode } from './theme';
+import { sampleColormap, isValidColormap } from './colormaps';
 
 // ============================================================================
 // Safe localStorage utilities - NEVER crash on read/write failures
@@ -278,6 +279,8 @@ interface TrainingMovieProps {
     dataEndpoint?: string;
     // Default alpha/opacity for points (0-1)
     pointAlpha?: number;
+    // Matplotlib colormap name for cluster colors
+    colormap?: string;
 }
 
 // ============================================================================
@@ -741,7 +744,7 @@ const TrainingMovieSphere: React.FC<{
     );
 };
 
-const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, authToken, mode, dataEndpoint, pointAlpha: defaultPointAlpha }) => {
+const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, authToken, mode, dataEndpoint, pointAlpha: defaultPointAlpha, colormap }) => {
     const { theme, backgroundColor: bgOverride } = useTheme();
     // NOTE: Loading training movie from API (the working version)
     const [trainingData, setTrainingData] = useState<any>(null);
@@ -1600,6 +1603,19 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
         if (!sphereRef) return;
         set_cluster_color_mode(sphereRef, clusterColorMode);
     }, [clusterColorMode, sphereRef]);
+
+    // Apply matplotlib colormap to cluster colors when specified
+    useEffect(() => {
+        if (!sphereRef || !colormap || !isValidColormap(colormap)) return;
+        const activeKey = get_active_cluster_count_key(sphereRef);
+        if (activeKey === null) return;
+        const nClusters = activeKey;
+        const colors = sampleColormap(colormap, nClusters);
+        for (let i = 0; i < colors.length; i++) {
+            set_cluster_color(sphereRef, i, colors[i]);
+        }
+        render_sphere(sphereRef);
+    }, [colormap, sphereRef]);
 
     // Sync playback speed to sphere (force 1x in thumbnail mode)
     useEffect(() => {
@@ -6030,6 +6046,8 @@ interface SphereEmbeddedProps {
     backgroundColor?: string;
     // Default alpha/opacity for points (0-1, default 0.5)
     pointAlpha?: number;
+    // Matplotlib colormap name for cluster colors (e.g. 'viridis', 'tab10', 'plasma')
+    colormap?: string;
 }
 
 // Final Sphere View Component - shows the completed sphere with all points
@@ -6192,7 +6210,7 @@ const FinalSphereView: React.FC<{
     );
 };
 
-export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, authToken, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity, onSphereReady, mode, dataEndpoint, theme = 'dark', backgroundColor, pointAlpha }: SphereEmbeddedProps) {
+export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, authToken, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity, onSphereReady, mode, dataEndpoint, theme = 'dark', backgroundColor, pointAlpha, colormap }: SphereEmbeddedProps) {
     // Check if we have final sphere data (coords + cluster_results) or just a session ID
     const hasFinalData = initial_data?.coords && initial_data?.coords.length > 0 && initial_data?.entire_cluster_results;
     const sessionId = initial_data?.session?.session_id;
@@ -6224,7 +6242,7 @@ export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, authTo
             <ThemeProvider mode={theme} backgroundColor={backgroundColor}>
             <div className="sphere-embedded-container">
                 <div className="mx-auto">
-                    <TrainingMovie sessionId={sessionId} apiBaseUrl={apiBaseUrl} authToken={authToken} mode={mode} dataEndpoint={dataEndpoint} pointAlpha={pointAlpha} />
+                    <TrainingMovie sessionId={sessionId} apiBaseUrl={apiBaseUrl} authToken={authToken} mode={mode} dataEndpoint={dataEndpoint} pointAlpha={pointAlpha} colormap={colormap} />
                 </div>
             </div>
             </ThemeProvider>

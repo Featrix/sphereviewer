@@ -52,6 +52,8 @@ interface FeatrixSphereViewerConfig {
   backgroundColor?: string;
   // Default alpha/opacity for points (0-1, default 0.5)
   pointAlpha?: number;
+  // Matplotlib colormap name for cluster colors (e.g. 'viridis', 'tab10', 'plasma')
+  colormap?: string;
 }
 
 class FeatrixSphereViewer {
@@ -100,6 +102,7 @@ class FeatrixSphereViewer {
       const theme = (themeAttr === 'dark' || themeAttr === 'light') ? themeAttr : undefined;
       const backgroundColor = script.getAttribute('data-background-color') || undefined;
       const pointAlpha = script.hasAttribute('data-point-alpha') ? parseFloat(script.getAttribute('data-point-alpha')!) : undefined;
+      const colormap = script.getAttribute('data-colormap') || undefined;
 
       // Display mode: 'thumbnail' or 'full' (from data attribute or URL param)
       const modeAttr = script.getAttribute('data-mode');
@@ -125,6 +128,7 @@ class FeatrixSphereViewer {
         theme,
         backgroundColor,
         pointAlpha,
+        colormap,
         onSphereReady: (window as any).onSphereReady || undefined
       };
 
@@ -329,6 +333,7 @@ class FeatrixSphereViewer {
         theme={config.theme}
         backgroundColor={config.backgroundColor}
         pointAlpha={config.pointAlpha}
+        colormap={config.colormap}
         onSphereReady={(sphereRef: any) => {
           this.sphereRef = sphereRef;
           if (config.onSphereReady) {
@@ -369,6 +374,7 @@ class FeatrixSphereViewer {
           theme={config.theme}
           backgroundColor={config.backgroundColor}
           pointAlpha={config.pointAlpha}
+          colormap={config.colormap}
         />
       );
     }
@@ -425,6 +431,7 @@ class FeatrixSphereViewer {
           theme={this.currentConfig.theme}
           backgroundColor={this.currentConfig.backgroundColor}
           pointAlpha={this.currentConfig.pointAlpha}
+          colormap={this.currentConfig.colormap}
           onSphereReady={(sphereRef: any) => this.sphereRef = sphereRef}
         />
       );
