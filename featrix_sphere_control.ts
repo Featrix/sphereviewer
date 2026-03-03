@@ -1303,8 +1303,8 @@ function orient_camera_to_point_density(sphere: SphereData) {
     const len = Math.sqrt(cx * cx + cy * cy + cz * cz);
     if (len < 0.01) return; // Points uniformly distributed, no dominant side
 
-    sphere.angle = Math.atan2(-cx, -cz);
-    sphere.verticalAngle = Math.asin(Math.max(-1, Math.min(1, -cy / len)));
+    sphere.angle = Math.atan2(cx, cz);
+    sphere.verticalAngle = Math.asin(Math.max(-1, Math.min(1, cy / len)));
 }
 
 // Training Movie Functions

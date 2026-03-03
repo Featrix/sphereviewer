@@ -354,13 +354,17 @@ const Canvas2DFallback: React.FC<{
         const resize = () => {
             const parent = actualRef.current;
             if (!parent || !canvas) return;
-            const w = parent.clientWidth || 800;
-            const h = parent.clientHeight || 600;
+            const pw = parent.clientWidth || 800;
+            const ph = parent.clientHeight || 600;
+            // Constrain to square so the sphere isn't stretched in tall/narrow containers
+            const size = Math.min(pw, ph);
             const dpr = window.devicePixelRatio || 1;
-            canvas.width = w * dpr;
-            canvas.height = h * dpr;
-            canvas.style.width = w + 'px';
-            canvas.style.height = h + 'px';
+            canvas.width = size * dpr;
+            canvas.height = size * dpr;
+            canvas.style.width = size + 'px';
+            canvas.style.height = size + 'px';
+            canvas.style.left = Math.round((pw - size) / 2) + 'px';
+            canvas.style.top = Math.round((ph - size) / 2) + 'px';
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         };
         resize();
@@ -774,7 +778,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
     const [showDynamicHulls, setShowDynamicHulls] = usePersistedState('showDynamicHulls', false);
     const [trailLength, setTrailLength] = usePersistedState('trailLength', 12);
     const [spotlightCluster, setSpotlightCluster] = useState<number>(-1); // -1 = off, 0+ = cluster number (not persisted - session specific)
-    const [sportMode, setSportMode] = useState(false); // Sport mode: fire trails + premium visuals
+    const sportMode = false; // Sport mode disabled
     const [showClusterAnalysis, setShowClusterAnalysis] = useState(false); // Cluster analysis modal
     const [clusterAnalysisView, setClusterAnalysisView] = useState<'signatures' | 'fields' | 'details'>('signatures');
     const [analysisClusterCount, setAnalysisClusterCount] = useState<string | null>(null); // null = use active, "4", "8", "12" etc
@@ -846,28 +850,23 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
     const [isSmallViewport, setIsSmallViewport] = useState(false);
 
     // Detect thumbnail mode from OUTER container size (only if mode not explicitly set)
+    // AND always detect isSmallViewport from container div size
     useEffect(() => {
-        // If mode is explicitly set, respect it
-        if (mode === 'thumbnail') {
-            setIsThumbnail(true);
-            return;
-        }
-        if (mode === 'full') {
-            setIsThumbnail(false);
-            return;
-        }
-
-        // Otherwise, detect based on container size
         if (!outerContainerRef.current) return;
         const resizeObserver = new ResizeObserver((entries) => {
             const entry = entries[0];
             const width = entry.contentRect.width;
             const height = entry.contentRect.height;
-            const isThumbnailMode = width < 800 || height < 600;
-            setIsThumbnail(isThumbnailMode);
-            setIsSmallViewport(width < 1000 || height < 1000);
+            // Always update viewport size from container div
+            setIsSmallViewport(width < 1000 || height < 700);
+            // Only auto-detect thumbnail mode if mode not explicitly set
+            if (mode !== 'thumbnail' && mode !== 'full') {
+                setIsThumbnail(width < 800 || height < 600);
+            }
         });
         resizeObserver.observe(outerContainerRef.current);
+        if (mode === 'thumbnail') setIsThumbnail(true);
+        if (mode === 'full') setIsThumbnail(false);
         return () => resizeObserver.disconnect();
     }, [mode]);
 
@@ -4626,97 +4625,6 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                     />
                 )}
 
-                {/* Sport Mode wedge button - lower right corner */}
-                {!isThumbnail && !isSmallViewport && <div
-                    onClick={() => setSportMode(!sportMode)}
-                    style={{
-                        position: 'absolute',
-                        bottom: 24,
-                        right: 24,
-                        width: '120px',
-                        height: '70px',
-                        cursor: 'pointer',
-                        zIndex: 150,
-                        pointerEvents: 'auto',
-                        transition: 'transform 120ms ease',
-                        userSelect: 'none',
-                    }}
-                    onMouseDown={(e) => { (e.currentTarget as HTMLElement).style.transform = 'translateY(2px)'; }}
-                    onMouseUp={(e) => { (e.currentTarget as HTMLElement).style.transform = 'translateY(0)'; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = 'translateY(0)'; }}
-                >
-                    <svg width="120" height="70" viewBox="0 0 120 70" xmlns="http://www.w3.org/2000/svg">
-                        <defs>
-                            <linearGradient id="svBgGrad" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="#1c1d20"/>
-                                <stop offset="100%" stopColor="#151619"/>
-                            </linearGradient>
-                            <linearGradient id="svEdgeGrad" x1="0" y1="0" x2="1" y2="1">
-                                <stop offset="0%" stopColor="#2a2c31"/>
-                                <stop offset="100%" stopColor="#0e0f12"/>
-                            </linearGradient>
-                            <pattern id="svCarbon" width="6" height="6" patternUnits="userSpaceOnUse">
-                                <rect width="6" height="6" fill="#18191c"/>
-                                <rect width="3" height="3" fill="#202226"/>
-                                <rect x="3" y="3" width="3" height="3" fill="#202226"/>
-                            </pattern>
-                            <filter id="svFireGlow" x="-50%" y="-50%" width="200%" height="200%">
-                                <feGaussianBlur stdDeviation="4" result="blur"/>
-                                <feMerge>
-                                    <feMergeNode in="blur"/>
-                                    <feMergeNode in="SourceGraphic"/>
-                                </feMerge>
-                            </filter>
-                        </defs>
-                        {/* Wedge body */}
-                        <path
-                            d="M0 70 L0 20 Q0 0 20 0 L120 0 L95 70 Z"
-                            fill="url(#svBgGrad)"
-                            stroke="url(#svEdgeGrad)"
-                            strokeWidth="1.5"
-                        />
-                        {/* Carbon fiber overlay */}
-                        <path
-                            d="M0 70 L0 20 Q0 0 20 0 L120 0 L95 70 Z"
-                            fill="url(#svCarbon)"
-                            opacity="0.08"
-                        />
-                        {/* S button background */}
-                        <rect
-                            x="65" y="18" width="38" height="32" rx="8"
-                            fill="#0f1013"
-                            stroke={sportMode ? '#f5b942' : '#2b2d33'}
-                            strokeWidth={sportMode ? 2 : 1.5}
-                            filter={sportMode ? 'url(#svFireGlow)' : 'none'}
-                            style={{ transition: 'stroke 300ms ease' }}
-                        />
-                        {/* S letter */}
-                        <text
-                            x="84" y="40"
-                            textAnchor="middle"
-                            dominantBaseline="central"
-                            fontFamily="Inter, Helvetica, Arial, sans-serif"
-                            fontSize="18"
-                            fontWeight={sportMode ? '700' : '600'}
-                            fill={sportMode ? '#f5b942' : '#e8e8e8'}
-                            style={{ transition: 'fill 300ms ease' }}
-                        >S</text>
-                    </svg>
-                </div>}
-
-                {/* Sport Mode ambient glow when active */}
-                {!isThumbnail && !isSmallViewport && sportMode && (
-                    <div style={{
-                        position: 'absolute',
-                        bottom: 0,
-                        right: 0,
-                        width: '250px',
-                        height: '150px',
-                        background: 'radial-gradient(ellipse at bottom right, rgba(245, 185, 66, 0.06) 0%, transparent 70%)',
-                        pointerEvents: 'none',
-                        zIndex: 90,
-                    }} />
-                )}
                 </div>
             </div>
 
