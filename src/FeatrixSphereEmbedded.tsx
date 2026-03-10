@@ -11,7 +11,8 @@
 import React, { Suspense, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
-import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch, fetch_thumbnail_data, fetch_model_card, fetch_from_data_endpoint, setRetryStatusCallback, ModelCard } from './embed-data-access';
+import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch, fetch_thumbnail_data, fetch_model_card, fetch_from_data_endpoint, fetch_training_glb, setRetryStatusCallback, ModelCard } from './embed-data-access';
+import { parseTrainingGLB, glbToTrainingMovieData } from './glb-loader';
 import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, set_wireframe_opacity, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles, register_event_listener, set_cluster_color_mode, compute_epoch_movement_stats, compute_movement_histogram_data, set_movie_auto_loop, trim_trail_history, set_playback_speed } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 import CollapsibleSection from './components/CollapsibleSection';
@@ -1151,35 +1152,58 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                     // Custom data endpoint (e.g., manifold_viz)
                     apiTrainingData = await fetch_from_data_endpoint(dataEndpoint, undefined, progressCallback, authToken);
                 } else {
-                    // Default: fetch from session epoch_projections with retry
-                    let retryCount = 0;
-                    const maxRetries = 3;
+                    // Try GLB binary format first (much smaller downloads)
+                    try {
+                        setLoadingStep('Fetching training data...');
+                        const glbResult = await fetch_training_glb(sessionId, apiBaseUrl, progressCallback, authToken);
+                        if (glbResult) {
+                            setLoadingStep('Decoding binary data...');
+                            const parsed = parseTrainingGLB(glbResult.glbBuffer);
+                            const converted = glbToTrainingMovieData(parsed, glbResult.sidecar);
+                            apiTrainingData = {
+                                epoch_projections: converted.epoch_projections,
+                                training_metrics: converted.training_metrics,
+                                _glb_session_cluster_results: converted.session_cluster_results,
+                            };
+                            console.log('📦 Using GLB binary format');
+                        }
+                    } catch (glbErr) {
+                        console.warn('📦 GLB parse failed, falling back to JSON:', glbErr);
+                        apiTrainingData = undefined;
+                    }
 
-                    while (retryCount <= maxRetries) {
-                        try {
-                            apiTrainingData = await fetch_training_metrics(
-                                sessionId,
-                                apiBaseUrl,
-                                10000,
-                                progressCallback,
-                                authToken
-                            );
-                            break; // Success
-                        } catch (err: any) {
-                            const is504 = err.message?.includes('504') || err.message?.includes('Gateway Timeout');
-                            const is500 = err.message?.includes('500') || err.message?.includes('Internal Server Error');
-                            if ((is504 || is500) && retryCount < maxRetries) {
-                                retryCount++;
-                                const waitTime = retryCount * 5;
-                                setLoadingStep(`Server timeout, retrying (${retryCount}/${maxRetries})...`);
-                                for (let i = waitTime; i > 0; i--) {
-                                    setLoadingDetail(`Retrying in ${i}s...`);
-                                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    // Fall back to JSON epoch_projections
+                    if (!apiTrainingData) {
+                        setLoadingStep('Fetching training epochs...');
+                        let retryCount = 0;
+                        const maxRetries = 3;
+
+                        while (retryCount <= maxRetries) {
+                            try {
+                                apiTrainingData = await fetch_training_metrics(
+                                    sessionId,
+                                    apiBaseUrl,
+                                    10000,
+                                    progressCallback,
+                                    authToken
+                                );
+                                break; // Success
+                            } catch (err: any) {
+                                const is504 = err.message?.includes('504') || err.message?.includes('Gateway Timeout');
+                                const is500 = err.message?.includes('500') || err.message?.includes('Internal Server Error');
+                                if ((is504 || is500) && retryCount < maxRetries) {
+                                    retryCount++;
+                                    const waitTime = retryCount * 5;
+                                    setLoadingStep(`Server timeout, retrying (${retryCount}/${maxRetries})...`);
+                                    for (let i = waitTime; i > 0; i--) {
+                                        setLoadingDetail(`Retrying in ${i}s...`);
+                                        await new Promise(resolve => setTimeout(resolve, 1000));
+                                    }
+                                    setLoadingStep('Fetching training epochs...');
+                                    setLoadingDetail('');
+                                } else {
+                                    throw err;
                                 }
-                                setLoadingStep('Fetching training epochs...');
-                                setLoadingDetail('');
-                            } else {
-                                throw err;
                             }
                         }
                     }
@@ -1199,12 +1223,19 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                     }
 
                     // Try to fetch final projections for cluster results AND full dataset
-                    let clusterResults = {};
+                    let clusterResults: Record<string, any> = {};
                     let fullProjectionsCoords: any[] = [];
                     let sourceDataByRowId: Map<number, any> = new Map();
 
+                    // If GLB provided session cluster results, use those
+                    if (apiTrainingData._glb_session_cluster_results) {
+                        clusterResults = apiTrainingData._glb_session_cluster_results;
+                        console.log('📦 Using cluster results from GLB sidecar:', Object.keys(clusterResults).length, 'cluster counts');
+                    }
+
                     // Skip supplementary fetches for custom data endpoints (e.g., manifold_viz)
-                    if (!dataEndpoint) {
+                    // Also skip if GLB already provided everything we need
+                    if (!dataEndpoint && !apiTrainingData._glb_session_cluster_results) {
                         setLoadingStep('Fetching full projections...');
                         setLoadingDetail(`${epochCount} epochs, ${pointCount} points per epoch`);
 

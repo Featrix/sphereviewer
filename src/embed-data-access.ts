@@ -506,6 +506,95 @@ export async function fetch_thumbnail_data(session_id: string, apiBaseUrl?: stri
     return null;
 }
 
+// Fetch training data in compact GLB binary format, with JSON sidecar for metadata.
+// Returns null if the endpoint doesn't exist (404) or fails, so caller can fall back to JSON.
+export async function fetch_training_glb(
+    session_id: string,
+    apiBaseUrl?: string,
+    onProgress?: (info: { bytesLoaded: number, totalBytes?: number, phase: string }) => void,
+    authToken?: string
+): Promise<{ glbBuffer: ArrayBuffer; sidecar: any | null } | null> {
+    const baseUrl = getApiBaseUrl(apiBaseUrl);
+    const headers = getAuthHeaders(authToken);
+
+    // --- Fetch GLB binary ---
+    const glbUrl = `${baseUrl}/compute/session/${session_id}/epoch_projections.glb`;
+    console.log('📦 Attempting GLB fetch:', glbUrl);
+    console.time('📦 GLB_FETCH');
+
+    let glbResponse: Response;
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), RETRY_CONFIG.fetchTimeout);
+        try {
+            glbResponse = await fetch(glbUrl, { headers, signal: controller.signal });
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    } catch (error) {
+        console.timeEnd('📦 GLB_FETCH');
+        console.log('📦 GLB endpoint not available, falling back to JSON');
+        return null;
+    }
+
+    if (!glbResponse.ok) {
+        console.timeEnd('📦 GLB_FETCH');
+        console.log(`📦 GLB endpoint returned ${glbResponse.status}, falling back to JSON`);
+        return null;
+    }
+
+    // Read GLB binary with progress
+    let glbBuffer: ArrayBuffer;
+    const contentLength = glbResponse.headers.get('Content-Length');
+    const totalBytes = contentLength ? parseInt(contentLength, 10) : undefined;
+
+    if (onProgress && glbResponse.body) {
+        const reader = glbResponse.body.getReader();
+        const chunks: Uint8Array[] = [];
+        let bytesLoaded = 0;
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            bytesLoaded += value.length;
+            onProgress({ bytesLoaded, totalBytes, phase: 'downloading' });
+        }
+
+        onProgress({ bytesLoaded, totalBytes, phase: 'parsing' });
+        const allChunks = new Uint8Array(bytesLoaded);
+        let position = 0;
+        for (const chunk of chunks) {
+            allChunks.set(chunk, position);
+            position += chunk.length;
+        }
+        glbBuffer = allChunks.buffer;
+    } else {
+        glbBuffer = await glbResponse.arrayBuffer();
+    }
+
+    console.timeEnd('📦 GLB_FETCH');
+    console.log(`📦 GLB downloaded: ${(glbBuffer.byteLength / 1024).toFixed(0)} KB`);
+
+    // --- Fetch JSON sidecar (metadata) ---
+    let sidecar = null;
+    try {
+        const sidecarUrl = `${baseUrl}/compute/session/${session_id}/epoch_projections_meta.json`;
+        console.log('📦 Fetching GLB sidecar:', sidecarUrl);
+        const sidecarResponse = await fetchWithRetry(sidecarUrl, { headers });
+        if (sidecarResponse.ok) {
+            sidecar = await safeJsonParse(sidecarResponse);
+            console.log('📦 GLB sidecar loaded:', Object.keys(sidecar));
+        } else {
+            console.warn('📦 GLB sidecar not available:', sidecarResponse.status);
+        }
+    } catch (error) {
+        console.warn('📦 GLB sidecar fetch failed:', error);
+    }
+
+    return { glbBuffer, sidecar };
+}
+
 // Fetch model card for column statistics (mutual information, predictability, etc.)
 export interface ColumnStatistics {
     mutual_information_bits?: number;
