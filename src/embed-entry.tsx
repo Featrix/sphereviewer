@@ -46,6 +46,9 @@ interface FeatrixSphereViewerConfig {
   authToken?: string;
   // Callback when sphere is ready
   onSphereReady?: (sphereRef: any) => void;
+  // Callback when maximize button is clicked in thumbnail mode.
+  // If not provided, defaults to browser fullscreen + switching to full mode.
+  onMaximize?: (sessionId?: string) => void;
   // Theme: 'dark' (default) or 'light'
   theme?: 'dark' | 'light';
   // Custom background color for the sphere container area
@@ -111,6 +114,10 @@ class FeatrixSphereViewer {
       const modeValue = modeAttr || modeParam;
       const mode = (modeValue === 'thumbnail' || modeValue === 'full') ? modeValue as 'thumbnail' | 'full' : undefined;
 
+      // Resolve onMaximize callback from data attribute (global function name)
+      const onMaximizeAttr = script.getAttribute('data-on-maximize');
+      const onMaximize = onMaximizeAttr ? (window as any)[onMaximizeAttr] as ((sessionId?: string) => void) : undefined;
+
       const config = {
         sessionId: sessionId || undefined,
         containerId: containerId || undefined,
@@ -129,7 +136,8 @@ class FeatrixSphereViewer {
         backgroundColor,
         pointAlpha,
         colormap,
-        onSphereReady: (window as any).onSphereReady || undefined
+        onSphereReady: (window as any).onSphereReady || undefined,
+        onMaximize,
       };
 
       // Priority: 1) Window data, 2) Data URL, 3) Session ID (legacy)
@@ -334,6 +342,7 @@ class FeatrixSphereViewer {
         backgroundColor={config.backgroundColor}
         pointAlpha={config.pointAlpha}
         colormap={config.colormap}
+        onMaximize={config.onMaximize}
         onSphereReady={(sphereRef: any) => {
           this.sphereRef = sphereRef;
           if (config.onSphereReady) {

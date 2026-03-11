@@ -282,6 +282,9 @@ interface TrainingMovieProps {
     pointAlpha?: number;
     // Matplotlib colormap name for cluster colors
     colormap?: string;
+    // Callback when maximize button is clicked in thumbnail mode.
+    // If not provided, defaults to browser fullscreen + switching to full mode.
+    onMaximize?: (sessionId?: string) => void;
 }
 
 // ============================================================================
@@ -749,7 +752,7 @@ const TrainingMovieSphere: React.FC<{
     );
 };
 
-const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, authToken, mode, dataEndpoint, pointAlpha: defaultPointAlpha, colormap }) => {
+const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, authToken, mode, dataEndpoint, pointAlpha: defaultPointAlpha, colormap, onMaximize }) => {
     const { theme, backgroundColor: bgOverride } = useTheme();
     // NOTE: Loading training movie from API (the working version)
     const [trainingData, setTrainingData] = useState<any>(null);
@@ -1717,12 +1720,38 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
         }
     };
 
+    // Handle maximize button click in thumbnail mode
+    const handleMaximize = useCallback(() => {
+        if (onMaximize) {
+            // Customer-provided callback
+            onMaximize(sessionId);
+        } else {
+            // Default: enter browser fullscreen and switch to full mode
+            setIsThumbnail(false);
+            if (document.documentElement.requestFullscreen) {
+                document.documentElement.requestFullscreen();
+            }
+            setIsFullscreen(true);
+            // Trigger resize so the sphere re-renders at full size
+            setTimeout(() => {
+                window.dispatchEvent(new Event('resize'));
+                if (sphereRef) render_sphere(sphereRef);
+            }, 150);
+        }
+    }, [onMaximize, sessionId, sphereRef]);
+
     // Listen for fullscreen changes (user pressing ESC) and resize sphere
     useEffect(() => {
         const handleFullscreenChange = () => {
             const isCurrentlyFullscreen = !!document.fullscreenElement;
             setIsFullscreen(isCurrentlyFullscreen);
-            
+
+            // If exiting fullscreen and we were maximized from thumbnail via default behavior,
+            // restore thumbnail mode
+            if (!isCurrentlyFullscreen && mode === 'thumbnail' && !onMaximize) {
+                setIsThumbnail(true);
+            }
+
             // Resize sphere when fullscreen changes - delay to ensure DOM has updated
             if (sphereRef) {
                 setTimeout(() => {
@@ -1738,7 +1767,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
 
         document.addEventListener('fullscreenchange', handleFullscreenChange);
         return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-    }, [sphereRef]);
+    }, [sphereRef, mode, onMaximize]);
     
     // Get column types helper (same as FinalSphereView)
     const getColumnTypes = (projections: any) => {
@@ -4589,6 +4618,44 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                     </div>
                 )}
 
+                {/* Maximize button overlay - visible only in thumbnail mode */}
+                {isThumbnail && (
+                    <button
+                        onClick={handleMaximize}
+                        style={{
+                            position: 'absolute',
+                            bottom: '10px',
+                            right: '10px',
+                            width: '32px',
+                            height: '32px',
+                            background: 'rgba(0, 0, 0, 0.5)',
+                            backdropFilter: 'blur(8px)',
+                            WebkitBackdropFilter: 'blur(8px)',
+                            border: '1px solid rgba(255, 255, 255, 0.15)',
+                            borderRadius: '6px',
+                            color: 'rgba(255, 255, 255, 0.8)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            zIndex: 100,
+                            padding: 0,
+                            transition: 'background 0.2s, color 0.2s',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0, 0, 0, 0.7)'; e.currentTarget.style.color = 'rgba(255, 255, 255, 1)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(0, 0, 0, 0.5)'; e.currentTarget.style.color = 'rgba(255, 255, 255, 0.8)'; }}
+                        title="Maximize"
+                    >
+                        {/* Expand/maximize icon (arrows pointing outward) */}
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="15 3 21 3 21 9" />
+                            <polyline points="9 21 3 21 3 15" />
+                            <line x1="21" y1="3" x2="14" y2="10" />
+                            <line x1="3" y1="21" x2="10" y2="14" />
+                        </svg>
+                    </button>
+                )}
+
                 {/* Playback Overlay - reusable PlaybackController component */}
                 {frameInfo && frameInfo.total > 0 && !isThumbnail && !(isMobile && showMobilePanel) && (
                     <PlaybackController
@@ -5987,6 +6054,8 @@ interface SphereEmbeddedProps {
     pointAlpha?: number;
     // Matplotlib colormap name for cluster colors (e.g. 'viridis', 'tab10', 'plasma')
     colormap?: string;
+    // Callback when maximize button is clicked in thumbnail mode
+    onMaximize?: (sessionId?: string) => void;
 }
 
 // Final Sphere View Component - shows the completed sphere with all points
@@ -6149,7 +6218,7 @@ const FinalSphereView: React.FC<{
     );
 };
 
-export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, authToken, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity, onSphereReady, mode, dataEndpoint, theme = 'dark', backgroundColor, pointAlpha, colormap }: SphereEmbeddedProps) {
+export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, authToken, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity, onSphereReady, mode, dataEndpoint, theme = 'dark', backgroundColor, pointAlpha, colormap, onMaximize }: SphereEmbeddedProps) {
     // Check if we have final sphere data (coords + cluster_results) or just a session ID
     const hasFinalData = initial_data?.coords && initial_data?.coords.length > 0 && initial_data?.entire_cluster_results;
     const sessionId = initial_data?.session?.session_id;
@@ -6181,7 +6250,7 @@ export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, authTo
             <ThemeProvider mode={theme} backgroundColor={backgroundColor}>
             <div className="sphere-embedded-container">
                 <div className="mx-auto">
-                    <TrainingMovie sessionId={sessionId} apiBaseUrl={apiBaseUrl} authToken={authToken} mode={mode} dataEndpoint={dataEndpoint} pointAlpha={pointAlpha} colormap={colormap} />
+                    <TrainingMovie sessionId={sessionId} apiBaseUrl={apiBaseUrl} authToken={authToken} mode={mode} dataEndpoint={dataEndpoint} pointAlpha={pointAlpha} colormap={colormap} onMaximize={onMaximize} />
                 </div>
             </div>
             </ThemeProvider>
