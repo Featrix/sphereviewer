@@ -2,8 +2,8 @@
  * @license
  * Featrix Sphere Viewer - GLB Binary Loader
  *
- * Copyright (c) 2024-2025 Featrix
- * Licensed under the MIT License
+ * Copyright (c) 2023-2025 Featrix
+ * Licensed under the BSD 4-Clause License (see LICENSE file)
  *
  * Parses GLB binary containers for compact training movie data.
  * Format: standard GLB header (12 bytes) + JSON chunk (metadata) + binary chunk (typed arrays).

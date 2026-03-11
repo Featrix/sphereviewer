@@ -1,7 +1,7 @@
 {
   "name": "@featrix/sphere-viewer",
   "version": "1.220",
-  "description": "Embeddable 3D sphere data visualization component using Three.js and React. Copyright (c) 2024-2025 Featrix.",
+  "description": "Embeddable 3D sphere data visualization component using Three.js and React. Copyright (c) 2023-2025 Featrix.",
   "main": "dist/sphere-viewer.js",
   "files": [
     "dist/sphere-viewer.js",
@@ -33,7 +33,7 @@
     "component"
   ],
   "author": "Featrix <support@featrix.com>",
-  "license": "MIT",
+  "license": "BSD-4-Clause",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Featrix/sphereviewer.git"

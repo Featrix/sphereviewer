@@ -343,7 +343,7 @@ npm run dev          # Development server
 
 ## 📄 License
 
-MIT License - Copyright (c) 2024-2025 Featrix
+BSD 4-Clause License - Copyright (c) 2023-2025 Featrix
 
 ## 🤝 Support
 
