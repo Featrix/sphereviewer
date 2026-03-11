@@ -365,18 +365,84 @@ function MyPage({ featrixData }) {
 }
 ```
 
-## Training Movies
+## Using with Other Data Sources — Animated 3D Spaces
 
-The Sphere Viewer supports training movie playback for visualizing ML training convergence. Training movie data is automatically loaded when available from the Featrix API.
+The Sphere Viewer isn't limited to Featrix data. You can visualize **any 3D point data** and animate your own training processes, simulations, or time-series data.
 
-### Accessing Training Movies
+### Static Visualization
 
-Training movies are available when:
-- Using `data-session-id` mode (legacy API mode)
-- Your data includes training movie metadata
-- The session has completed training with epoch progression data
+Provide coordinates directly — no Featrix account needed:
 
-The training movie shows the evolution of data points through training epochs, displaying the convergence process in a fixed 10-second window with continuous looping.
+```javascript
+viewer.init({
+  data: {
+    session: { session_id: "my-data", status: "done", done: true },
+    coords: [
+      { "0": -2.5, "1": 1.3, "2": 0.8, "__featrix_row_id": 0, "__featrix_row_offset": 0,
+        scalar_columns: { value: 42 }, set_columns: { group: "A" } },
+      // ... more points (any number)
+    ],
+    entire_cluster_results: {
+      "3": { cluster_labels: [0, 1, 2, 0, 1], n_clusters: 3 }
+    }
+  }
+});
+```
+
+Coordinates can be objects with numeric keys (`"0"`, `"1"`, `"2"`), named keys (`"x"`, `"y"`, `"z"`), or plain arrays (`[x, y, z]`).
+
+### Animated Training Movies
+
+To animate points moving over time (training epochs, simulation steps, etc.), serve a JSON endpoint that returns `epoch_projections`:
+
+```javascript
+viewer.init({
+  data: { session: { session_id: "my-training" } },
+  dataEndpoint: '/api/my-projections',  // Your endpoint
+});
+```
+
+Your endpoint returns:
+
+```json
+{
+  "epoch_projections": {
+    "epoch_1": {
+      "coords": [
+        { "0": -2.5, "1": 1.3, "2": 0.8, "__featrix_row_offset": 0 },
+        { "0": 1.2, "1": -0.5, "2": 0.3, "__featrix_row_offset": 1 }
+      ]
+    },
+    "epoch_2": {
+      "coords": [
+        { "0": -2.4, "1": 1.4, "2": 0.7, "__featrix_row_offset": 0 },
+        { "0": 1.3, "1": -0.4, "2": 0.4, "__featrix_row_offset": 1 }
+      ]
+    }
+  },
+  "training_metrics": {
+    "validation_loss": [
+      { "epoch": 1, "value": 2.5 },
+      { "epoch": 2, "value": 2.1 }
+    ]
+  }
+}
+```
+
+**Requirements:**
+- Epoch keys: `"epoch_N"` (sorted numerically)
+- Same number of points in every epoch
+- `__featrix_row_offset` tracks points across epochs
+- `training_metrics` (optional) shows a loss chart during playback
+
+### Example Use Cases
+
+- **ML Training Convergence** — Watch embeddings organize over training
+- **Dimensionality Reduction** — Animate t-SNE/UMAP parameter sweeps
+- **Simulation Playback** — Particle systems, molecular dynamics, agent models
+- **Time-Series 3D Data** — Sensor grids, GPS tracks, weather data over time
+
+> Full format specification: [TRAINING_MOVIE_JSON_FORMAT.md](TRAINING_MOVIE_JSON_FORMAT.md) | Static data format: [FEATRIX_DATA_FORMAT.md](FEATRIX_DATA_FORMAT.md) | General purpose examples: [GENERAL_PURPOSE_USAGE.md](GENERAL_PURPOSE_USAGE.md)
 
 ## Troubleshooting
 

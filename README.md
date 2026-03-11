@@ -114,24 +114,157 @@ Your data should follow this structure:
 | `onSphereReady` | function | `undefined` | Callback when sphere is initialized: `(sphereRef) => void` |
 | `onMaximize` | function | `undefined` | Callback when maximize button is clicked in thumbnail mode: `(sessionId?) => void`. If not provided, defaults to browser fullscreen. |
 
-## 🎬 Training Movies
+## 🎬 Using with Other Data Sources
 
-For ML training visualization, provide epoch progression data:
+The Sphere Viewer works with **any 3D point data** — not just Featrix exports. You can animate your own training processes, visualize time-series 3D data, or display any animated 3D point cloud.
+
+### Static Sphere (Single Frame)
+
+For a single, non-animated 3D visualization, provide coordinates and optional clustering:
 
 ```javascript
-const trainingData = {
-  "epoch_1": { coords: [[x1,y1,z1], [x2,y2,z2], ...] },
-  "epoch_2": { coords: [[x1,y1,z1], [x2,y2,z2], ...] },
-  // ... more epochs
-};
-
+const viewer = new FeatrixSphereViewer();
 viewer.init({
   data: {
-    session: { session_id: "training-session" },
-    trainingMovieData: trainingData
+    session: { session_id: "my-analysis", status: "done", done: true },
+    coords: [
+      { "0": -2.5, "1": 1.3, "2": 0.8, "__featrix_row_id": 0, "__featrix_row_offset": 0,
+        scalar_columns: { temperature: 98.6 },
+        set_columns: { category: "A" } },
+      { "0": 1.2, "1": -0.5, "2": 0.3, "__featrix_row_id": 1, "__featrix_row_offset": 1,
+        scalar_columns: { temperature: 72.1 },
+        set_columns: { category: "B" } }
+      // ... more points
+    ],
+    entire_cluster_results: {
+      "2": { cluster_labels: [0, 1], n_clusters: 2, silhouette_score: 0.75 }
+    }
   }
 });
 ```
+
+**Coordinate formats supported:**
+- Object with numeric keys: `{ "0": x, "1": y, "2": z }` (standard)
+- Object with named keys: `{ "x": x, "y": y, "z": z }`
+- Simple arrays: `[x, y, z]`
+
+### Animated Training Movie (Multi-Epoch)
+
+To animate your own training process, dimensionality reduction, or any time-varying 3D data, provide an `epoch_projections` object. Each epoch contains the positions of all points at that timestep — the viewer animates between them as a "training movie."
+
+**Via `dataEndpoint`** (recommended for large datasets):
+
+Point `dataEndpoint` at a URL that returns the epoch projections JSON. The viewer fetches, caches, and plays the animation automatically:
+
+```javascript
+viewer.init({
+  data: { session: { session_id: "my-training" } },
+  dataEndpoint: '/api/my-training/projections',  // Your server endpoint
+  colormap: 'viridis',
+  pointAlpha: 0.7
+});
+```
+
+Your endpoint should return:
+
+```json
+{
+  "epoch_projections": {
+    "epoch_1": {
+      "coords": [
+        { "0": -2.5, "1": 1.3, "2": 0.8, "__featrix_row_offset": 0 },
+        { "0": 1.2, "1": -0.5, "2": 0.3, "__featrix_row_offset": 1 }
+      ],
+      "entire_cluster_results": {
+        "3": { "cluster_labels": [0, 1], "n_clusters": 3 }
+      }
+    },
+    "epoch_2": {
+      "coords": [
+        { "0": -2.4, "1": 1.4, "2": 0.7, "__featrix_row_offset": 0 },
+        { "0": 1.3, "1": -0.4, "2": 0.4, "__featrix_row_offset": 1 }
+      ]
+    },
+    "epoch_10": {
+      "coords": [
+        { "0": -1.8, "1": 1.9, "2": 0.2, "__featrix_row_offset": 0 },
+        { "0": 1.8, "1": -0.1, "2": 0.9, "__featrix_row_offset": 1 }
+      ]
+    }
+  },
+  "training_metrics": {
+    "validation_loss": [
+      { "epoch": 1, "value": 2.5 },
+      { "epoch": 2, "value": 2.3 },
+      { "epoch": 10, "value": 1.1 }
+    ]
+  }
+}
+```
+
+**Key rules:**
+- Epoch keys must be `"epoch_N"` where N is a number — they are sorted numerically
+- All epochs must have the **same number of points** in `coords`
+- Use `__featrix_row_offset` to track individual points across epochs (same offset = same point)
+- `entire_cluster_results` is optional and typically only on the first or last epoch
+- `training_metrics` is optional — if provided, a loss chart overlay appears during playback
+
+### Python: Generate Training Movie Data
+
+```python
+import json
+import numpy as np
+from sklearn.manifold import TSNE
+
+# Your training loop captures embeddings at each epoch
+all_epoch_embeddings = {}  # epoch_num -> (N, hidden_dim) array
+
+epoch_projections = {}
+for epoch_num, embeddings in all_epoch_embeddings.items():
+    # Project to 3D (use same random_state for consistency)
+    coords_3d = TSNE(n_components=3, random_state=42).fit_transform(embeddings)
+
+    epoch_projections[f"epoch_{epoch_num}"] = {
+        "coords": [
+            {
+                "0": float(coords_3d[i, 0]),
+                "1": float(coords_3d[i, 1]),
+                "2": float(coords_3d[i, 2]),
+                "__featrix_row_offset": i,
+                "scalar_columns": {"label": int(labels[i])}
+            }
+            for i in range(len(coords_3d))
+        ]
+    }
+
+# Add cluster results to the final epoch
+from sklearn.cluster import KMeans
+final_coords = list(all_epoch_embeddings.values())[-1]
+km = KMeans(n_clusters=5, random_state=42).fit(final_coords)
+last_key = list(epoch_projections.keys())[-1]
+epoch_projections[last_key]["entire_cluster_results"] = {
+    "5": {
+        "cluster_labels": km.labels_.tolist(),
+        "n_clusters": 5,
+        "algorithm": "kmeans"
+    }
+}
+
+with open("training_movie.json", "w") as f:
+    json.dump({"epoch_projections": epoch_projections}, f)
+```
+
+Then serve it or host it as a static file and point `dataEndpoint` at it.
+
+### Use Cases
+
+- **ML Training Convergence** — Watch embeddings organize as your model trains
+- **Dimensionality Reduction** — Animate t-SNE/UMAP perplexity sweeps
+- **Simulation Playback** — Particle systems, molecular dynamics, agent-based models
+- **Time-Series 3D Data** — Sensor grids, weather stations, GPS tracks over time
+- **A/B Comparison** — Show before/after as two epochs
+
+> For complete format details, see [TRAINING_MOVIE_JSON_FORMAT.md](TRAINING_MOVIE_JSON_FORMAT.md) and [FEATRIX_DATA_FORMAT.md](FEATRIX_DATA_FORMAT.md).
 
 ## 🎨 Advanced Features
 
