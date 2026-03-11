@@ -63,7 +63,7 @@ This creates `dist/sphere-viewer.js` - your embeddable component.
     
     <script>
         // Initialize manually
-        const viewer = new window.SphereViewer();
+        const viewer = new window.FeatrixSphereViewer();
         viewer.init({
             sessionId: 'your-session-id-here',
             containerId: 'my-sphere-container',
@@ -85,19 +85,33 @@ This creates `dist/sphere-viewer.js` - your embeddable component.
 | `data-api-base-url` | ❌ | Custom API base URL (default: https://sphere-api.featrix.com) |
 | `data-auth-token` | ❌ | JWT bearer token for authenticated API requests |
 | `data-mode` | ❌ | Display mode: `thumbnail` (minimal UI, Canvas2D) or `full` (default) |
+| `data-width` | ❌ | Container width (e.g. `800px`, `100%`) |
+| `data-height` | ❌ | Container height (e.g. `600px`, `100vh`) |
+| `data-theme` | ❌ | Color theme: `dark` (default) or `light` |
+| `data-background-color` | ❌ | Custom background color for the sphere area |
+| `data-point-alpha` | ❌ | Default alpha/opacity for points, 0–1 (default: `0.5`) |
+| `data-colormap` | ❌ | Matplotlib colormap name (e.g. `viridis`, `tab10`, `plasma`) |
+| `data-endpoint` | ❌ | Custom data endpoint URL (overrides default epoch_projections) |
+| `data-on-maximize` | ❌ | Global function name called when thumbnail maximize button is clicked |
 
 ### JavaScript API
 
 ```javascript
-const viewer = new window.SphereViewer();
+const viewer = new window.FeatrixSphereViewer();
 
 // Initialize
 viewer.init({
-    sessionId: 'your-session-id',     // Required
+    sessionId: 'your-session-id',     // Required (or use data: {...})
     containerId: 'container-id',      // Optional (default: 'sphere-viewer-container')
     apiBaseUrl: 'https://api.com',    // Optional (default: 'https://sphere-api.featrix.com')
     authToken: 'your-jwt-token',      // Optional: JWT for authenticated API requests
-    mode: 'full'                      // Optional: 'full' (default) or 'thumbnail'
+    mode: 'full',                     // Optional: 'full' (default) or 'thumbnail'
+    theme: 'dark',                    // Optional: 'dark' (default) or 'light'
+    backgroundColor: '#1a1025',       // Optional: custom background color
+    pointAlpha: 0.5,                  // Optional: default point opacity (0-1)
+    colormap: 'viridis',             // Optional: matplotlib colormap name
+    onMaximize: (sessionId) => {},   // Optional: thumbnail maximize callback
+    onSphereReady: (sphere) => {},   // Optional: called when sphere is ready
 });
 
 // Update to new session
@@ -148,14 +162,18 @@ If the platform allows custom HTML:
 
 ```
 src/
-├── embed-entry.tsx          # Main entry point for embeddable version
-├── SphereViewerApp.tsx      # Root app component
-├── SphereEmbedded.tsx       # Adapted Sphere component
-├── embed-data-access.ts     # Data fetching utilities
-└── embed-styles.css         # Embedded styles
+├── embed-entry.tsx              # Main entry point, config parsing, FeatrixSphereViewer class
+├── FeatrixSphereEmbedded.tsx    # Main React component (TrainingMovie, Canvas2D fallback, UI)
+├── embed-data-access.ts         # API data fetching utilities
+├── embed-styles-minimal.css     # Embedded styles
+├── PlaybackController.tsx       # Glassmorphic playback bar component
+├── ThemeContext.tsx              # Theme system (dark/light)
+├── colormaps.ts                 # Matplotlib colormap support
+├── glb-loader.ts                # GLB binary format loader
+└── components/                  # Reusable UI components
 
 dist/
-└── sphere-viewer.js         # Built embeddable component
+└── sphere-viewer.js             # Built embeddable component (~835KB)
 ```
 
 ### Build Configuration
@@ -217,6 +235,35 @@ When WebGL is unavailable (GPU crash, headless browser, disabled hardware accele
 ### Thumbnail Mode
 When `mode="thumbnail"`, the viewer always uses Canvas2D rendering (no WebGL context consumed). This prevents exhausting the browser's ~16 WebGL context limit when displaying many viewers on one page. Thumbnail mode also hides all UI controls.
 
+A **maximize button** (expand icon, bottom-right) appears on hover in thumbnail mode. You can control its behavior:
+
+```javascript
+// Option A: Custom callback — you handle the maximize action
+viewer.init({
+  mode: 'thumbnail',
+  onMaximize: (sessionId) => {
+    // Open a modal, navigate to a full page, etc.
+    openMyModal(sessionId);
+  }
+});
+
+// Option B: Default behavior (no onMaximize) — enters browser fullscreen,
+// switches to full mode with all controls. Pressing ESC restores thumbnail.
+viewer.init({ mode: 'thumbnail' });
+```
+
+Via script tag:
+```html
+<!-- Custom callback (global function name) -->
+<script src="sphere-viewer.js"
+        data-mode="thumbnail"
+        data-on-maximize="myApp.expandSphere"></script>
+
+<!-- Default fullscreen behavior -->
+<script src="sphere-viewer.js"
+        data-mode="thumbnail"></script>
+```
+
 ## 🔍 Troubleshooting
 
 ### Common Issues
@@ -233,7 +280,7 @@ Enable console logging:
 
 ```javascript
 // In browser console
-window.SphereViewerDebug = true;
+window.FeatrixSphereViewerDebug = true;
 ```
 
 ### Browser Compatibility

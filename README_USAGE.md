@@ -262,7 +262,14 @@ const viewer = new window.FeatrixSphereViewer();
 viewer.init({
   data: featrixDataObject,           // Required: Your Featrix data
   containerId: 'my-container',       // Optional: Target container ID
-  apiBaseUrl: 'https://api.com'      // Optional: For legacy sessionId mode
+  apiBaseUrl: 'https://api.com',     // Optional: For legacy sessionId mode
+  mode: 'full',                      // Optional: 'full' or 'thumbnail'
+  theme: 'dark',                     // Optional: 'dark' or 'light'
+  backgroundColor: '#1a1025',        // Optional: custom background
+  pointAlpha: 0.5,                   // Optional: point opacity (0-1)
+  colormap: 'viridis',              // Optional: matplotlib colormap
+  onMaximize: (sessionId) => {},    // Optional: thumbnail maximize callback
+  onSphereReady: (sphereRef) => {}, // Optional: called when ready
 });
 
 // Update with new data
@@ -283,7 +290,15 @@ viewer.destroy();
 | `data-container-id` | Target container ID | `data-container-id="my-sphere"` |
 | `data-session-id` | API mode - fetch by session ID | `data-session-id="abc123"` |
 | `data-auth-token` | JWT bearer token for API auth | `data-auth-token="eyJhbG..."` |
-| `data-mode` | Display mode | `data-mode="thumbnail"` (Canvas2D, no UI) |
+| `data-mode` | Display mode: `thumbnail` or `full` | `data-mode="thumbnail"` |
+| `data-width` | Container width | `data-width="800px"` |
+| `data-height` | Container height | `data-height="600px"` |
+| `data-theme` | Color theme: `dark` or `light` | `data-theme="light"` |
+| `data-background-color` | Custom background color | `data-background-color="#1a1025"` |
+| `data-point-alpha` | Default point opacity (0–1) | `data-point-alpha="0.7"` |
+| `data-colormap` | Matplotlib colormap name | `data-colormap="viridis"` |
+| `data-endpoint` | Custom data endpoint URL | `data-endpoint="/api/projections"` |
+| `data-on-maximize` | Global function for thumbnail maximize | `data-on-maximize="expandSphere"` |
 
 ## Rendering Modes
 

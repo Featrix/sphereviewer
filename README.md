@@ -97,13 +97,22 @@ Your data should follow this structure:
 |--------|------|---------|-------------|
 | `data` | Object | required | Your formatted data object |
 | `containerId` | string | `'sphere-viewer-container'` | Target DOM element ID |
+| `width` | string | `'100%'` | Container width (e.g. `'100%'`, `'800px'`) |
+| `height` | string | `'500px'` | Container height (e.g. `'100vh'`, `'600px'`) |
 | `isRotating` | boolean | `true` | Enable automatic rotation |
 | `rotationSpeed` | number | `0.1` | Rotation speed (radians/sec) |
 | `pointSize` | number | `0.05` | Size of data points |
 | `pointOpacity` | number | `0.5` | Transparency of points |
+| `pointAlpha` | number | `0.5` | Default alpha/opacity for points (0–1) |
 | `animateClusters` | boolean | `false` | Enable cluster animations |
 | `authToken` | string | `undefined` | JWT bearer token for authenticated API requests |
 | `mode` | string | `'full'` | Display mode: `'full'` or `'thumbnail'` (Canvas2D only, no UI controls) |
+| `theme` | string | `'dark'` | Color theme: `'dark'` or `'light'` |
+| `backgroundColor` | string | `undefined` | Custom background color for the sphere area |
+| `colormap` | string | `undefined` | Matplotlib colormap name for cluster colors (e.g. `'viridis'`, `'tab10'`, `'plasma'`) |
+| `dataEndpoint` | string | `undefined` | Custom data endpoint URL (overrides default epoch_projections URL) |
+| `onSphereReady` | function | `undefined` | Callback when sphere is initialized: `(sphereRef) => void` |
+| `onMaximize` | function | `undefined` | Callback when maximize button is clicked in thumbnail mode: `(sessionId?) => void`. If not provided, defaults to browser fullscreen. |
 
 ## 🎬 Training Movies
 
@@ -184,8 +193,8 @@ Browsers without WebGL support (or with GPU crashes) automatically fall back to 
 
 ## 📈 Performance
 
-- **Bundle Size**: 567KB (minified)
-- **Gzipped**: ~180KB 
+- **Bundle Size**: ~835KB (minified)
+- **Gzipped**: ~220KB
 - **Load Time**: <2s on 3G
 - **Max Points**: 5000+ (smooth 60fps)
 

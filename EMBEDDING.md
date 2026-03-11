@@ -22,6 +22,10 @@ That's it. It auto-creates a container div and initializes.
 
 ## Job Queue Dashboard (Many Spheres, Click to Zoom)
 
+> **Tip:** Thumbnail mode now includes a built-in maximize button (bottom-right, appears on hover).
+> You can use `onMaximize` to handle it with a custom callback, or let the default behavior
+> enter browser fullscreen. The example below shows a fully custom approach for maximum control.
+
 This is the pattern for embedding sphere thumbnails in a dashboard where each
 job/session gets a small preview and the user can click to expand fullscreen.
 
@@ -296,6 +300,14 @@ For the simple single-sphere case, everything can go on the script tag:
 | `data-rotation-speed` | no | `0.1` | Rotation speed |
 | `data-point-size` | no | `0.05` | Point size |
 | `data-point-opacity` | no | `0.5` | Point opacity |
+| `data-point-alpha` | no | `0.5` | Default point alpha/opacity (0–1) |
+| `data-mode` | no | `full` | Display mode: `thumbnail` or `full` |
+| `data-theme` | no | `dark` | Color theme: `dark` or `light` |
+| `data-background-color` | no | -- | Custom background color |
+| `data-colormap` | no | -- | Matplotlib colormap name (e.g., `viridis`, `tab10`) |
+| `data-endpoint` | no | -- | Custom data endpoint URL |
+| `data-auth-token` | no | -- | JWT bearer token for API auth |
+| `data-on-maximize` | no | -- | Global function name for thumbnail maximize callback |
 
 ---
 
@@ -309,12 +321,19 @@ viewer.init({
     sessionId: 'abc-123',
     containerId: 'my-div',
     apiBaseUrl: '/proxy/featrix',
-    width: '100%',       // Container width (default: '100%')
-    height: '100vh',     // Container height (default: '500px' for new containers, or fills existing)
+    width: '100%',                // Container width (default: '100%')
+    height: '100vh',              // Container height (default: '500px')
     isRotating: true,
     pointSize: 0.02,
     pointOpacity: 0.5,
-    onSphereReady: (sphere) => { console.log('ready', sphere); }
+    pointAlpha: 0.5,              // Default point opacity (0-1)
+    mode: 'full',                 // 'full' or 'thumbnail'
+    theme: 'dark',                // 'dark' or 'light'
+    backgroundColor: '#1a1025',   // Custom background color
+    colormap: 'viridis',          // Matplotlib colormap for cluster colors
+    authToken: 'eyJhbG...',       // JWT bearer token
+    onSphereReady: (sphere) => { console.log('ready', sphere); },
+    onMaximize: (sessionId) => { console.log('maximize', sessionId); },
 });
 
 // Update settings live (no reload)
@@ -336,12 +355,6 @@ viewer.destroy();
 ## Deploying a New Build
 
 ```bash
-npm run deploy:full    # builds + deploys to bits.featrix.com/sv/
-```
-
-Or step by step:
-
-```bash
-npm run build:embed    # build sphere-viewer.js
-npm run deploy         # scp to bits
+npm run build:embed       # build sphere-viewer.js
+./deploy-to-bits.sh       # deploy to bits.featrix.com/sv/
 ```

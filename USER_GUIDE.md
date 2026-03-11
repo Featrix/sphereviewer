@@ -194,11 +194,21 @@ The Sphere Viewer expects data in the Featrix export format. When you export dat
 | `data-session-id` | ⚠️ | Legacy API mode - requires API access (deprecated, use data-driven methods) |
 | `data-container-id` | ❌ | Target container ID (default: `sphere-viewer-container`) |
 | `data-api-base-url` | ❌ | Custom API endpoint (only needed for `data-session-id` mode) |
+| `data-width` | ❌ | Container width, e.g. `800px`, `100%` (default: `100%`) |
+| `data-height` | ❌ | Container height, e.g. `600px`, `100vh` (default: `500px`) |
 | `data-is-rotating` | ❌ | Enable automatic rotation (default: `true`) |
 | `data-rotation-speed` | ❌ | Rotation speed in radians/sec (default: `0.1`) |
 | `data-point-size` | ❌ | Size of data points (default: `0.05`) |
 | `data-point-opacity` | ❌ | Transparency of points (default: `0.5`) |
+| `data-point-alpha` | ❌ | Default alpha/opacity for points, 0–1 (default: `0.5`) |
 | `data-animate-clusters` | ❌ | Enable cluster animations (default: `false`) |
+| `data-mode` | ❌ | Display mode: `thumbnail` (Canvas2D, no UI) or `full` (default) |
+| `data-theme` | ❌ | Color theme: `dark` (default) or `light` |
+| `data-background-color` | ❌ | Custom background color for the sphere area |
+| `data-colormap` | ❌ | Matplotlib colormap name (e.g. `viridis`, `tab10`, `plasma`) |
+| `data-endpoint` | ❌ | Custom data endpoint URL (overrides default epoch_projections URL) |
+| `data-auth-token` | ❌ | JWT bearer token for authenticated API requests |
+| `data-on-maximize` | ❌ | Name of a global function to call when the thumbnail maximize button is clicked |
 
 ### JavaScript API Configuration
 
@@ -209,23 +219,37 @@ viewer.init({
   // Data (required - use one of these)
   data: featrixDataObject,           // Direct data object
   sessionId: 'session-id',           // Legacy: Load from API
-  
+
   // Container (optional)
   containerId: 'my-container',       // Default: 'sphere-viewer-container'
   apiBaseUrl: 'https://api.com',     // Only for sessionId mode
-  
+  width: '100%',                      // Container width (default: '100%')
+  height: '600px',                    // Container height (default: '500px')
+
   // Animation controls (optional)
   isRotating: true,                   // Default: true
   rotationSpeed: 0.1,                 // Default: 0.1
   animateClusters: false,             // Default: false
-  
+
   // Visual controls (optional)
   pointSize: 0.05,                    // Default: 0.05
   pointOpacity: 0.5,                  // Default: 0.5
-  
-  // Callback (optional)
+  pointAlpha: 0.5,                    // Default alpha/opacity (0-1)
+  colormap: 'viridis',               // Matplotlib colormap for cluster colors
+
+  // Display options (optional)
+  mode: 'full',                       // 'full' (default) or 'thumbnail'
+  theme: 'dark',                      // 'dark' (default) or 'light'
+  backgroundColor: '#1a1025',         // Custom background color
+  dataEndpoint: '/api/my-data',       // Custom data endpoint URL
+  authToken: 'eyJhbG...',            // JWT bearer token
+
+  // Callbacks (optional)
   onSphereReady: (sphereRef) => {     // Called when sphere is initialized
     console.log('Sphere ready!', sphereRef);
+  },
+  onMaximize: (sessionId) => {        // Called when maximize clicked in thumbnail mode
+    console.log('Maximize!', sessionId); // If omitted, defaults to browser fullscreen
   }
 });
 ```
@@ -402,8 +426,8 @@ viewer.init({ data: window.myFeatrixData, containerId: 'test' });
 
 ## Performance
 
-- **Bundle Size**: ~567KB (minified)
-- **Gzipped**: ~180KB
+- **Bundle Size**: ~835KB (minified)
+- **Gzipped**: ~220KB
 - **Load Time**: <2s on 3G
 - **Max Points**: 5000+ (smooth 60fps)
 
