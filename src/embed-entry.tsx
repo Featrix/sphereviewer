@@ -20,6 +20,8 @@ import FeatrixSphereEmbedded from './FeatrixSphereEmbedded';
 import { set_animation_options, set_visual_options } from '../featrix_sphere_control';
 import './embed-styles-minimal.css';
 
+export const SPHERE_VIEWER_VERSION = '1.4.0';
+
 interface FeatrixSphereViewerConfig {
   // New: Accept data directly instead of sessionId
   data?: any;
@@ -481,9 +483,23 @@ window.FeatrixSphereViewer = FeatrixSphereViewer;
 // Auto-initialize only if script has data attributes (not for manual usage)
 const scripts = document.querySelectorAll('script[src*="sphere-viewer.js"]');
 const currentScript = scripts[scripts.length - 1] as HTMLElement;
+
+// Log version banner unless suppressed.
+// Always logs on featrix.com / featrix.ai domains.
+// Suppress on other domains by adding data-quiet="true" to the script tag.
+const isFeatrixDomain = /featrix\.(com|ai)/i.test(window.location.hostname);
+const isQuiet = currentScript?.getAttribute('data-quiet') === 'true';
+if (isFeatrixDomain || !isQuiet) {
+  console.log(
+    `%c FeatrixSphereViewer v${SPHERE_VIEWER_VERSION} %c https://github.com/Featrix/sphereviewer `,
+    'background:#6366f1;color:#fff;font-weight:bold;padding:2px 4px;border-radius:3px 0 0 3px',
+    'background:#1e1b4b;color:#a5b4fc;padding:2px 4px;border-radius:0 3px 3px 0'
+  );
+}
+
 if (currentScript && (
-  currentScript.hasAttribute('data-session-id') || 
-  currentScript.hasAttribute('data-featrix-data') || 
+  currentScript.hasAttribute('data-session-id') ||
+  currentScript.hasAttribute('data-featrix-data') ||
   currentScript.hasAttribute('data-use-window-data')
 )) {
   const viewer = new FeatrixSphereViewer();

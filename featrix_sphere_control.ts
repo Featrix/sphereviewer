@@ -4796,6 +4796,7 @@ export function compute_movement_histogram_data(
     const maxMovement = Math.max(...movements.map(m => m.distance));
     const bucketCount = 10;
     const bucketSize = maxMovement / bucketCount;
+    if (bucketSize <= 0 || !isFinite(bucketSize)) return null; // All points stationary or degenerate
 
     // Initialize buckets
     const buckets: Array<{ range: string, min: number, max: number, counts: Record<number, number>, total: number }> = [];

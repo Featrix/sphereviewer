@@ -1726,10 +1726,14 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
             // Customer-provided callback
             onMaximize(sessionId);
         } else {
-            // Default: enter browser fullscreen and switch to full mode
+            // Default: enter browser fullscreen on the viewer container itself,
+            // so it fills the screen rather than staying inside its small parent div
             setIsThumbnail(false);
-            if (document.documentElement.requestFullscreen) {
-                document.documentElement.requestFullscreen();
+            const el = outerContainerRef.current as any;
+            if (el?.requestFullscreen) {
+                el.requestFullscreen();
+            } else if (el?.webkitRequestFullscreen) {
+                el.webkitRequestFullscreen();
             }
             setIsFullscreen(true);
             // Trigger resize so the sphere re-renders at full size
@@ -4616,6 +4620,44 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                     }}>
                         Initializing 3D sphere...
                     </div>
+                )}
+
+                {/* Close/exit fullscreen button - visible only in fullscreen mode (default maximize, no onMaximize callback) */}
+                {isFullscreen && !onMaximize && (
+                    <button
+                        onClick={() => { if (document.exitFullscreen) document.exitFullscreen(); }}
+                        style={{
+                            position: 'absolute',
+                            top: '10px',
+                            right: '10px',
+                            width: '32px',
+                            height: '32px',
+                            background: 'rgba(0, 0, 0, 0.5)',
+                            backdropFilter: 'blur(8px)',
+                            WebkitBackdropFilter: 'blur(8px)',
+                            border: '1px solid rgba(255, 255, 255, 0.15)',
+                            borderRadius: '6px',
+                            color: 'rgba(255, 255, 255, 0.8)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            zIndex: 100,
+                            padding: 0,
+                            transition: 'background 0.2s, color 0.2s',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0, 0, 0, 0.7)'; e.currentTarget.style.color = 'rgba(255, 255, 255, 1)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(0, 0, 0, 0.5)'; e.currentTarget.style.color = 'rgba(255, 255, 255, 0.8)'; }}
+                        title="Exit fullscreen"
+                    >
+                        {/* Compress/minimize icon (arrows pointing inward) */}
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="4 14 10 14 10 20" />
+                            <polyline points="20 10 14 10 14 4" />
+                            <line x1="10" y1="14" x2="3" y2="21" />
+                            <line x1="21" y1="3" x2="14" y2="10" />
+                        </svg>
+                    </button>
                 )}
 
                 {/* Maximize button overlay - visible only in thumbnail mode */}
