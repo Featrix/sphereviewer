@@ -3417,6 +3417,8 @@ const onTouchEnd = (sphere: SphereData, event: TouchEvent) => {
         if (distance < 5) {
             handle_mouse_highlight(sphere)
             notify_highlights_changed(sphere);
+            // Notify React layer so mobile tap can toggle playback controls
+            send_event(sphere, 'backgroundTap', {});
         }
 
         render_sphere(sphere)

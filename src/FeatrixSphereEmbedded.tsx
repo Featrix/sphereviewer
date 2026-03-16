@@ -4546,6 +4546,12 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             setSphereRef(sphere);
                             sphereRefForCountdown.current = sphere; // Store sphere in ref
 
+                            // Listen for touch taps on the 3D canvas to toggle playback controls
+                            // (touch preventDefault in Three.js blocks React onClick from firing)
+                            register_event_listener(sphere, 'backgroundTap', () => {
+                                playbackRef.current?.toggle();
+                            });
+
                             // Canvas2D fallback handles its own playback - skip countdown/pause
                             if (sphere._canvas2dFallback) {
                                 setIsPlaying(true);
