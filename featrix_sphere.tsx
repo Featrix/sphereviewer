@@ -79,11 +79,16 @@ function create_record_list(server_data: any): SphereRecord[] {
 
     for (let entry of server_data?.coords) {
         const uuid = String(uuid4());
+        // Support both numeric keys (0/1/2) from /projections
+        // and named keys ("x","y","z") from /epoch_projections
+        const cx = entry[0] ?? entry["x"] ?? entry.x ?? 0;
+        const cy = entry[1] ?? entry["y"] ?? entry.y ?? 0;
+        const cz = entry[2] ?? entry["z"] ?? entry.z ?? 0;
         const sphere_record = {
             coords: {
-                x: entry[0],
-                y: entry[1],
-                z: entry[2],
+                x: cx,
+                y: cy,
+                z: cz,
             },
             id: uuid,
             featrix_meta: {
