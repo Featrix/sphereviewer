@@ -1503,6 +1503,79 @@ export function load_training_movie(sphere: SphereData, trainingMovieData: any, 
     render_sphere(sphere);
 }
 
+// Append additional points to a live training movie (for incremental loading).
+// newEpochProjections must have the same epoch keys as the existing data, with
+// coords arrays representing the NEW points (offset already applied server-side).
+export function append_points_to_training_movie(sphere: SphereData, newEpochProjections: any) {
+    if (!sphere.trainingMovieData || !newEpochProjections) return;
+
+    const existingFirstKey = Object.keys(sphere.trainingMovieData)[0];
+    const existingCount = sphere.trainingMovieData[existingFirstKey]?.coords?.length || 0;
+
+    // Extend each epoch's coords array with the new points
+    for (const epochKey of Object.keys(newEpochProjections)) {
+        if (sphere.trainingMovieData[epochKey] && newEpochProjections[epochKey]?.coords) {
+            sphere.trainingMovieData[epochKey].coords = [
+                ...sphere.trainingMovieData[epochKey].coords,
+                ...newEpochProjections[epochKey].coords
+            ];
+        }
+    }
+
+    // Get the current epoch so we can position new points correctly
+    const epochKeys = Object.keys(sphere.trainingMovieData).sort((a, b) => {
+        return parseInt(a.replace('epoch_', '')) - parseInt(b.replace('epoch_', ''));
+    });
+    const currentEpochKey = epochKeys[sphere.currentEpoch || 0] || epochKeys[0];
+    const currentEpochData = sphere.trainingMovieData[currentEpochKey];
+
+    // Create records for the new points using the current epoch's coordinates
+    const newFirstEpoch = newEpochProjections[existingFirstKey];
+    if (!newFirstEpoch?.coords) return;
+
+    const newRecords: SphereRecord[] = newFirstEpoch.coords.map((entry: any, i: number) => {
+        const index = existingCount + i;
+        // Use current epoch coords for initial position (not first epoch)
+        const currentCoords = currentEpochData?.coords?.[index];
+        const extracted = extractCoordinates(currentCoords || entry);
+        const { x, y, z } = extracted || { x: 0, y: 0, z: 0 };
+
+        const rowOffset = entry.__featrix_row_offset ?? index;
+        return {
+            coords: { x, y, z },
+            id: String(index),
+            featrix_meta: {
+                webgl_id: null,
+                __featrix_row_id: entry.__featrix_row_id ?? index,
+                __featrix_row_offset: rowOffset,
+            },
+            original: {
+                ...(entry.set_columns || {}),
+                ...(entry.scalar_columns || {}),
+                ...(entry.string_columns || {})
+            }
+        };
+    });
+
+    // Add the new point meshes to the scene
+    for (const record of newRecords) {
+        add_point_to_sphere(sphere, record);
+    }
+
+    // Seed trail history for new points
+    for (const record of newRecords) {
+        const mesh = sphere.pointObjectsByRecordID.get(record.id);
+        if (mesh) {
+            store_point_position_in_history(sphere, record.id, mesh.position);
+        }
+    }
+
+    // Update the new points to show correct colors/positions for the current frame
+    update_training_movie_frame(sphere, currentEpochKey);
+    render_sphere(sphere);
+    console.log(`📊 Appended ${newRecords.length} points (total: ${existingCount + newRecords.length})`);
+}
+
 // Physics-based reset effect - points fall and bounce when movie loops
 export function start_physics_reset_effect(sphere: SphereData, onComplete: () => void) {
     // Don't start if already running

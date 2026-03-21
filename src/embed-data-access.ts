@@ -218,7 +218,9 @@ export async function fetch_training_metrics(
     apiBaseUrl?: string,
     limit?: number,
     onProgress?: (info: { bytesLoaded: number, totalBytes?: number, phase: string }) => void,
-    authToken?: string
+    authToken?: string,
+    pointLimit?: number,
+    pointOffset?: number
 ) {
     const baseUrl = getApiBaseUrl(apiBaseUrl);
     const headers = getAuthHeaders(authToken);
@@ -227,9 +229,12 @@ export async function fetch_training_metrics(
     console.time('🔗 API_EPOCH_PROJECTIONS');
     console.log('🔗 API_CALL_START: epoch_projections');
     let projectionsUrl = `${baseUrl}/compute/session/${session_id}/epoch_projections`;
-    if (limit !== undefined) {
-        projectionsUrl += `?limit=${limit}`;
-    }
+    const params = new URLSearchParams();
+    if (limit !== undefined) params.set('limit', String(limit));
+    if (pointLimit !== undefined) params.set('point_limit', String(pointLimit));
+    if (pointOffset !== undefined) params.set('point_offset', String(pointOffset));
+    const qs = params.toString();
+    if (qs) projectionsUrl += `?${qs}`;
     console.log('🔗 Fetching from:', projectionsUrl);
     const projectionsResponse = await fetchWithRetry(projectionsUrl, { headers });
 
@@ -353,6 +358,27 @@ export async function fetch_training_metrics(
         ...projectionsData,
         training_metrics: trainingMetrics
     };
+}
+
+// Fetch additional points for an existing training movie (pagination).
+// Uses point_limit/point_offset to get the next batch of coords across all epochs.
+export async function fetch_more_epoch_points(
+    session_id: string,
+    pointLimit: number,
+    pointOffset: number,
+    apiBaseUrl?: string,
+    authToken?: string
+): Promise<any> {
+    const baseUrl = getApiBaseUrl(apiBaseUrl);
+    const headers = getAuthHeaders(authToken);
+    const url = `${baseUrl}/compute/session/${session_id}/epoch_projections?point_limit=${pointLimit}&point_offset=${pointOffset}`;
+    console.log(`🔗 Fetching more points: offset=${pointOffset}, limit=${pointLimit}`);
+    const response = await fetchWithRetry(url, { headers });
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to fetch more points: ${response.status} ${errorText}`);
+    }
+    return await safeJsonParse(response);
 }
 
 // Fetch from a custom data endpoint (e.g., manifold_viz). Response format must match epoch_projections.

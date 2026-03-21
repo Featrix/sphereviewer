@@ -11,9 +11,9 @@
 import React, { Suspense, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_sphere_display';
 import TrainingStatus from '../training_status';
-import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch, fetch_thumbnail_data, fetch_model_card, fetch_from_data_endpoint, fetch_training_glb, setRetryStatusCallback, ModelCard } from './embed-data-access';
+import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch, fetch_thumbnail_data, fetch_model_card, fetch_from_data_endpoint, fetch_training_glb, fetch_more_epoch_points, setRetryStatusCallback, ModelCard } from './embed-data-access';
 import { parseTrainingGLB, glbToTrainingMovieData } from './glb-loader';
-import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, set_wireframe_opacity, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles, register_event_listener, set_cluster_color_mode, compute_epoch_movement_stats, compute_movement_histogram_data, set_movie_auto_loop, trim_trail_history, set_playback_speed } from '../featrix_sphere_control';
+import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, set_wireframe_opacity, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles, register_event_listener, set_cluster_color_mode, compute_epoch_movement_stats, compute_movement_histogram_data, set_movie_auto_loop, trim_trail_history, set_playback_speed, append_points_to_training_movie } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 import CollapsibleSection from './components/CollapsibleSection';
 import { LossPlotOverlay, MovementPlotOverlay, MovementHistogramByCluster } from './components/Charts';
@@ -778,6 +778,9 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
     }
     const initialLoadCompleteTime = useRef<number>(0); // Track when initial load finished
     const [sphereRef, setSphereRef] = useState<any>(null);
+    const [loadedPointCount, setLoadedPointCount] = useState<number>(0);
+    const [totalPointCount, setTotalPointCount] = useState<number | null>(null);
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
     const outerContainerRef = useRef<HTMLDivElement>(null);
     const [frameInfo, setFrameInfo] = useState<{ current: number, total: number, visible: number, epoch?: string, validationLoss?: number, sphereCoverage?: number } | null>(null);
@@ -944,6 +947,40 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
     const handleCanvasMouseLeave = useCallback(() => {
         // PlaybackController handles its own hide-on-leave internally
     }, []);
+
+    // Load more points handler
+    const handleLoadMore = useCallback(async () => {
+        if (isLoadingMore || !sessionId || totalPointCount === null || loadedPointCount >= totalPointCount) return;
+        setIsLoadingMore(true);
+        try {
+            const moreData = await fetch_more_epoch_points(sessionId, 1000, loadedPointCount, apiBaseUrl, authToken);
+            if (moreData?.epoch_projections && sphereRef) {
+                append_points_to_training_movie(sphereRef, moreData.epoch_projections);
+
+                // Update React state to stay in sync
+                setTrainingData((prev: any) => {
+                    if (!prev) return prev;
+                    const updated = { ...prev };
+                    for (const epochKey of Object.keys(moreData.epoch_projections)) {
+                        if (updated[epochKey]) {
+                            updated[epochKey] = {
+                                ...updated[epochKey],
+                                coords: [...updated[epochKey].coords, ...moreData.epoch_projections[epochKey].coords]
+                            };
+                        }
+                    }
+                    return updated;
+                });
+
+                const newBatchSize = moreData.epoch_projections[Object.keys(moreData.epoch_projections)[0]]?.coords?.length || 0;
+                setLoadedPointCount(prev => prev + newBatchSize);
+            }
+        } catch (err) {
+            console.error('Failed to load more points:', err);
+        } finally {
+            setIsLoadingMore(false);
+        }
+    }, [isLoadingMore, sessionId, loadedPointCount, totalPointCount, apiBaseUrl, authToken, sphereRef]);
 
     // Search state
     const [columnTypes, setColumnTypes] = useState<any>(null);
@@ -1191,9 +1228,11 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                 apiTrainingData = await fetch_training_metrics(
                                     sessionId,
                                     apiBaseUrl,
-                                    10000,
+                                    undefined, // epoch limit
                                     progressCallback,
-                                    authToken
+                                    authToken,
+                                    1000, // pointLimit - initial batch
+                                    0     // pointOffset
                                 );
                                 break; // Success
                             } catch (err: any) {
@@ -1221,7 +1260,14 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                 if (apiTrainingData && apiTrainingData.epoch_projections) {
                     const epochCount = Object.keys(apiTrainingData.epoch_projections).length;
                     const firstEpochKey = Object.keys(apiTrainingData.epoch_projections)[0];
-                    const pointCount = apiTrainingData.epoch_projections[firstEpochKey]?.coords?.length || 0;
+                    const firstEpochObj = apiTrainingData.epoch_projections[firstEpochKey];
+                    const pointCount = firstEpochObj?.coords?.length || 0;
+
+                    // Track pagination state from API response
+                    setLoadedPointCount(pointCount);
+                    if (firstEpochObj?.total_count !== undefined) {
+                        setTotalPointCount(firstEpochObj.total_count);
+                    }
 
                     // Detect manifold visualization mode
                     const detectedManifoldViz = apiTrainingData.epoch_projections[firstEpochKey]?.is_manifold_viz === true;
@@ -1255,7 +1301,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                         // /projections has cluster results + categorized columns (set/scalar/string)
                         // source_data has ALL original columns from the dataset
                         const fetchProjections = fetch(
-                            `${baseUrl}/compute/session/${sessionId}/projections?limit=10000`,
+                            `${baseUrl}/compute/session/${sessionId}/projections?limit=1000`,
                             authToken ? { headers: { 'Authorization': `Bearer ${authToken}` } } : undefined
                         ).then(async (resp) => {
                             if (resp.ok) {
@@ -4709,6 +4755,44 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             <line x1="3" y1="21" x2="10" y2="14" />
                         </svg>
                     </button>
+                )}
+
+                {/* Load More Points button */}
+                {!isThumbnail && totalPointCount !== null && loadedPointCount < totalPointCount && (
+                    <div style={{
+                        position: 'absolute',
+                        bottom: '60px',
+                        left: '12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        background: (theme.bgSurface || 'rgba(0,0,0,0.7)') + 'dd',
+                        backdropFilter: 'blur(8px)',
+                        border: `1px solid ${theme.borderPrimary || 'rgba(255,255,255,0.15)'}`,
+                        borderRadius: '6px',
+                        padding: '6px 12px',
+                        zIndex: 50,
+                    }}>
+                        <span style={{ fontSize: '11px', color: theme.textSecondary || '#aaa' }}>
+                            {loadedPointCount.toLocaleString()} / {totalPointCount.toLocaleString()} points
+                        </span>
+                        <button
+                            onClick={handleLoadMore}
+                            disabled={isLoadingMore}
+                            style={{
+                                background: '#3b82f6',
+                                border: 'none',
+                                borderRadius: '4px',
+                                color: 'white',
+                                padding: '4px 10px',
+                                fontSize: '11px',
+                                cursor: isLoadingMore ? 'wait' : 'pointer',
+                                opacity: isLoadingMore ? 0.6 : 1,
+                            }}
+                        >
+                            {isLoadingMore ? 'Loading...' : 'Load 1,000 more'}
+                        </button>
+                    </div>
                 )}
 
                 {/* Playback Overlay - reusable PlaybackController component */}
