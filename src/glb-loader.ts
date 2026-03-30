@@ -206,7 +206,26 @@ export function glbToTrainingMovieData(
 
     for (let epochIdx = 0; epochIdx < num_epochs; epochIdx++) {
         const epochKey = epoch_keys[epochIdx];
+        // Skip duplicate epoch keys — keep the first valid occurrence
+        if (epoch_projections[epochKey]) {
+            continue;
+        }
         const posBase = epochIdx * num_points * 3;
+
+        // Skip epochs where all positions are zero (backend padding artifact)
+        let hasNonZero = false;
+        for (let i = 0; i < Math.min(num_points, 10); i++) {
+            const px = positions[posBase + i * 3];
+            const py = positions[posBase + i * 3 + 1];
+            const pz = positions[posBase + i * 3 + 2];
+            if (Math.abs(px) > 0.0001 || Math.abs(py) > 0.0001 || Math.abs(pz) > 0.0001) {
+                hasNonZero = true;
+                break;
+            }
+        }
+        if (!hasNonZero) {
+            continue;
+        }
 
         // Build coords array for this epoch
         const coords: any[] = new Array(num_points);
@@ -294,8 +313,11 @@ export function glbToTrainingMovieData(
     // Session-level cluster results from sidecar
     const session_cluster_results = sidecar?.session_cluster_results || null;
 
-    const totalCoords = num_epochs * num_points;
-    console.log(`📦 GLB → trainingMovieData: ${num_epochs} epochs, ${num_points} points/epoch, ${totalCoords} total coords`);
+    const validEpochCount = Object.keys(epoch_projections).length;
+    const skippedCount = num_epochs - validEpochCount;
+    const totalCoords = validEpochCount * num_points;
+    console.log(`📦 GLB → trainingMovieData: ${validEpochCount} epochs, ${num_points} points/epoch, ${totalCoords} total coords` +
+        (skippedCount > 0 ? ` (skipped ${skippedCount} empty/duplicate epochs)` : ''));
 
     return { epoch_projections, training_metrics, session_cluster_results };
 }

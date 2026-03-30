@@ -1259,9 +1259,15 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
 
                 if (apiTrainingData && apiTrainingData.epoch_projections) {
                     const epochCount = Object.keys(apiTrainingData.epoch_projections).length;
+                    if (epochCount === 0) {
+                        throw new Error('No epoch data available for this session. The training data may not have been saved or has been cleaned up.');
+                    }
                     const firstEpochKey = Object.keys(apiTrainingData.epoch_projections)[0];
                     const firstEpochObj = apiTrainingData.epoch_projections[firstEpochKey];
                     const pointCount = firstEpochObj?.coords?.length || 0;
+                    if (pointCount === 0) {
+                        throw new Error('Epoch data exists but contains no points. The projection data may be corrupted or incomplete.');
+                    }
 
                     // Track pagination state from API response
                     setLoadedPointCount(pointCount);
@@ -1315,10 +1321,11 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                     console.log('📊 Got full projections with', fullProjectionsCoords.length, 'coords');
                                 }
                             } else {
-                                console.log('⚠️ /projections returned', resp.status);
+                                const errBody = await resp.text().catch(() => '');
+                                console.warn(`⚠️ /projections returned ${resp.status}: ${errBody}`);
                             }
                         }).catch(err => {
-                            console.log('⚠️ /projections failed:', err);
+                            console.warn('⚠️ /projections failed:', err);
                         });
 
                         const fetchSourceData = fetch(
@@ -2706,11 +2713,15 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
         // Determine user-friendly message based on error type
         const isTimeout = error.includes('timeout') || error.includes('Timeout') || error.includes('abort');
         const isServerError = error.includes('500') || error.includes('502') || error.includes('504') || error.includes('503');
+        const is422 = error.includes('422');
+        const isNoData = error.includes('No epoch data') || error.includes('no points') || error.includes('No training movie');
         const isNonJson = error.includes('Non-JSON response');
         const isNetworkError = error.includes('fetch') || error.includes('network') || error.includes('Failed to fetch');
 
         let friendlyMessage: string;
-        if (isTimeout || isServerError || isNonJson) {
+        if (is422 || isNoData) {
+            friendlyMessage = 'No visualization data available for this session.';
+        } else if (isTimeout || isServerError || isNonJson) {
             friendlyMessage = 'Visualization data is still being processed. Try refreshing in a few minutes.';
         } else if (isNetworkError) {
             friendlyMessage = 'Unable to reach the server. Check your connection and try again.';

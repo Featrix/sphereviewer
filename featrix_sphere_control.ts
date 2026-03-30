@@ -3532,6 +3532,10 @@ const onResize = (sphere: SphereData) => {
 
   
 export function register_event_listener(sphere: SphereData, event_name: string, callback: any): () => void {
+    // Guard against missing event_listeners (e.g. Canvas2D fakeSphere)
+    if (!sphere.event_listeners) {
+        sphere.event_listeners = {};
+    }
     // If no listeners for the event have been registered yet, create a new Map.
     if (!sphere.event_listeners[event_name]) {
         sphere.event_listeners[event_name] = new Map<string, any>();
@@ -3547,7 +3551,7 @@ export function register_event_listener(sphere: SphereData, event_name: string, 
 
 
 export function remove_event_listener(sphere: SphereData, event_name: string, listener_id: string) {
-    if (sphere.event_listeners[event_name]) {
+    if (sphere.event_listeners && sphere.event_listeners[event_name]) {
         sphere.event_listeners[event_name].delete(listener_id);
 
         // If there are no more listeners for the event, delete the event key.
@@ -3559,7 +3563,7 @@ export function remove_event_listener(sphere: SphereData, event_name: string, li
 
 
 export function send_event(sphere: SphereData, event_name: string, event: any) {
-    if (sphere.event_listeners[event_name]) {
+    if (sphere.event_listeners && sphere.event_listeners[event_name]) {
         for (const callback of sphere.event_listeners[event_name].values()) {
             callback(event);
         }
