@@ -3759,6 +3759,13 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                         setPointSize(newSize);
                                         if (sphereRef) {
                                             set_visual_options(sphereRef, newSize, pointAlpha);
+                                            // Auto-toggle convex hulls when switching to/from surface-only mode
+                                            if (newSize === 0 && !sphereRef.showEmbeddingHull) {
+                                                toggle_embedding_hull(sphereRef, true);
+                                            } else if (newSize > 0 && pointSize === 0 && sphereRef.showEmbeddingHull) {
+                                                // Switching away from surface-only: turn hulls back off
+                                                toggle_embedding_hull(sphereRef, false);
+                                            }
                                             render_sphere(sphereRef);
                                         }
                                     }}
@@ -3775,6 +3782,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                         width: '100%',
                                     }}
                                 >
+                                    <option value={0}>Surface only</option>
                                     <option value={0.01}>0.01</option>
                                     <option value={0.02}>0.02</option>
                                     <option value={0.04}>0.04</option>
@@ -4243,11 +4251,17 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                                 setPointSize(newSize);
                                                 if (sphereRef) {
                                                     set_visual_options(sphereRef, newSize, pointAlpha);
+                                                    if (newSize === 0 && !sphereRef.showEmbeddingHull) {
+                                                        toggle_embedding_hull(sphereRef, true);
+                                                    } else if (newSize > 0 && pointSize === 0 && sphereRef.showEmbeddingHull) {
+                                                        toggle_embedding_hull(sphereRef, false);
+                                                    }
                                                     render_sphere(sphereRef);
                                                 }
                                             }}
                                             style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: theme.bgSurface, color: theme.textPrimary, border: `1px solid ${theme.borderPrimary}`, borderRadius: '3px', cursor: 'pointer', width: '80px' }}
                                         >
+                                            <option value={0}>Surface only</option>
                                             <option value={0.01}>0.01</option>
                                             <option value={0.02}>0.02</option>
                                             <option value={0.04}>0.04</option>

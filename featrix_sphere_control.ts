@@ -1258,29 +1258,36 @@ export function set_visual_options(sphere: SphereData, pointSize: number = 0.05,
 }
 
 export function set_wireframe_opacity(sphere: SphereData, opacity: number) {
-    if (sphere.unitSphere && sphere.unitSphere.material) {
-        const material = sphere.unitSphere.material as THREE.LineBasicMaterial;
-        material.opacity = opacity;
-        material.needsUpdate = true;
+    if (sphere.unitSphere) {
+        sphere.unitSphere.visible = opacity > 0;
+        if (sphere.unitSphere.material) {
+            const material = sphere.unitSphere.material as THREE.LineBasicMaterial;
+            material.opacity = opacity;
+            material.needsUpdate = true;
+        }
     }
 }
 
 export function update_all_point_visuals(sphere: SphereData) {
     // Update all existing point objects with new size and opacity
+    const hidePoints = sphere.pointSize <= 0;
     sphere.pointObjectsByRecordID.forEach((mesh) => {
-        // Update geometry for size change
-        mesh.geometry.dispose(); // Clean up old geometry
-        mesh.geometry = new THREE.SphereGeometry(sphere.pointSize, 12, 8);
+        mesh.visible = !hidePoints;
+        if (!hidePoints) {
+            // Update geometry for size change
+            mesh.geometry.dispose(); // Clean up old geometry
+            mesh.geometry = new THREE.SphereGeometry(sphere.pointSize, 12, 8);
 
-        // CRITICAL: Reset scale to 1.0 - dynamic point sizing may have changed it
-        mesh.scale.setScalar(1.0);
+            // CRITICAL: Reset scale to 1.0 - dynamic point sizing may have changed it
+            mesh.scale.setScalar(1.0);
 
-        // Update material for opacity change (works for both MeshBasicMaterial and MeshPhongMaterial)
-        const mat = mesh.material as THREE.MeshPhongMaterial | THREE.MeshBasicMaterial;
-        if (mat && 'opacity' in mat) {
-            mat.opacity = sphere.pointOpacity;
-            mat.transparent = sphere.pointOpacity < 1.0;
-            mat.needsUpdate = true;
+            // Update material for opacity change (works for both MeshBasicMaterial and MeshPhongMaterial)
+            const mat = mesh.material as THREE.MeshPhongMaterial | THREE.MeshBasicMaterial;
+            if (mat && 'opacity' in mat) {
+                mat.opacity = sphere.pointOpacity;
+                mat.transparent = sphere.pointOpacity < 1.0;
+                mat.needsUpdate = true;
+            }
         }
     });
 }
