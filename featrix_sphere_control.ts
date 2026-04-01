@@ -2273,6 +2273,11 @@ function animate_interpolation(sphere: SphereData) {
         compute_cluster_convex_hulls(sphere);
     }
 
+    // Update voronoi every frame if enabled
+    if ((sphere as any).showVoronoi) {
+        update_voronoi(sphere);
+    }
+
     // Throttle great circles and spotlight to every 3 frames (more expensive)
     if (!sphere._hullAnimationCounter) sphere._hullAnimationCounter = 0;
     sphere._hullAnimationCounter++;
@@ -5184,9 +5189,9 @@ export function toggle_great_circles(sphere: SphereData, show: boolean) {
 
 export function toggle_embedding_hull(sphere: SphereData, show: boolean) {
     if (!sphere) return;
-    
+
     sphere.showEmbeddingHull = show;
-    
+
     if (show) {
         if (!sphere.embeddingHull) {
             compute_embedding_convex_hull(sphere);
@@ -5200,6 +5205,242 @@ export function toggle_embedding_hull(sphere: SphereData, show: boolean) {
             sphere.scene.remove(sphere.embeddingHull as any);
         }
     }
-    
+
     render_sphere(sphere);
+}
+
+// ============================================================================
+// SPHERICAL VORONOI TESSELLATION
+// ============================================================================
+// Partitions the unit sphere surface into non-overlapping regions, one per cluster.
+// Each region contains all sphere-surface points closer to that cluster's centroid
+// than any other. Renders as a colored mesh on the sphere surface.
+
+export function compute_spherical_voronoi(sphere: SphereData) {
+    // Clean up existing voronoi
+    if ((sphere as any).voronoiGroup) {
+        sphere.scene.remove((sphere as any).voronoiGroup);
+        ((sphere as any).voronoiGroup as THREE.Group).traverse((child: any) => {
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) {
+                if (Array.isArray(child.material)) child.material.forEach((m: THREE.Material) => m.dispose());
+                else child.material.dispose();
+            }
+        });
+    }
+
+    // Gather cluster centroids and colors from current point positions
+    const clusterPoints: Map<number, THREE.Vector3[]> = new Map();
+    const clusterColors: Map<number, THREE.Color> = new Map();
+
+    sphere.pointObjectsByRecordID.forEach((pointMesh, recordId) => {
+        const record = sphere.pointRecordsByID.get(recordId);
+        if (!record) return;
+
+        let cluster = -1;
+        const activeClusterKey = get_active_cluster_count_key(sphere);
+        if (activeClusterKey !== null && sphere.finalClusterResults?.[activeClusterKey]?.cluster_labels) {
+            const rowOffset = record.featrix_meta?.__featrix_row_offset;
+            if (rowOffset !== undefined && rowOffset < sphere.finalClusterResults[activeClusterKey].cluster_labels.length) {
+                cluster = sphere.finalClusterResults[activeClusterKey].cluster_labels[rowOffset];
+            }
+        }
+        if (cluster === -1) {
+            const pointColor = pointMesh.material.color.getHex();
+            let minDist = Infinity;
+            let bestCluster = 0;
+            kColorTable.forEach((tableColor, idx) => {
+                const dist = Math.abs(pointColor - tableColor);
+                if (dist < minDist) { minDist = dist; bestCluster = idx; }
+            });
+            cluster = bestCluster;
+        }
+        if (cluster === -1) return;
+
+        if (!clusterPoints.has(cluster)) clusterPoints.set(cluster, []);
+        clusterPoints.get(cluster)!.push(pointMesh.position.clone().normalize());
+        if (!clusterColors.has(cluster)) {
+            clusterColors.set(cluster, pointMesh.material.color.clone());
+        }
+    });
+
+    // Compute centroid for each cluster (mean direction, normalized)
+    const centroids: { cluster: number, centroid: THREE.Vector3, color: THREE.Color }[] = [];
+    clusterPoints.forEach((points, cluster) => {
+        const c = new THREE.Vector3();
+        points.forEach(p => c.add(p));
+        c.normalize();
+        centroids.push({ cluster, centroid: c, color: clusterColors.get(cluster)! });
+    });
+
+    if (centroids.length < 2) return;
+
+    // Generate icosphere vertices and faces
+    // Subdivision level 5 gives ~10K faces — enough detail for smooth boundaries
+    const { vertices, faces } = createIcosphere(5);
+
+    // For each vertex, find nearest cluster centroid (using dot product as geodesic proxy)
+    const vertexCluster: number[] = new Array(vertices.length);
+    for (let i = 0; i < vertices.length; i++) {
+        const v = vertices[i];
+        let bestDot = -2;
+        let bestCluster = centroids[0].cluster;
+        for (const { cluster, centroid } of centroids) {
+            const d = v.dot(centroid);
+            if (d > bestDot) { bestDot = d; bestCluster = cluster; }
+        }
+        vertexCluster[i] = bestCluster;
+    }
+
+    // Build per-cluster geometry
+    const voronoiGroup = new THREE.Group();
+    const clusterFaces: Map<number, { positions: number[], normals: number[] }> = new Map();
+
+    for (const face of faces) {
+        // Assign face to majority cluster of its 3 vertices
+        const c0 = vertexCluster[face[0]];
+        const c1 = vertexCluster[face[1]];
+        const c2 = vertexCluster[face[2]];
+        const majority = (c0 === c1 || c0 === c2) ? c0 : c1;
+
+        if (!clusterFaces.has(majority)) {
+            clusterFaces.set(majority, { positions: [], normals: [] });
+        }
+        const cf = clusterFaces.get(majority)!;
+
+        for (const vi of face) {
+            const v = vertices[vi];
+            cf.positions.push(v.x, v.y, v.z);
+            cf.normals.push(v.x, v.y, v.z); // Normal = position for unit sphere
+        }
+    }
+
+    // Create mesh for each cluster
+    clusterFaces.forEach((data, cluster) => {
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(data.positions, 3));
+        geometry.setAttribute('normal', new THREE.Float32BufferAttribute(data.normals, 3));
+
+        const color = clusterColors.get(cluster) || new THREE.Color(0x888888);
+        const material = new THREE.MeshPhongMaterial({
+            color: color,
+            transparent: true,
+            opacity: 0.25,
+            side: THREE.DoubleSide,
+            shininess: 30,
+            depthWrite: false,
+        });
+
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.userData.cluster = cluster;
+        mesh.userData.originalColor = color.clone();
+        mesh.userData.originalOpacity = 0.25;
+        voronoiGroup.add(mesh);
+    });
+
+    // Add boundary lines between Voronoi cells
+    const boundaryEdges: Set<string> = new Set();
+    const boundaryPoints: THREE.Vector3[] = [];
+
+    for (const face of faces) {
+        const edges: [number, number][] = [[face[0], face[1]], [face[1], face[2]], [face[2], face[0]]];
+        for (const [a, b] of edges) {
+            if (vertexCluster[a] !== vertexCluster[b]) {
+                const key = Math.min(a, b) + ',' + Math.max(a, b);
+                if (!boundaryEdges.has(key)) {
+                    boundaryEdges.add(key);
+                    const va = vertices[a].clone().multiplyScalar(1.002);
+                    const vb = vertices[b].clone().multiplyScalar(1.002);
+                    boundaryPoints.push(va, vb);
+                }
+            }
+        }
+    }
+
+    if (boundaryPoints.length > 0) {
+        const lineGeometry = new THREE.BufferGeometry().setFromPoints(boundaryPoints);
+        const lineMaterial = new THREE.LineBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.4,
+            linewidth: 1,
+        });
+        const lines = new THREE.LineSegments(lineGeometry, lineMaterial);
+        voronoiGroup.add(lines);
+    }
+
+    (sphere as any).voronoiGroup = voronoiGroup;
+    sphere.scene.add(voronoiGroup);
+    console.log(`🔷 Voronoi: ${centroids.length} cells, ${faces.length} faces, ${boundaryEdges.size} boundary edges`);
+}
+
+export function toggle_voronoi(sphere: SphereData, show: boolean) {
+    if (!sphere) return;
+    (sphere as any).showVoronoi = show;
+
+    if (show) {
+        compute_spherical_voronoi(sphere);
+    } else {
+        if ((sphere as any).voronoiGroup) {
+            ((sphere as any).voronoiGroup as THREE.Group).visible = false;
+            sphere.scene.remove((sphere as any).voronoiGroup);
+        }
+    }
+    render_sphere(sphere);
+}
+
+// Update voronoi when points move (called during animation)
+export function update_voronoi(sphere: SphereData) {
+    if (!(sphere as any).showVoronoi) return;
+    compute_spherical_voronoi(sphere);
+}
+
+/**
+ * Generate an icosphere by subdividing an icosahedron.
+ * Returns vertices (normalized to unit sphere) and triangle face indices.
+ */
+function createIcosphere(subdivisions: number): { vertices: THREE.Vector3[], faces: [number, number, number][] } {
+    const t = (1 + Math.sqrt(5)) / 2; // Golden ratio
+    const rawVerts: THREE.Vector3[] = [
+        new THREE.Vector3(-1, t, 0), new THREE.Vector3(1, t, 0),
+        new THREE.Vector3(-1, -t, 0), new THREE.Vector3(1, -t, 0),
+        new THREE.Vector3(0, -1, t), new THREE.Vector3(0, 1, t),
+        new THREE.Vector3(0, -1, -t), new THREE.Vector3(0, 1, -t),
+        new THREE.Vector3(t, 0, -1), new THREE.Vector3(t, 0, 1),
+        new THREE.Vector3(-t, 0, -1), new THREE.Vector3(-t, 0, 1),
+    ];
+    rawVerts.forEach(v => v.normalize());
+
+    let vertices = rawVerts;
+    let faces: [number, number, number][] = [
+        [0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],
+        [1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],
+        [3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],
+        [4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1],
+    ];
+
+    const midpointCache = new Map<string, number>();
+    function getMidpoint(a: number, b: number): number {
+        const key = Math.min(a, b) + ':' + Math.max(a, b);
+        if (midpointCache.has(key)) return midpointCache.get(key)!;
+        const mid = new THREE.Vector3().addVectors(vertices[a], vertices[b]).normalize();
+        const idx = vertices.length;
+        vertices.push(mid);
+        midpointCache.set(key, idx);
+        return idx;
+    }
+
+    for (let i = 0; i < subdivisions; i++) {
+        const newFaces: [number, number, number][] = [];
+        midpointCache.clear();
+        for (const [a, b, c] of faces) {
+            const ab = getMidpoint(a, b);
+            const bc = getMidpoint(b, c);
+            const ca = getMidpoint(c, a);
+            newFaces.push([a, ab, ca], [b, bc, ab], [c, ca, bc], [ab, bc, ca]);
+        }
+        faces = newFaces;
+    }
+
+    return { vertices, faces };
 }

@@ -13,7 +13,7 @@ import FeatrixEmbeddingsExplorer, { find_best_cluster_number } from '../featrix_
 import TrainingStatus from '../training_status';
 import { fetch_session_data, fetch_session_projections, fetch_training_metrics, fetch_session_status, fetch_single_epoch, fetch_thumbnail_data, fetch_model_card, fetch_from_data_endpoint, fetch_training_glb, fetch_more_epoch_points, setRetryStatusCallback, ModelCard } from './embed-data-access';
 import { parseTrainingGLB, glbToTrainingMovieData } from './glb-loader';
-import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, set_wireframe_opacity, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles, register_event_listener, set_cluster_color_mode, compute_epoch_movement_stats, compute_movement_histogram_data, set_movie_auto_loop, trim_trail_history, set_playback_speed, append_points_to_training_movie } from '../featrix_sphere_control';
+import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, set_wireframe_opacity, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles, register_event_listener, set_cluster_color_mode, compute_epoch_movement_stats, compute_movement_histogram_data, set_movie_auto_loop, trim_trail_history, set_playback_speed, append_points_to_training_movie, toggle_voronoi, update_voronoi } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 import CollapsibleSection from './components/CollapsibleSection';
 import { LossPlotOverlay, MovementPlotOverlay, MovementHistogramByCluster } from './components/Charts';
@@ -3977,6 +3977,21 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                                     <span style={{ fontSize: '11px', fontWeight: 400, color: theme.textTertiary }}>Expand for overlap visibility</span>
                                 </label>
                             )}
+
+                            {/* Show Voronoi Regions */}
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={(sphereRef as any)?.showVoronoi || false}
+                                    onChange={(e) => {
+                                        if (sphereRef) {
+                                            toggle_voronoi(sphereRef, e.target.checked);
+                                        }
+                                    }}
+                                    style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: theme.accent }}
+                                />
+                                <span style={{ fontSize: '12px', fontWeight: 500, color: theme.textSecondary }}>Show Voronoi Regions</span>
+                            </label>
                         </div>
 
                         {/* Sphere Coverage display - updates every epoch */}
