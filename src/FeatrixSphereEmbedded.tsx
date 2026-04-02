@@ -16,6 +16,7 @@ import { parseTrainingGLB, glbToTrainingMovieData } from './glb-loader';
 import { SphereRecord, SphereRecordIndex, remap_cluster_assignments, render_sphere, initialize_sphere, set_animation_options, set_visual_options, set_wireframe_opacity, load_training_movie, play_training_movie, stop_training_movie, pause_training_movie, resume_training_movie, step_training_movie_frame, goto_training_movie_frame, compute_cluster_convex_hulls, update_cluster_spotlight, show_search_results, clear_colors, toggle_bounds_box, add_selected_record, change_object_color, clear_selected_objects, set_cluster_color, clear_cluster_colors, change_cluster_count, get_active_cluster_count_key, compute_embedding_convex_hull, toggle_embedding_hull, toggle_great_circles, register_event_listener, set_cluster_color_mode, compute_epoch_movement_stats, compute_movement_histogram_data, set_movie_auto_loop, trim_trail_history, set_playback_speed, append_points_to_training_movie, toggle_voronoi, update_voronoi } from '../featrix_sphere_control';
 import { v4 as uuid4 } from 'uuid';
 import CollapsibleSection from './components/CollapsibleSection';
+import { BoxPlotSparkline, themes, createTheme } from 'modern-boxplot-react';
 import { LossPlotOverlay, MovementPlotOverlay, MovementHistogramByCluster } from './components/Charts';
 import PlaybackController, { PlaybackControllerHandle } from './PlaybackController';
 import { ThemeProvider, useTheme } from './ThemeContext';
@@ -2126,6 +2127,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
     const [columnVocabulary, setColumnVocabulary] = useState<{
         type: 'scalar' | 'set' | 'string';
         distribution?: Array<{ bin: number, count: number }>; // For scalars
+        rawValues?: number[]; // Raw numeric values for boxplot
         vocabulary?: string[]; // For non-scalars (backwards compat)
         vocabularyWithCounts?: Array<{ value: string, count: number, pct: number }>; // For set/string with counts
         totalValues?: number; // Total number of values for set/string
@@ -2366,6 +2368,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
             setColumnVocabulary({
                 type: 'scalar',
                 distribution,
+                rawValues: numericValues,
                 min,
                 max,
                 mean,
@@ -3332,55 +3335,18 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
                             )}
 
                             {/* Distribution chart and stats for scalar columns */}
-                            {columnVocabulary && columnVocabulary.type === 'scalar' && columnVocabulary.distribution && (
+                            {columnVocabulary && columnVocabulary.type === 'scalar' && columnVocabulary.rawValues && columnVocabulary.rawValues.length > 0 && (
                                 <div style={{ marginTop: '8px' }}>
-                                    <DistributionChart
-                                        distribution={columnVocabulary.distribution}
-                                        min={columnVocabulary.min || 0}
-                                        max={columnVocabulary.max || 0}
-                                        searchValue={searchQuery ? parseFloat(searchQuery) : null}
+                                    <BoxPlotSparkline
+                                        data={columnVocabulary.rawValues}
+                                        width={340}
+                                        height={28}
+                                        variant="violin"
+                                        theme={createTheme(themes.dark, {
+                                            colors: { primary: '#6bb8f0', accent: '#6bb8f0' },
+                                            popover: { bg: '#1e1e2e', border: '#333', text: '#e0e0e0', textMuted: '#888' },
+                                        })}
                                     />
-                                    {/* Quartile stats */}
-                                    <div style={{
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        marginTop: '6px',
-                                        padding: '6px 8px',
-                                        background: theme.bgTertiary,
-                                        borderRadius: '4px',
-                                        fontSize: '10px',
-                                    }}>
-                                        <div style={{ textAlign: 'center' }}>
-                                            <div style={{ color: theme.textMuted, marginBottom: '2px' }}>Min</div>
-                                            <div style={{ color: theme.textSecondary, fontWeight: 500 }}>
-                                                {columnVocabulary.min?.toFixed(columnVocabulary.min % 1 === 0 ? 0 : 2)}
-                                            </div>
-                                        </div>
-                                        <div style={{ textAlign: 'center' }}>
-                                            <div style={{ color: theme.textMuted, marginBottom: '2px' }}>Q1</div>
-                                            <div style={{ color: theme.textSecondary, fontWeight: 500 }}>
-                                                {columnVocabulary.q1?.toFixed(columnVocabulary.q1 % 1 === 0 ? 0 : 2)}
-                                            </div>
-                                        </div>
-                                        <div style={{ textAlign: 'center' }}>
-                                            <div style={{ color: theme.textMuted, marginBottom: '2px' }}>Median</div>
-                                            <div style={{ color: theme.accent, fontWeight: 500 }}>
-                                                {columnVocabulary.median?.toFixed(columnVocabulary.median % 1 === 0 ? 0 : 2)}
-                                            </div>
-                                        </div>
-                                        <div style={{ textAlign: 'center' }}>
-                                            <div style={{ color: theme.textMuted, marginBottom: '2px' }}>Q3</div>
-                                            <div style={{ color: theme.textSecondary, fontWeight: 500 }}>
-                                                {columnVocabulary.q3?.toFixed(columnVocabulary.q3 % 1 === 0 ? 0 : 2)}
-                                            </div>
-                                        </div>
-                                        <div style={{ textAlign: 'center' }}>
-                                            <div style={{ color: theme.textMuted, marginBottom: '2px' }}>Max</div>
-                                            <div style={{ color: theme.textSecondary, fontWeight: 500 }}>
-                                                {columnVocabulary.max?.toFixed(columnVocabulary.max % 1 === 0 ? 0 : 2)}
-                                            </div>
-                                        </div>
-                                    </div>
                                 </div>
                             )}
                         </div>

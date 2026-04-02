@@ -1,0 +1,50 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - heading "🎯 Sphere Viewer" [level=1] [ref=e4]
+    - heading "Data-Driven Embed Test" [level=2] [ref=e5]
+    - paragraph [ref=e6]: Testing direct data input without API calls
+  - generic [ref=e7]:
+    - 'heading "📋 Method 1: Window Data RECOMMENDED" [level=3] [ref=e8]':
+      - text: "📋 Method 1: Window Data"
+      - generic [ref=e9]: RECOMMENDED
+    - paragraph [ref=e10]: Pass data via window object for maximum control and performance.
+    - generic [ref=e11]: "<script> window.myFeatrixData = { session: { session_id: \"example\", status: \"done\", done: true }, coords: [/* your coordinate data */], entire_cluster_results: {/* clustering info */} }; </script> <script src=\"sphere-viewer.js\" data-use-window-data=\"myFeatrixData\"></script>"
+    - generic [ref=e13]:
+      - button "Load Window Data" [ref=e14] [cursor=pointer]
+      - button "Show Data" [ref=e15] [cursor=pointer]
+  - generic [ref=e16]:
+    - 'heading "📄 Method 2: JSON File BEST FOR PRODUCTION" [level=3] [ref=e17]':
+      - text: "📄 Method 2: JSON File"
+      - generic [ref=e18]: BEST FOR PRODUCTION
+    - paragraph [ref=e19]: Load data from a JSON file exported by Featrix.
+    - generic [ref=e20]: <script src="sphere-viewer.js" data-featrix-data="data/my-sphere-data.json"></script>
+    - generic [ref=e22]:
+      - button "Load from JSON" [ref=e23] [cursor=pointer]
+      - button "Show Data" [ref=e24] [cursor=pointer]
+  - generic [ref=e25]:
+    - 'heading "🔧 Method 3: Manual JavaScript API" [level=3] [ref=e26]'
+    - paragraph [ref=e27]: Programmatically pass data using the JavaScript API.
+    - generic [ref=e28]: "const viewer = new window.FeatrixSphereViewer(); viewer.init({ data: featrixDataObject, containerId: 'my-container' });"
+    - paragraph [ref=e31]: Click "Initialize Manual API" to test
+    - generic [ref=e32]:
+      - button "Initialize Manual API" [ref=e33] [cursor=pointer]
+      - button "Update Data" [ref=e34] [cursor=pointer]
+      - button "Destroy" [ref=e35] [cursor=pointer]
+      - button "Show Data" [ref=e36] [cursor=pointer]
+  - generic [ref=e37]:
+    - 'heading "🔄 Method 4: Legacy Session ID DEPRECATED" [level=3] [ref=e38]':
+      - text: "🔄 Method 4: Legacy Session ID"
+      - generic [ref=e39]: DEPRECATED
+    - paragraph [ref=e40]: Still supports the old API-based approach for backwards compatibility.
+    - generic [ref=e41]: <script src="sphere-viewer.js" data-session-id="your-session-id"></script>
+    - paragraph [ref=e44]: ⚠️ This method requires API access
+    - button "Test Legacy (will likely fail)" [ref=e46] [cursor=pointer]
+  - generic [ref=e47]:
+    - heading "📖 Featrix Data Format Guide" [level=3] [ref=e48]
+    - paragraph [ref=e49]: "Your Featrix export should have this structure:"
+    - generic [ref=e50]: "{ \"session\": { \"session_id\": \"your-session-id\", \"status\": \"done\", \"done\": true, \"failed\": false }, \"coords\": [ { \"0\": -2.5, // X coordinate \"1\": 1.3, // Y coordinate \"2\": 0.8, // Z coordinate \"cluster_pre\": 0, // Cluster assignment \"__featrix_row_id\": 1, \"__featrix_row_offset\": 0, \"scalar_columns\": { \"age\": 25, \"income\": 50000 }, \"set_columns\": { \"category\": \"A\", \"region\": \"North\" }, \"string_columns\": { \"name\": \"John Doe\" } } // ... more coordinate records ], \"entire_cluster_results\": { \"2\": { \"cluster_labels\": [0, 1, 0], \"silhouette_score\": 0.75, \"n_clusters\": 2 }, \"3\": { \"cluster_labels\": [0, 1, 2], \"silhouette_score\": 0.68, \"n_clusters\": 3 } // ... clustering results for different cluster counts } }"
+    - button "📥 Download Example Data" [ref=e52] [cursor=pointer]
+```

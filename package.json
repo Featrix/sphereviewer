@@ -52,6 +52,7 @@
     "cannon-es": "^0.20.0",
     "clsx": "^2.1.1",
     "framer-motion": "^11.11.17",
+    "modern-boxplot-react": "github:bwahacker/modern-boxplot-react",
     "react-hot-toast": "^2.5.2",
     "recharts": "^3.7.0",
     "three": "^0.174.0",
