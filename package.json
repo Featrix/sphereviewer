@@ -15,6 +15,8 @@
     "start": "next start",
     "lint": "next lint",
     "build:embed": "webpack --mode production && cp dist/sphere-viewer.js sphere-viewer.js && echo '🔥 CACHE BUSTING: Copied fresh build to root'",
+    "build:standalone": "webpack --config webpack.standalone.js --mode production && cp dist/sphere-viewer-standalone.js sphere-viewer-standalone.js && echo '🔥 Standalone build (React bundled) copied to root'",
+    "build:all": "npm run build:embed && npm run build:standalone",
     "prepublishOnly": "npm run build:embed",
     "deploy": "./deploy-to-bits.sh",
     "deploy:full": "npm run build:embed && npm run deploy",

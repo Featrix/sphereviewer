@@ -65,6 +65,15 @@ print_status "Copying embeddable script..."
 scp $LOCAL_BUILD_DIR/sphere-viewer.js $HOST:$REMOTE_PATH/
 print_success "sphere-viewer.js deployed"
 
+# Copy standalone build (React bundled) if it exists
+if [ -f "$LOCAL_BUILD_DIR/sphere-viewer-standalone.js" ]; then
+    print_status "Copying standalone script (React bundled)..."
+    scp $LOCAL_BUILD_DIR/sphere-viewer-standalone.js $HOST:$REMOTE_PATH/
+    print_success "sphere-viewer-standalone.js deployed"
+else
+    print_warning "sphere-viewer-standalone.js not found, skipping (run 'npm run build:standalone' to build)"
+fi
+
 # Copy example data and real logistics data
 print_status "Copying data files..."
 scp example-featrix-data.json $HOST:$REMOTE_PATH/
