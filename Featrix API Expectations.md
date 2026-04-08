@@ -324,12 +324,12 @@ Two builds are available:
 
 | Build | File | Size | When to use |
 |---|---|---|---|
-| **Standalone** | `sphere-viewer-standalone.js` | ~1.1 MB | Pages without React (monitors, static HTML, dashboards) |
-| **External** | `sphere-viewer.js` | ~870 KB | Pages that already load React 18 as `window.React` / `window.ReactDOM` |
+| **Includes React** | `sphere-viewer-includes-react.js` | ~1.1 MB | Pages without React (monitors, static HTML, dashboards) |
+| **BYOR** | `sphere-viewer-bring-your-own-react.js` | ~870 KB | Pages that already load React 18 as `window.React` / `window.ReactDOM` |
 
 ```html
 <!-- Standalone: zero dependencies, just drop in -->
-<script src="https://bits.featrix.com/sv/sphere-viewer-standalone.js"
+<script src="https://bits.featrix.com/sv/sphere-viewer-includes-react.js"
         data-session-id="your-session-id"
         data-api-base-url="https://sphere-api.featrix.com">
 </script>
@@ -337,7 +337,7 @@ Two builds are available:
 <!-- With React already on page -->
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://bits.featrix.com/sv/sphere-viewer.js"
+<script src="https://bits.featrix.com/sv/sphere-viewer-bring-your-own-react.js"
         data-session-id="your-session-id"
         data-api-base-url="https://sphere-api.featrix.com">
 </script>

@@ -33,8 +33,8 @@ echo -e "${GREEN}🚀 Deploying FeatrixSphereViewer to $HOST:$REMOTE_PATH${NC}"
 
 # Check if local files exist
 print_status "Checking local files..."
-if [ ! -f "$LOCAL_BUILD_DIR/sphere-viewer.js" ]; then
-    print_error "sphere-viewer.js not found in $LOCAL_BUILD_DIR. Run 'npm run build' first."
+if [ ! -f "$LOCAL_BUILD_DIR/sphere-viewer-bring-your-own-react.js" ] && [ ! -f "$LOCAL_BUILD_DIR/sphere-viewer-includes-react.js" ]; then
+    print_error "No sphere-viewer builds found in $LOCAL_BUILD_DIR. Run 'npm run build:all' first."
     exit 1
 fi
 
@@ -60,18 +60,17 @@ print_status "Creating remote directory $REMOTE_PATH on $HOST..."
 ssh $HOST "sudo mkdir -p $REMOTE_PATH && sudo chown \$(whoami):\$(whoami) $REMOTE_PATH"
 print_success "Remote directory ready"
 
-# Copy main embeddable script
-print_status "Copying embeddable script..."
-scp $LOCAL_BUILD_DIR/sphere-viewer.js $HOST:$REMOTE_PATH/
-print_success "sphere-viewer.js deployed"
-
-# Copy standalone build (React bundled) if it exists
-if [ -f "$LOCAL_BUILD_DIR/sphere-viewer-standalone.js" ]; then
-    print_status "Copying standalone script (React bundled)..."
-    scp $LOCAL_BUILD_DIR/sphere-viewer-standalone.js $HOST:$REMOTE_PATH/
-    print_success "sphere-viewer-standalone.js deployed"
-else
-    print_warning "sphere-viewer-standalone.js not found, skipping (run 'npm run build:standalone' to build)"
+# Copy builds
+print_status "Copying embeddable scripts..."
+if [ -f "$LOCAL_BUILD_DIR/sphere-viewer-bring-your-own-react.js" ]; then
+    scp $LOCAL_BUILD_DIR/sphere-viewer-bring-your-own-react.js $HOST:$REMOTE_PATH/
+    # Keep legacy name as symlink
+    ssh $HOST "cd $REMOTE_PATH && ln -sf sphere-viewer-bring-your-own-react.js sphere-viewer.js"
+    print_success "sphere-viewer-bring-your-own-react.js deployed (+ sphere-viewer.js symlink)"
+fi
+if [ -f "$LOCAL_BUILD_DIR/sphere-viewer-includes-react.js" ]; then
+    scp $LOCAL_BUILD_DIR/sphere-viewer-includes-react.js $HOST:$REMOTE_PATH/
+    print_success "sphere-viewer-includes-react.js deployed"
 fi
 
 # Copy example data and real logistics data
@@ -126,7 +125,8 @@ echo -e "${GREEN}🎯 ===============================================${NC}"
 echo ""
 echo -e "${BLUE}[INFO]${NC} Deployed to: $HOST:$REMOTE_PATH"
 echo -e "${BLUE}[INFO]${NC} Files deployed:"
-echo -e "  📦 sphere-viewer.js ($(du -h $LOCAL_BUILD_DIR/sphere-viewer.js | cut -f1)) - Main embeddable component"
+echo -e "  📦 sphere-viewer-bring-your-own-react.js ($(du -h $LOCAL_BUILD_DIR/sphere-viewer-bring-your-own-react.js 2>/dev/null | cut -f1)) - BYOR build"
+echo -e "  📦 sphere-viewer-includes-react.js ($(du -h $LOCAL_BUILD_DIR/sphere-viewer-includes-react.js 2>/dev/null | cut -f1)) - Includes React build"
 echo -e "  📄 example-featrix-data.json - Sample data"
 echo -e "  🚛 logistics-featrix-data.json - Real logistics dataset (2000 companies)"
 echo -e "  🌐 index.html - Branded public landing page"

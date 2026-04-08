@@ -5,7 +5,7 @@ module.exports = {
   mode: 'production',
   entry: './src/embed-entry.tsx',
   output: {
-    filename: 'sphere-viewer.js',
+    filename: 'sphere-viewer-bring-your-own-react.js',
     path: path.resolve(__dirname, 'dist'),
     library: 'FeatrixSphereViewer',
     libraryTarget: 'umd',

@@ -9,7 +9,7 @@ module.exports = {
   mode: 'production',
   entry: './src/embed-entry-standalone.tsx',
   output: {
-    filename: 'sphere-viewer-standalone.js',
+    filename: 'sphere-viewer-includes-react.js',
     path: path.resolve(__dirname, 'dist'),
     library: 'FeatrixSphereViewer',
     libraryTarget: 'umd',
