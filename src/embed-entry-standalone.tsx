@@ -47,9 +47,39 @@ class FeatrixSphereViewer {
   private currentConfig: FeatrixSphereViewerConfig = {};
   private sphereRef: any = null;
 
-  constructor() {
-    this.autoInitFromScript();
+  constructor(containerOrNothing?: HTMLElement | null, options?: Partial<FeatrixSphereViewerConfig>) {
+    if (containerOrNothing instanceof HTMLElement) {
+      // Alternative API: new FeatrixSphereViewer(container, { ... })
+      this.container = containerOrNothing;
+      if (options) {
+        this.currentConfig = { ...options };
+        if (options.backgroundColor) containerOrNothing.style.background = options.backgroundColor;
+      }
+    } else {
+      this.autoInitFromScript();
+    }
     (window as any).sphereViewerInstance = this;
+  }
+
+  // Alternative API: viewer.load(data)
+  load(data: any) {
+    if (!this.container) {
+      console.error('FeatrixSphereViewer: No container. Use new FeatrixSphereViewer(container) first.');
+      return;
+    }
+    // Normalize numeric width/height to CSS strings
+    const cfg = { ...this.currentConfig };
+    if (typeof cfg.width === 'number') cfg.width = `${cfg.width}px`;
+    if (typeof cfg.height === 'number') cfg.height = `${cfg.height}px`;
+    return this.init({
+      ...cfg,
+      data,
+      containerId: this.container.id || undefined,
+      // Map beagle's "background" to our "backgroundColor"
+      backgroundColor: cfg.backgroundColor || (cfg as any).background,
+      // Map beagle's "interactive: false" to thumbnail mode
+      mode: (cfg as any).interactive === false ? 'thumbnail' : cfg.mode,
+    });
   }
 
   private autoInitFromScript() {
@@ -187,7 +217,8 @@ class FeatrixSphereViewer {
       return;
     }
 
-    const container = this.getOrCreateContainer(containerId, width, height);
+    // Use container from constructor if available, otherwise find/create one
+    const container = this.container || this.getOrCreateContainer(containerId, width, height);
     this.container = container;
 
     const initial_data = data || { session: { session_id: sessionId } };

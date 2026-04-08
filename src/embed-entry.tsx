@@ -67,12 +67,34 @@ class FeatrixSphereViewer {
   private currentConfig: FeatrixSphereViewerConfig = {};
   private sphereRef: any = null;
 
-  constructor() {
-    // Auto-initialize if there's a script tag with data attributes
-    this.autoInitFromScript();
-    
-    // Make this instance globally available for demo pages
+  constructor(containerOrNothing?: HTMLElement | null, options?: Partial<FeatrixSphereViewerConfig>) {
+    if (containerOrNothing instanceof HTMLElement) {
+      this.container = containerOrNothing;
+      if (options) {
+        this.currentConfig = { ...options };
+        if (options.backgroundColor) containerOrNothing.style.background = options.backgroundColor;
+      }
+    } else {
+      this.autoInitFromScript();
+    }
     (window as any).sphereViewerInstance = this;
+  }
+
+  load(data: any) {
+    if (!this.container) {
+      console.error('FeatrixSphereViewer: No container. Use new FeatrixSphereViewer(container) first.');
+      return;
+    }
+    const cfg = { ...this.currentConfig };
+    if (typeof cfg.width === 'number') cfg.width = `${cfg.width}px`;
+    if (typeof cfg.height === 'number') cfg.height = `${cfg.height}px`;
+    return this.init({
+      ...cfg,
+      data,
+      containerId: this.container.id || undefined,
+      backgroundColor: cfg.backgroundColor || (cfg as any).background,
+      mode: (cfg as any).interactive === false ? 'thumbnail' : cfg.mode,
+    });
   }
 
   private autoInitFromScript() {
@@ -321,9 +343,9 @@ class FeatrixSphereViewer {
       return;
     }
 
-    const container = this.getOrCreateContainer(containerId, width, height);
+    const container = this.container || this.getOrCreateContainer(containerId, width, height);
     this.container = container;
-    
+
     // CRITICAL: Always show ONLY training movie, never the finished sphere
     // Construct data object with session info for training movie
     const initial_data = data || { session: { session_id: sessionId } };
