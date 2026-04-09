@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.embed.json",
+  "compilerOptions": {
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "./dist",
+    "rootDir": ".",
+    "skipLibCheck": true,
+    "strict": false,
+    "noEmit": false
+  },
+  "include": [
+    "src/types.ts",
+    "src/data-adapter.ts"
+  ]
+}

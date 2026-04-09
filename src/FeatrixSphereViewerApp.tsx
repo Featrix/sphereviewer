@@ -1,21 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import FeatrixSphereEmbedded from './FeatrixSphereEmbedded';
 import FeatrixSphereHeader from '../featrix_sphere_header';
-
-interface FeatrixSphereViewerAppProps {
-  data?: any;           // New: Direct data input
-  sessionId?: string;   // Legacy: API-based loading
-  apiBaseUrl?: string;
-  // Animation controls
-  isRotating?: boolean;
-  rotationSpeed?: number;
-  animateClusters?: boolean;
-  // Visual controls
-  pointSize?: number;
-  pointOpacity?: number;
-  // Callbacks
-  onSphereReady?: (sphereRef: any) => void;
-}
+import type { SphereViewerProps } from './types';
 
 // API fetching functions (only used when sessionId provided)
 async function fetchSessionData(sessionId: string, apiBaseUrl?: string) {
@@ -27,25 +13,43 @@ async function fetchSessionData(sessionId: string, apiBaseUrl?: string) {
   return response.json();
 }
 
-const FeatrixSphereViewerApp: React.FC<FeatrixSphereViewerAppProps> = ({ 
-  data,
-  sessionId, 
-  apiBaseUrl,
-  isRotating,
-  rotationSpeed,
-  animateClusters,
-  pointSize,
-  pointOpacity,
-  onSphereReady
-}) => {
-  const [initialData, setInitialData] = useState(data || null);
-  const [loading, setLoading] = useState(!data); // Don't load if data provided
+const FeatrixSphereViewerApp: React.FC<SphereViewerProps> = (props) => {
+  const {
+    data,
+    sessionId,
+    apiBaseUrl,
+    authToken,
+    isRotating,
+    rotationSpeed,
+    animateClusters,
+    pointSize,
+    pointAlpha,
+    pointOpacity,
+    onSphereReady,
+    mode,
+    theme,
+    backgroundColor,
+    colormap,
+    onMaximize,
+    // Data callbacks
+    onRequestRows,
+    onRequestClusterDetail,
+    onRequestMorePoints,
+    onRequestEpochs,
+    // UI event callbacks
+    onPointClick,
+    onPointsSelected,
+    onClusterFocused,
+    onFrameChange,
+  } = props;
+
+  const [initialData, setInitialData] = useState<any>(data ? null : null);
+  const [loading, setLoading] = useState(!data && !!sessionId);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // If data is provided directly, use it
+    // If clean data prop is provided, let FeatrixSphereEmbedded handle it directly
     if (data) {
-      setInitialData(data);
       setLoading(false);
       return;
     }
@@ -64,7 +68,6 @@ const FeatrixSphereViewerApp: React.FC<FeatrixSphereViewerAppProps> = ({
           setLoading(false);
         }
       };
-
       loadData();
     } else {
       setError('No data or session ID provided');
@@ -83,14 +86,14 @@ const FeatrixSphereViewerApp: React.FC<FeatrixSphereViewerAppProps> = ({
     );
   }
 
-  if (error) {
+  if (error && !data) {
     return (
       <div className="flex items-center justify-center p-8">
         <div className="text-center text-red-600">
           <p className="text-lg font-semibold mb-2">Error Loading Sphere</p>
           <p className="text-sm">{error}</p>
           {sessionId && (
-            <button 
+            <button
               className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
               onClick={() => window.location.reload()}
             >
@@ -102,36 +105,36 @@ const FeatrixSphereViewerApp: React.FC<FeatrixSphereViewerAppProps> = ({
     );
   }
 
-  if (!initialData) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <div className="text-center text-gray-600">
-          <p className="text-lg font-semibold mb-2">No Data Available</p>
-          <p className="text-sm">
-            {data ? 'Invalid data format provided' : 'No data or session ID provided'}
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="sphere-viewer-container">
       <div className="flex flex-col gap-8">
         <div className="flex flex-col gap-4">
           <FeatrixSphereHeader />
-          
-
-          
-          <FeatrixSphereEmbedded 
-            initial_data={initialData} 
+          <FeatrixSphereEmbedded
+            data={data}
+            initial_data={initialData || undefined}
             apiBaseUrl={apiBaseUrl}
+            authToken={authToken}
             isRotating={isRotating}
             rotationSpeed={rotationSpeed}
             animateClusters={animateClusters}
             pointSize={pointSize}
+            pointAlpha={pointAlpha}
             pointOpacity={pointOpacity}
             onSphereReady={onSphereReady}
+            mode={mode}
+            theme={theme}
+            backgroundColor={backgroundColor}
+            colormap={colormap}
+            onMaximize={onMaximize}
+            onRequestRows={onRequestRows}
+            onRequestClusterDetail={onRequestClusterDetail}
+            onRequestMorePoints={onRequestMorePoints}
+            onRequestEpochs={onRequestEpochs}
+            onPointClick={onPointClick}
+            onPointsSelected={onPointsSelected}
+            onClusterFocused={onClusterFocused}
+            onFrameChange={onFrameChange}
           />
         </div>
       </div>
@@ -139,4 +142,4 @@ const FeatrixSphereViewerApp: React.FC<FeatrixSphereViewerAppProps> = ({
   );
 };
 
-export default FeatrixSphereViewerApp; 
+export default FeatrixSphereViewerApp;

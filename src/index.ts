@@ -1,20 +1,35 @@
-// Main package exports for NPM
+/**
+ * @featrix/sphere-viewer — v2.0
+ *
+ * Main React component
+ */
 export { default as FeatrixSphereViewer } from './FeatrixSphereViewerApp';
 export { default as FeatrixSphereEmbedded } from './FeatrixSphereEmbedded';
 
-// Re-export utilities
-export * from './embed-data-access';
+// Data adapter for converting clean types to internal format
+export { convertProjectionData } from './data-adapter';
 
-// Types
-export interface FeatrixSphereViewerProps {
-  sessionId: string;
-  apiBaseUrl?: string;
-}
-
-export interface SphereEmbeddedProps {
-  initial_data: any;
-  apiBaseUrl?: string;
-}
-
-// For embeddable script usage (already exported in embed-entry.tsx)
-export { default as EmbeddableEntry } from './embed-entry'; 
+// All public types
+export type {
+    ProjectionData,
+    EpochFrame,
+    PointCoord,
+    ClusterResults,
+    ClusterInfo,
+    ClusterSignature,
+    ColumnDistribution,
+    FieldRanking,
+    RowData,
+    ClusterDetail,
+    EpochData,
+    PointInfo,
+    OnRequestRows,
+    OnRequestClusterDetail,
+    OnRequestMorePoints,
+    OnRequestEpochs,
+    OnPointClick,
+    OnPointsSelected,
+    OnClusterFocused,
+    OnFrameChange,
+    SphereViewerProps,
+} from './types';

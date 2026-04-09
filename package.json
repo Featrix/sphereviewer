@@ -1,11 +1,19 @@
 {
   "name": "@featrix/sphere-viewer",
-  "version": "1.220",
-  "description": "Embeddable 3D sphere data visualization component using Three.js and React. Copyright (c) 2023-2025 Featrix.",
-  "main": "dist/sphere-viewer.js",
+  "version": "2.0.0",
+  "description": "Embeddable 3D sphere data visualization component using Three.js and React. Copyright (c) 2023-2026 Featrix.",
+  "main": "dist/index.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/src/types.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
-    "dist/sphere-viewer.js",
-    "dist/sphere-viewer.js.LICENSE.txt",
+    "dist/index.js",
+    "dist/index.esm.js",
+    "dist/src/**/*.d.ts",
+    "dist/sphere-viewer-bring-your-own-react.js",
+    "dist/sphere-viewer-includes-react.js",
     "README.md",
     "LICENSE"
   ],
@@ -17,7 +25,8 @@
     "build:embed": "webpack --mode production && cp dist/sphere-viewer-bring-your-own-react.js . && echo '🔥 BYOR build copied to root'",
     "build:standalone": "webpack --config webpack.standalone.js --mode production && cp dist/sphere-viewer-includes-react.js . && echo '🔥 Includes-React build copied to root'",
     "build:all": "npm run build:embed && npm run build:standalone",
-    "prepublishOnly": "npm run build:embed",
+    "build:package": "webpack --config webpack.package.js --env module=cjs && webpack --config webpack.package.js --env module=esm && tsc --project tsconfig.declarations.json",
+    "prepublishOnly": "npm run build:package",
     "deploy": "./deploy-to-bits.sh",
     "deploy:full": "npm run build:embed && npm run deploy",
     "test": "playwright test",

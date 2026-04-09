@@ -8,8 +8,9 @@ yarn-error.log*
 .next/
 out/
 
-# Environment variables
+# Environment variables and auth
 .env
+.npmrc
 .env.local
 .env.development.local
 .env.test.local

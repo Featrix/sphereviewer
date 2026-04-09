@@ -2,7 +2,7 @@
  * @license
  * Featrix Sphere Viewer - Standalone Build (React bundled)
  *
- * Copyright (c) 2023-2025 Featrix
+ * Copyright (c) 2023-2026 Featrix
  * Licensed under the BSD 4-Clause License (see LICENSE file)
  *
  * Self-contained entry point that bundles React + ReactDOM.
@@ -16,7 +16,7 @@ import FeatrixSphereEmbedded from './FeatrixSphereEmbedded';
 import { set_animation_options, set_visual_options } from '../featrix_sphere_control';
 import './embed-styles-minimal.css';
 
-export const SPHERE_VIEWER_VERSION = '1.4.0';
+export const SPHERE_VIEWER_VERSION = '2.0.0';
 
 interface FeatrixSphereViewerConfig {
   data?: any;

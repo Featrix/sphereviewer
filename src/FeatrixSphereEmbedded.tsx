@@ -2,7 +2,7 @@
  * @license
  * Featrix Sphere Viewer - Embeddable 3D Data Visualization Component
  * 
- * Copyright (c) 2023-2025 Featrix
+ * Copyright (c) 2023-2026 Featrix
  * Licensed under the BSD 4-Clause License (see LICENSE file)
  * 
  * This file contains the main React component for embedded sphere visualization.
@@ -6177,7 +6177,7 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
 };
 
 interface SphereEmbeddedProps {
-    initial_data: any;
+    initial_data?: any;
     apiBaseUrl?: string;
     // JWT auth token - sent as Bearer token on all API requests
     authToken?: string;
@@ -6185,6 +6185,7 @@ interface SphereEmbeddedProps {
     rotationSpeed?: number;
     animateClusters?: boolean;
     pointSize?: number;
+    /** @deprecated Use pointAlpha instead */
     pointOpacity?: number;
     onSphereReady?: (sphereRef: any) => void;
     // Display mode: 'thumbnail' hides all UI controls, 'full' shows everything
@@ -6201,6 +6202,22 @@ interface SphereEmbeddedProps {
     colormap?: string;
     // Callback when maximize button is clicked in thumbnail mode
     onMaximize?: (sessionId?: string) => void;
+
+    // ── v2: Clean data prop (alternative to initial_data) ──
+    /** Pass pre-baked projection data directly. Skips session lifecycle/polling. */
+    data?: import('./types').ProjectionData;
+
+    // ── v2: Data callbacks ──
+    onRequestRows?: import('./types').OnRequestRows;
+    onRequestClusterDetail?: import('./types').OnRequestClusterDetail;
+    onRequestMorePoints?: import('./types').OnRequestMorePoints;
+    onRequestEpochs?: import('./types').OnRequestEpochs;
+
+    // ── v2: UI event callbacks ──
+    onPointClick?: import('./types').OnPointClick;
+    onPointsSelected?: import('./types').OnPointsSelected;
+    onClusterFocused?: import('./types').OnClusterFocused;
+    onFrameChange?: import('./types').OnFrameChange;
 }
 
 // Final Sphere View Component - shows the completed sphere with all points
@@ -6368,10 +6385,32 @@ const FinalSphereView: React.FC<{
     );
 };
 
-export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, authToken, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity, onSphereReady, mode, dataEndpoint, theme = 'dark', backgroundColor, pointAlpha, colormap, onMaximize }: SphereEmbeddedProps) {
+export default function FeatrixSphereEmbedded({ initial_data, data, apiBaseUrl, authToken, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity, onSphereReady, mode, dataEndpoint, theme = 'dark', backgroundColor, pointAlpha, colormap, onMaximize, onRequestRows, onRequestClusterDetail, onRequestMorePoints, onRequestEpochs, onPointClick, onPointsSelected, onClusterFocused, onFrameChange }: SphereEmbeddedProps) {
+    // Deprecation warning
+    if (pointOpacity !== undefined && pointAlpha === undefined) {
+        console.warn('FeatrixSphereViewer: pointOpacity is deprecated. Use pointAlpha instead.');
+    }
+
+    // v2: If clean `data` prop is provided, convert to internal format
+    let effectiveData = initial_data;
+    if (data && !initial_data) {
+        const { convertProjectionData } = require('./data-adapter');
+        effectiveData = convertProjectionData(data);
+        // Wrap as session-done so the viewer skips polling
+        if (effectiveData && !effectiveData.session) {
+            if (effectiveData.epoch_projections) {
+                // Multi-frame: will be picked up as training movie data
+                effectiveData = { session: { session_id: 'direct-data', status: 'done', done: true, failed: false }, _directData: effectiveData };
+            } else if (effectiveData.coords) {
+                // Single-frame: has final data directly
+                // hasFinalData check below will pick this up
+            }
+        }
+    }
+
     // Check if we have final sphere data (coords + cluster_results) or just a session ID
-    const hasFinalData = initial_data?.coords && initial_data?.coords.length > 0 && initial_data?.entire_cluster_results;
-    const sessionId = initial_data?.session?.session_id;
+    const hasFinalData = effectiveData?.coords && effectiveData?.coords.length > 0 && effectiveData?.entire_cluster_results;
+    const sessionId = effectiveData?.session?.session_id;
 
     // If we have final sphere data, show the final sphere
     // Otherwise, show training movie (if sessionId provided)
@@ -6382,12 +6421,12 @@ export default function FeatrixSphereEmbedded({ initial_data, apiBaseUrl, authTo
             <div className="sphere-embedded-container">
                 <div className="mx-auto">
                     <FinalSphereView
-                        data={initial_data}
+                        data={effectiveData}
                         isRotating={isRotating}
                         rotationSpeed={rotationSpeed}
                         animateClusters={animateClusters}
                         pointSize={pointSize}
-                        pointOpacity={pointOpacity ?? pointAlpha}
+                        pointOpacity={pointAlpha ?? pointOpacity}
                         onSphereReady={onSphereReady}
                     />
                 </div>

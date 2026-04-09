@@ -2,7 +2,7 @@
  * @license
  * Featrix Sphere Viewer - Embeddable 3D Data Visualization Component
  * 
- * Copyright (c) 2023-2025 Featrix
+ * Copyright (c) 2023-2026 Featrix
  * Licensed under the BSD 4-Clause License (see LICENSE file)
  * 
  * This file contains the main entry point for the embeddable sphere viewer component.
@@ -20,7 +20,7 @@ import FeatrixSphereEmbedded from './FeatrixSphereEmbedded';
 import { set_animation_options, set_visual_options } from '../featrix_sphere_control';
 import './embed-styles-minimal.css';
 
-export const SPHERE_VIEWER_VERSION = '1.4.0';
+export const SPHERE_VIEWER_VERSION = '2.0.0';
 
 interface FeatrixSphereViewerConfig {
   // New: Accept data directly instead of sessionId
