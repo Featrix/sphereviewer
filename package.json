@@ -26,7 +26,7 @@
     "build:embed": "webpack --mode production && cp dist/sphere-viewer-bring-your-own-react.js . && echo '🔥 BYOR build copied to root'",
     "build:standalone": "webpack --config webpack.standalone.js --mode production && cp dist/sphere-viewer-includes-react.js . && echo '🔥 Includes-React build copied to root'",
     "build:all": "npm run build:embed && npm run build:standalone",
-    "build:package": "webpack --config webpack.package.js --env module=cjs && webpack --config webpack.package.js --env module=esm && tsc --project tsconfig.declarations.json",
+    "build:package": "webpack --config webpack.package.js --env module=cjs && webpack --config webpack.package.js --env module=esm && tsc --project tsconfig.declarations.json && cp src/index.d.ts.template dist/index.d.ts",
     "prepublishOnly": "npm run build:package",
     "deploy": "./deploy-to-bits.sh",
     "deploy:full": "npm run build:embed && npm run deploy",
