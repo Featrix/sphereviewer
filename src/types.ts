@@ -4,6 +4,9 @@
  *
  * Copyright (c) 2023-2026 Featrix
  * Licensed under the BSD 4-Clause License (see LICENSE file)
+ *
+ * These types mirror the actual Featrix backend API response shapes.
+ * The viewer is a visualization layer, not a data transformation layer.
  */
 
 // ── Point & Coordinate Types ──
@@ -31,66 +34,89 @@ export interface EpochData {
   epochs: Record<string, EpochFrame>;
 }
 
-// ── Cluster Types ──
+// ── Cluster Types (mirrors backend entire_cluster_results) ──
 
 /** Keyed by cluster count as string (e.g. "3", "5", "7") */
 export interface ClusterResults {
   [k: string]: {
+    /** Per-point cluster assignment. Index = rowOffset, value = cluster ID (0-based) */
     labels: number[];
+    /** Davies-Bouldin score (lower = better separation) */
     score: number;
-    bestK?: boolean;
-    /** Rich per-cluster metadata (optional, from backend) */
-    clusters?: Record<number, ClusterInfo>;
-    /** Global field rankings for this k */
-    fieldRankings?: FieldRanking[];
   };
 }
 
-export interface ClusterInfo {
-  size: number;
-  centroid: { x: number; y: number; z: number };
-  radius: number;
-  /** Auto-generated human-readable name */
-  label?: string;
-  /** What makes this cluster unique */
-  signatures?: ClusterSignature[];
-  /** Per-column stats within this cluster */
-  columnDistributions?: Record<string, ColumnDistribution>;
-  /** Ranked list of fields that best separate this cluster from others */
-  distinguishingFields?: { field: string; importance: number }[];
-}
-
+/**
+ * Per-cluster signature tuple from backend cluster_messages.
+ * Describes what makes a cluster distinctive.
+ */
 export interface ClusterSignature {
-  field: string;
-  /** For categorical fields */
-  value?: string;
-  /** For numeric fields */
-  direction?: 'high' | 'low';
-  /** % of cluster with this value */
-  clusterPct: number;
-  /** % of total dataset */
-  overallPct: number;
-  /** clusterPct / overallPct */
-  lift: number;
-  fieldType: 'scalar' | 'set' | 'string';
+  /** Normalized importance (0-100) */
+  weight: number;
+  /** Column name */
+  col: string;
+  /** Percentage or z-score */
+  perc: number;
+  /** Feature value or range */
+  value: string;
+  /** Human-readable description */
+  msg: string;
 }
 
-export type ColumnDistribution = {
-  type: 'numeric';
-  mean: number;
-  median: number;
-  std: number;
-  min: number;
-  max: number;
-  q1: number;
-  q3: number;
-  histogram?: { bins: number[]; counts: number[] };
-} | {
-  type: 'categorical';
-  valueCounts: Record<string, number>;
-  topValues: string[];
-  uniqueCount: number;
-};
+/**
+ * Rich per-cluster metadata from backend cluster_descriptions.
+ */
+export interface ClusterInfo {
+  cluster_id: number;
+  size: number;
+  /** Fraction of total dataset in this cluster */
+  fraction: number;
+  distinguishing_features: DistinguishingFeature[];
+  categorical_overlap?: {
+    column: string;
+    value: string;
+    overlap_pct: number;
+  };
+}
+
+export interface DistinguishingFeature {
+  column: string;
+  type: 'scalar' | 'categorical' | 'sub_feature';
+  score: number;
+  /** "higher" | "lower" | "over-represented" | "under-represented" */
+  direction: string;
+  detail: ScalarDetail | CategoricalDetail | SubFeatureDetail;
+}
+
+export interface ScalarDetail {
+  cluster_mean: number;
+  overall_mean: number;
+  cluster_std: number;
+  overall_std: number;
+  z_score: number;
+}
+
+export interface CategoricalDetail {
+  value: string;
+  cluster_pct: number;
+  overall_pct: number;
+  lift: number;
+}
+
+export interface SubFeatureDetail {
+  parent_column: string;
+  sub_value: string;
+  cluster_pct: number;
+  overall_pct: number;
+  lift: number;
+}
+
+/** Per-column mutual information ranking from backend column_mi_rankings */
+export interface ColumnMIRanking {
+  column: string;
+  mutual_information_bits: number;
+  predictability_pct?: number;
+}
 
 export interface FieldRanking {
   field: string;
@@ -111,6 +137,21 @@ export interface ProjectionData {
   clusters?: ClusterResults;
   /** Total points available (for "Load more" pagination UI) */
   totalCount?: number;
+
+  // ── Backend cluster analysis data ──
+
+  /** Per-cluster signature tuples (keyed by k, then cluster ID) */
+  cluster_messages?: Record<string, Record<number, ClusterSignature[]>>;
+  /** Rich per-cluster metadata (keyed by k, then cluster ID) */
+  cluster_descriptions?: Record<string, Record<number, ClusterInfo>>;
+  /** Per-column mutual information scores */
+  column_mi_rankings?: ColumnMIRanking[];
+  /** Available k values that were computed */
+  available_k?: number[];
+  /** Currently selected k */
+  current_k?: number;
+  /** Recommended k (best Davies-Bouldin score) */
+  best_k?: number;
 }
 
 // ── Row / Detail Types ──
@@ -124,6 +165,7 @@ export interface ClusterDetail {
   clusterId: number;
   k: number;
   info: ClusterInfo;
+  signatures?: ClusterSignature[];
   /** Source rows in this cluster (first page) */
   rows?: RowData[];
 }
