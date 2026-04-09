@@ -4,13 +4,14 @@
   "description": "Embeddable 3D sphere data visualization component using Three.js and React. Copyright (c) 2023-2026 Featrix.",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
-  "types": "dist/src/types.d.ts",
+  "types": "dist/index.d.ts",
   "publishConfig": {
     "access": "public"
   },
   "files": [
     "dist/index.js",
     "dist/index.esm.js",
+    "dist/index.d.ts",
     "dist/src/**/*.d.ts",
     "dist/sphere-viewer-bring-your-own-react.js",
     "dist/sphere-viewer-includes-react.js",
