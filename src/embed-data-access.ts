@@ -2,7 +2,7 @@
  * @license
  * Featrix Sphere Viewer - Data Access Layer
  *
- * Copyright (c) 2023-2025 Featrix
+ * Copyright (c) 2023-2026 Featrix
  * Licensed under the BSD 4-Clause License (see LICENSE file)
  *
  * Simplified data access for embeddable version
@@ -172,9 +172,15 @@ async function fetchWithRetry(
     }
 }
 
-// Helper to build auth headers from an optional JWT token
+// Helper to build auth headers from an optional token.
+// Supports both JWT Bearer tokens and API keys:
+//   - Tokens starting with "sk_" or "ak_" → sent as X-Api-Key header
+//   - Everything else → sent as Bearer token in Authorization header
 function getAuthHeaders(authToken?: string): HeadersInit | undefined {
     if (!authToken) return undefined;
+    if (authToken.startsWith('sk_') || authToken.startsWith('ak_')) {
+        return { 'X-Api-Key': authToken };
+    }
     return { 'Authorization': `Bearer ${authToken}` };
 }
 

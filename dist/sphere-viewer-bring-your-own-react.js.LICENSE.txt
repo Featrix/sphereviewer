@@ -8,7 +8,7 @@
  * @license
  * Featrix Sphere Viewer - Embeddable 3D Data Visualization Component
  *
- * Copyright (c) 2023-2025 Featrix
+ * Copyright (c) 2023-2026 Featrix
  * Licensed under the BSD 4-Clause License (see LICENSE file)
  *
  * This file contains the main React component for embedded sphere visualization.
@@ -18,7 +18,7 @@
  * @license
  * Featrix Sphere Viewer - GLB Binary Loader
  *
- * Copyright (c) 2023-2025 Featrix
+ * Copyright (c) 2023-2026 Featrix
  * Licensed under the BSD 4-Clause License (see LICENSE file)
  *
  * Parses GLB binary containers for compact training movie data.

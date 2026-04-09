@@ -167,10 +167,12 @@ export interface SphereViewerProps {
     data?: ProjectionData;
     /** Featrix session ID — triggers internal fetch + polling (backwards compat) */
     sessionId?: string;
-    /** API base URL for session-based fetching */
+    /** API base URL for session-based fetching (alias: baseUrl) */
     apiBaseUrl?: string;
-    /** JWT Bearer token for authenticated API requests */
+    /** JWT Bearer token — sent as Authorization: Bearer header */
     authToken?: string;
+    /** API key — sent as X-Api-Key header. Use this or authToken, not both. */
+    apiKey?: string;
     onRequestRows?: OnRequestRows;
     onRequestClusterDetail?: OnRequestClusterDetail;
     onRequestMorePoints?: OnRequestMorePoints;
