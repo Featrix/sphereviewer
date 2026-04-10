@@ -6178,6 +6178,8 @@ const TrainingMovie: React.FC<TrainingMovieProps> = ({ sessionId, apiBaseUrl, au
 
 interface SphereEmbeddedProps {
     initial_data?: any;
+    /** Top-level session ID — overrides initial_data.session.session_id and used for callback context */
+    sessionId?: string;
     apiBaseUrl?: string;
     // JWT auth token - sent as Bearer token on all API requests
     authToken?: string;
@@ -6385,7 +6387,7 @@ const FinalSphereView: React.FC<{
     );
 };
 
-export default function FeatrixSphereEmbedded({ initial_data, data, apiBaseUrl, authToken, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity, onSphereReady, mode, dataEndpoint, theme = 'dark', backgroundColor, pointAlpha, colormap, onMaximize, onRequestRows, onRequestClusterDetail, onRequestMorePoints, onRequestEpochs, onPointClick, onPointsSelected, onClusterFocused, onFrameChange }: SphereEmbeddedProps) {
+export default function FeatrixSphereEmbedded({ initial_data, data, sessionId: sessionIdProp, apiBaseUrl, authToken, isRotating, rotationSpeed, animateClusters, pointSize, pointOpacity, onSphereReady, mode, dataEndpoint, theme = 'dark', backgroundColor, pointAlpha, colormap, onMaximize, onRequestRows, onRequestClusterDetail, onRequestMorePoints, onRequestEpochs, onPointClick, onPointsSelected, onClusterFocused, onFrameChange }: SphereEmbeddedProps) {
     // Deprecation warning
     if (pointOpacity !== undefined && pointAlpha === undefined) {
         console.warn('FeatrixSphereViewer: pointOpacity is deprecated. Use pointAlpha instead.');
@@ -6396,21 +6398,26 @@ export default function FeatrixSphereEmbedded({ initial_data, data, apiBaseUrl, 
     if (data && !initial_data) {
         const { convertProjectionData } = require('./data-adapter');
         effectiveData = convertProjectionData(data);
-        // Wrap as session-done so the viewer skips polling
+        // Wrap as session-done so the viewer skips polling.
+        // Use the top-level sessionId prop if provided, otherwise null
+        // (null prevents downstream code from making API calls with a bogus session_id)
         if (effectiveData && !effectiveData.session) {
             if (effectiveData.epoch_projections) {
                 // Multi-frame: will be picked up as training movie data
-                effectiveData = { session: { session_id: 'direct-data', status: 'done', done: true, failed: false }, _directData: effectiveData };
+                effectiveData = { session: { session_id: sessionIdProp || null, status: 'done', done: true, failed: false }, _directData: effectiveData };
             } else if (effectiveData.coords) {
                 // Single-frame: has final data directly
                 // hasFinalData check below will pick this up
+                // Attach session metadata so downstream code can find the real session ID if needed
+                effectiveData.session = { session_id: sessionIdProp || null, status: 'done', done: true, failed: false };
             }
         }
     }
 
     // Check if we have final sphere data (coords + cluster_results) or just a session ID
     const hasFinalData = effectiveData?.coords && effectiveData?.coords.length > 0 && effectiveData?.entire_cluster_results;
-    const sessionId = effectiveData?.session?.session_id;
+    // Top-level sessionId prop takes precedence over data-derived session_id
+    const sessionId = sessionIdProp || effectiveData?.session?.session_id;
 
     // If we have final sphere data, show the final sphere
     // Otherwise, show training movie (if sessionId provided)

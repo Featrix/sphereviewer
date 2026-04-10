@@ -113,6 +113,7 @@ const FeatrixSphereViewerApp: React.FC<SphereViewerProps> = (props) => {
           <FeatrixSphereEmbedded
             data={data}
             initial_data={initialData || undefined}
+            sessionId={sessionId}
             apiBaseUrl={apiBaseUrl}
             authToken={authToken}
             isRotating={isRotating}
