@@ -29,6 +29,12 @@ type RetryStatusCallback = (status: {
 // Global retry status callback - set by the UI component
 let globalRetryStatusCallback: RetryStatusCallback | null = null;
 
+// Monotonic counter so the most recent retry owns the UI countdown.
+// Multiple fetchWithRetry calls run in parallel (thumbnail, GLB, full JSON, metrics)
+// and without this, their setIntervals race and overwrite each other's countdown
+// values — causing the "27s → 2s → 30s → 1s" jumping.
+let retryOwnerToken = 0;
+
 export function setRetryStatusCallback(callback: RetryStatusCallback | null) {
     globalRetryStatusCallback = callback;
 }
@@ -69,6 +75,8 @@ async function fetchWithRetry(
     const startTime = Date.now();
     let attempt = 0;
     let delay = RETRY_CONFIG.initialDelay;
+    // Unique token for this retry loop — only the most recent call updates the UI
+    const myToken = ++retryOwnerToken;
 
     while (true) {
         attempt++;
@@ -87,7 +95,8 @@ async function fetchWithRetry(
 
             // If successful or non-retryable error, return immediately
             if (response.ok || !isRetryableError(response, null)) {
-                if (globalRetryStatusCallback) {
+                // Only clear the UI if we were the owner of the current retry display
+                if (globalRetryStatusCallback && myToken === retryOwnerToken) {
                     globalRetryStatusCallback({
                         isRetrying: false,
                         attempt: 0,
@@ -107,7 +116,7 @@ async function fetchWithRetry(
         // Check if we've exceeded max retry duration
         const elapsed = Date.now() - startTime;
         if (elapsed >= RETRY_CONFIG.maxRetryDuration) {
-            if (globalRetryStatusCallback) {
+            if (globalRetryStatusCallback && myToken === retryOwnerToken) {
                 globalRetryStatusCallback({
                     isRetrying: false,
                     attempt: 0,
@@ -136,10 +145,26 @@ async function fetchWithRetry(
 
         console.warn(`⏳ Retry attempt ${attempt} failed: ${errorMsg}. Retrying in ${nextDelay / 1000}s...`);
 
-        // Notify UI about retry status with countdown
+        // Notify UI about retry status with countdown.
+        // Only the most recent retry loop (myToken === retryOwnerToken) writes to the UI,
+        // so parallel failing requests don't fight over the countdown display.
         if (globalRetryStatusCallback) {
-            // Start countdown
+            const countdownStart = Date.now();
+
+            // Claim ownership so parallel retries defer to us
+            retryOwnerToken = myToken;
+
+            globalRetryStatusCallback({
+                isRetrying: true,
+                attempt,
+                nextRetryIn: Math.ceil(nextDelay / 1000),
+                totalElapsed: Math.floor(elapsed / 1000),
+                error: errorMsg
+            });
+
             const countdownInterval = setInterval(() => {
+                // Another retry may have taken ownership — stand down
+                if (myToken !== retryOwnerToken) return;
                 const remaining = Math.max(0, nextDelay - (Date.now() - countdownStart));
                 globalRetryStatusCallback!({
                     isRetrying: true,
@@ -149,15 +174,6 @@ async function fetchWithRetry(
                     error: errorMsg
                 });
             }, 1000);
-
-            const countdownStart = Date.now();
-            globalRetryStatusCallback({
-                isRetrying: true,
-                attempt,
-                nextRetryIn: Math.ceil(nextDelay / 1000),
-                totalElapsed: Math.floor(elapsed / 1000),
-                error: errorMsg
-            });
 
             // Wait for delay
             await new Promise(resolve => setTimeout(resolve, nextDelay));

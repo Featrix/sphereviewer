@@ -16,7 +16,7 @@ import FeatrixSphereEmbedded from './FeatrixSphereEmbedded';
 import { set_animation_options, set_visual_options } from '../featrix_sphere_control';
 import './embed-styles-minimal.css';
 
-export const SPHERE_VIEWER_VERSION = '2.0.2';
+export const SPHERE_VIEWER_VERSION = '2.0.3';
 
 interface FeatrixSphereViewerConfig {
   data?: any;
